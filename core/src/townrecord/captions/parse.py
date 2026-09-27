@@ -142,9 +142,7 @@ def parse_srv3(data: bytes) -> list[Segment]:
         raise CaptionParseError(f"srv3 file is not well-formed XML: {error}") from error
 
     if root.tag != "timedtext":
-        raise CaptionParseError(
-            f"srv3 file has root element <{root.tag}>, expected <timedtext>"
-        )
+        raise CaptionParseError(f"srv3 file has root element <{root.tag}>, expected <timedtext>")
     body = root.find("body")
     if body is None:
         raise CaptionParseError("srv3 <timedtext> has no <body> element")
@@ -237,28 +235,20 @@ def parse_vtt(data: bytes) -> list[Segment]:
     for index, block in enumerate(_vtt_blocks(lines[1:])):
         if block[0].startswith(_VTT_NON_CUE_BLOCKS):
             continue
-        timing_at = next(
-            (position for position, line in enumerate(block) if "-->" in line), None
-        )
+        timing_at = next((position for position, line in enumerate(block) if "-->" in line), None)
         if timing_at is None:
             if index == 0:
                 # Header metadata lines, such as "Kind: captions" and
                 # "Language: en", run up to the first blank line.
                 continue
-            raise CaptionParseError(
-                f"vtt block has no timing line, starts with {block[0]!r}"
-            )
+            raise CaptionParseError(f"vtt block has no timing line, starts with {block[0]!r}")
         start_ms, end_ms = _vtt_cue_times(block[timing_at])
         if end_ms < start_ms:
-            raise CaptionParseError(
-                f"vtt cue ends before it starts: {block[timing_at]!r}"
-            )
+            raise CaptionParseError(f"vtt cue ends before it starts: {block[timing_at]!r}")
         cue_text, words = _vtt_cue_body(block[timing_at + 1 :])
         if not cue_text:
             continue
-        segments.append(
-            Segment(start_ms=start_ms, end_ms=end_ms, text=cue_text, words=words)
-        )
+        segments.append(Segment(start_ms=start_ms, end_ms=end_ms, text=cue_text, words=words))
 
     return segments
 
@@ -307,9 +297,7 @@ def _vtt_cue_body(payload: list[str]) -> tuple[str, tuple[Word, ...]]:
         for index in range(1, len(parts) - 1, 2):
             word_text = _vtt_text(parts[index + 1])
             if word_text:
-                words.append(
-                    Word(start_ms=_vtt_time_to_ms(parts[index]), text=word_text)
-                )
+                words.append(Word(start_ms=_vtt_time_to_ms(parts[index]), text=word_text))
     cue_text = _normalize(" ".join(_vtt_text(line) for line in payload))
     return cue_text, tuple(words)
 
@@ -324,8 +312,6 @@ def _vtt_unescape(text: str) -> str:
     for entity, character in _VTT_ENTITIES.items():
         text = text.replace(entity, character)
     return _NUMERIC_ENTITY.sub(
-        lambda match: chr(
-            int(match.group(1)) if match.group(1) else int(match.group(2), 16)
-        ),
+        lambda match: chr(int(match.group(1)) if match.group(1) else int(match.group(2), 16)),
         text,
     )

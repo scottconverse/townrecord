@@ -125,16 +125,12 @@ def test_srv3_empty_body_gives_no_segments() -> None:
 
 def test_srv3_rejects_a_segment_without_a_duration() -> None:
     with pytest.raises(CaptionParseError):
-        parse_srv3(
-            b'<timedtext format="3"><body><p t="10"><s>hi</s></p></body></timedtext>'
-        )
+        parse_srv3(b'<timedtext format="3"><body><p t="10"><s>hi</s></p></body></timedtext>')
 
 
 def test_srv3_rejects_a_segment_without_a_start() -> None:
     with pytest.raises(CaptionParseError):
-        parse_srv3(
-            b'<timedtext format="3"><body><p d="10"><s>hi</s></p></body></timedtext>'
-        )
+        parse_srv3(b'<timedtext format="3"><body><p d="10"><s>hi</s></p></body></timedtext>')
 
 
 def test_srv3_rejects_a_time_that_is_not_a_number() -> None:
@@ -146,9 +142,7 @@ def test_srv3_rejects_a_time_that_is_not_a_number() -> None:
 
 def test_srv3_rejects_a_negative_duration() -> None:
     with pytest.raises(CaptionParseError):
-        parse_srv3(
-            b'<timedtext format="3"><body><p t="10" d="-5"><s>hi</s></p></body></timedtext>'
-        )
+        parse_srv3(b'<timedtext format="3"><body><p t="10" d="-5"><s>hi</s></p></body></timedtext>')
 
 
 def test_srv3_rejects_a_later_word_without_a_time() -> None:
@@ -161,9 +155,7 @@ def test_srv3_rejects_a_later_word_without_a_time() -> None:
 
 def test_srv3_rejects_segments_outside_the_body() -> None:
     with pytest.raises(CaptionParseError):
-        parse_srv3(
-            b'<timedtext format="3"><p t="0" d="10"><s>a</s></p><body/></timedtext>'
-        )
+        parse_srv3(b'<timedtext format="3"><p t="0" d="10"><s>a</s></p><body/></timedtext>')
 
 
 # --- VTT ------------------------------------------------------------------
@@ -187,18 +179,14 @@ def test_vtt_multiline_cue_becomes_one_segment() -> None:
 
 
 def test_vtt_accepts_the_short_timestamp_form_and_decodes_entities() -> None:
-    by_start = {
-        segment.start_ms: segment for segment in parse_vtt(read_bytes(YOUTUBE_VTT))
-    }
+    by_start = {segment.start_ms: segment for segment in parse_vtt(read_bytes(YOUTUBE_VTT))}
     short_form = by_start[62500]
     assert short_form.end_ms == ((1 * 60 * 60) + (2 * 60) + 3) * 1000 + 4
     assert short_form.text == "Tom's & Jerry"
 
 
 def test_vtt_reads_inline_word_times() -> None:
-    by_start = {
-        segment.start_ms: segment for segment in parse_vtt(read_bytes(YOUTUBE_VTT))
-    }
+    by_start = {segment.start_ms: segment for segment in parse_vtt(read_bytes(YOUTUBE_VTT))}
     last = by_start[30000]
     assert last.text == "Hello council members"
     assert last.words == (
