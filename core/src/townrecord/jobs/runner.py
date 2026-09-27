@@ -220,6 +220,7 @@ class Runner:
             claim_token=taken.token,
             clock=self._clock,
             stop_event=self._stop,
+            origin=taken.origin,
         )
         if handler is None:
             self._close(conn, taken, queue.FAILED, NO_HANDLER.format(kind=taken.kind))

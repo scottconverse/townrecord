@@ -97,6 +97,10 @@ class Source(Row):
     last_error: str | None
     last_checked_at: str | None
     created_at: str
+    #: The settings this source carries of its own, as JSON text (migration
+    #: 0013). ``"{}"`` means it has none, and the reader falls back to the
+    #: built-in seeds rather than inventing a setting (rule D).
+    settings: str = "{}"
 
 
 @dataclass(frozen=True)

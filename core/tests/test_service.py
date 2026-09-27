@@ -29,6 +29,7 @@ from townrecord.jobs import QUEUED, RUNNING, JobContext, JobsSettings, claim, en
 from townrecord.records import ALIGN_MEETING, DOWNLOAD_RECORD, EXTRACT_PAGES, SYNC_PRIMEGOV
 from townrecord.runtime import JOB_KIND as RUNTIME_UPDATE_KIND
 from townrecord.service import KIND_MODULES, build_service, kinds
+from townrecord.video.watch import JOB_KIND as WATCH_CHANNEL_JOB_KIND
 
 #: Every job kind that exists, spelled out. A new kind has to be added here as
 #: well as to the service, and that is the point: the list is the spec's, not
@@ -40,6 +41,7 @@ EXPECTED_KINDS = (
     ALIGN_MEETING,
     CAPTURE_JOB_KIND,
     TRANSCRIBE_JOB_KIND,
+    WATCH_CHANNEL_JOB_KIND,
     RUNTIME_UPDATE_KIND,
 )
 
@@ -79,7 +81,7 @@ def test_every_job_kind_that_exists_is_registered(settings: Settings) -> None:
 
     assert service.registry.kinds() == tuple(sorted(EXPECTED_KINDS))
     assert set(service.registry.kinds()) == set(kinds())
-    assert len(kinds()) == 7
+    assert len(kinds()) == 8
 
     # Each kind is a name the module the service says registers it really
     # declares, so KIND_MODULES is a fact and not a comment.

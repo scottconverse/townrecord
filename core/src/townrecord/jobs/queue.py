@@ -144,6 +144,11 @@ class Claim:
     lane: str
     token: str
     attempts: int
+    #: How this job was asked for: ``manual`` by the user, ``scheduled`` by the
+    #: daily schedule (spec 16.2). A handler that enqueues work of its own
+    #: passes it on, so the child of a scheduled run is scheduled too rather
+    #: than being recorded as something the user asked for.
+    origin: str = ORIGIN_MANUAL
 
 
 def new_claim_token(worker_id: str) -> str:
@@ -221,7 +226,7 @@ def _next_startable(
     queued and the worker looks at the jobs behind it (spec 8.2, "retry later").
     """
     cursor = conn.execute(
-        "SELECT id, kind, payload, lane, attempts FROM jobs "
+        "SELECT id, kind, payload, lane, attempts, origin FROM jobs "
         "WHERE lane = ? AND state = ? AND (run_after IS NULL OR run_after <= ?) ORDER BY id",
         (lane, QUEUED, now),
     )
@@ -278,6 +283,7 @@ def claim(
         lane=str(row["lane"]),
         token=token,
         attempts=int(row["attempts"]),
+        origin=str(row["origin"] or ORIGIN_MANUAL),
     )
 
 
@@ -470,6 +476,10 @@ class JobContext:
     claim_token: str
     clock: Clock = utcnow
     stop_event: threading.Event | None = field(default=None, repr=False)
+    #: How the job was asked for, so the work it enqueues is recorded the same
+    #: way (spec 16.2). The runner fills it from the claim, which read it from
+    #: the row; a test that builds a context by hand gets ``manual``.
+    origin: str = ORIGIN_MANUAL
 
     def checkpoint(self) -> Any:
         """Return the checkpoint saved by an earlier run, or None."""

@@ -231,7 +231,7 @@ def test_status_prints_the_report_and_its_json(tmp_path: Path, port: int) -> Non
     as_json: dict[str, Any] = json.loads(run_cli(env, "status", "--json").stdout)
     assert as_json["db_present"] is True
     assert as_json["port"] == port
-    assert len(as_json["registered_kinds"]) == 7
+    assert len(as_json["registered_kinds"]) == 8
     assert as_json["jobs"] == []
     assert as_json["notes"] == []
 

@@ -22,7 +22,7 @@ from __future__ import annotations
 import json
 import sqlite3
 
-from ..jobs import PAUSED, QUEUED, RUNNING, enqueue, requeue_paused
+from ..jobs import ORIGIN_MANUAL, PAUSED, QUEUED, RUNNING, enqueue, requeue_paused
 from ..repo import get_meeting
 from .portal import ALIGN_MEETING, AlignRequest
 
@@ -41,13 +41,21 @@ ASKED_FOR = "The alignment of meeting {meeting_id} was asked for again, so it ru
 
 
 def request_alignment(
-    conn: sqlite3.Connection, meeting_id: int, *, reason: str | None = None
+    conn: sqlite3.Connection,
+    meeting_id: int,
+    *,
+    reason: str | None = None,
+    origin: str = ORIGIN_MANUAL,
 ) -> int | None:
     """Put one meeting's alignment back on the queue, or queue it for the first time.
 
     Returns the id of the job that was made ready, or None when nothing was
     done: a meeting nobody stored has nothing to align, and a meeting whose
     align job is already queued or running needs no second one.
+
+    ``origin`` is how the asker was asked for, and it is carried onto a job this
+    call creates. A caller that has no origin of its own leaves the default:
+    a job the user ran by hand is the manual case.
 
     A paused job is the case this exists for. It is put back with its own reason
     kept, and it is the same row that runs, so the history of one meeting's
@@ -72,7 +80,7 @@ def request_alignment(
         return job_id
 
     payload = AlignRequest(meeting_id=meeting_id, source_id=meeting.portal_source_id)
-    return enqueue(conn, ALIGN_MEETING, payload.as_payload())
+    return enqueue(conn, ALIGN_MEETING, payload.as_payload(), origin=origin)
 
 
 def _align_jobs(conn: sqlite3.Connection, meeting_id: int) -> list[sqlite3.Row]:
