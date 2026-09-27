@@ -41,6 +41,7 @@ class _Tally:
     meetings_created: int = 0
     meetings_updated: int = 0
     cancelled: int = 0
+    continued: int = 0
     videos_created: int = 0
     videos_linked: int = 0
     documents_queued: int = 0
@@ -73,6 +74,7 @@ class _Tally:
             "meetings_created": self.meetings_created,
             "meetings_updated": self.meetings_updated,
             "meetings_cancelled": self.cancelled,
+            "meetings_continued": self.continued,
             "videos_created": self.videos_created,
             "videos_linked": self.videos_linked,
             "documents_queued": self.documents_queued,
@@ -144,7 +146,12 @@ def _sync_meeting(ctx: JobContext, source: Source, listed: ListedMeeting, tally:
     signal = portal.cancellation_signal(listed.title, listed.documents)
     if signal is not None:
         tally.cancelled += 1
-    meeting_id, created = _upsert(ctx, source, listed, body_id=body.id, signal=signal)
+    continued = portal.continuation_signal(listed.title)
+    if continued is not None:
+        tally.continued += 1
+    meeting_id, created = _upsert(
+        ctx, source, listed, body_id=body.id, signal=signal, is_continued=continued is not None
+    )
     tally.meetings_created += 1 if created else 0
     tally.meetings_updated += 0 if created else 1
 
@@ -162,6 +169,7 @@ def _upsert(
     *,
     body_id: int,
     signal: str | None,
+    is_continued: bool = False,
 ) -> tuple[int, bool]:
     """Store the meeting or update the row a past sync made."""
     from ..repo import upsert_meeting
@@ -173,6 +181,7 @@ def _upsert(
         title=listed.title or None,
         type=portal.meeting_type(listed.title),
         is_cancelled=signal is not None,
+        is_continued=is_continued,
         portal_source_id=source.id,
         portal_meeting_id=listed.id,
         portal_html_template_id=portal.html_template_id(listed.documents),

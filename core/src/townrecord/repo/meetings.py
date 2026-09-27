@@ -76,6 +76,7 @@ def upsert_meeting(
     title: str | None = None,
     type: str = "regular",
     is_cancelled: bool = False,
+    is_continued: bool = False,
     portal_source_id: int | None = None,
     portal_meeting_id: int | None = None,
     portal_html_template_id: int | None = None,
@@ -88,8 +89,11 @@ def upsert_meeting(
 
     A cancellation is never cleared. The notice that cancelled a meeting is a
     fact about it, so a later listing that does not carry the marker leaves
-    the flag where it was. A template id already known is kept when this
-    listing has none.
+    the flag where it was. A continuation is kept the same way, for the same
+    reason: a listing that says a sitting was postponed or continued says so on
+    the listing that carried the status, and a later one that does not carry it
+    does not unsay it. A template id already known is kept when this listing
+    has none.
 
     Returns the meeting id and whether the row was created.
     """
@@ -109,6 +113,7 @@ def upsert_meeting(
             title=title,
             type=type,
             is_cancelled=is_cancelled,
+            is_continued=is_continued,
         )
         # The portal columns are written here rather than through insert_meeting,
         # which stores a meeting and knows nothing about portals. A row a portal
@@ -121,13 +126,14 @@ def upsert_meeting(
         )
         return created, True
     conn.execute(
-        "UPDATE meetings SET title = ?, type = ?, is_cancelled = ?, "
+        "UPDATE meetings SET title = ?, type = ?, is_cancelled = ?, is_continued = ?, "
         "portal_source_id = ?, portal_meeting_id = ?, portal_html_template_id = ? "
         "WHERE id = ?",
         (
             title,
             type,
             int(found.is_cancelled or is_cancelled),
+            int(found.is_continued or is_continued),
             portal_source_id,
             portal_meeting_id,
             found.portal_html_template_id
