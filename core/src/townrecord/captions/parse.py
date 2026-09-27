@@ -15,7 +15,9 @@ Rules this module follows:
 * A file this module cannot read raises one :class:`CaptionParseError` whose
   message says why. It never returns a partly parsed list.
 * Segments whose text is empty after trimming are dropped. In srv3 those are
-  the ``a="1"`` line-append markers, which repeat no speech.
+  the ``a="1"`` line-append markers, which repeat no speech. In VTT they are the
+  bridge cues of YouTube's rolling auto-captions, which repeat the line that is
+  already on screen (see :func:`_vtt_cue_words`).
 
 Standard library only.
 """
@@ -205,12 +207,17 @@ def parse_vtt(data: bytes) -> list[Segment]:
     Cues are kept in the order they are written, and multi-line cue text is
     joined with single spaces.
 
+    YouTube auto-caption VTT is *rolling*: each cue shows the line that is
+    already on screen and then the line being written, and a short bridge cue
+    repeats the finished line with no new words. Only the new words of a cue
+    become its segment, so no word is reported two or three times.
+
     Args:
         data: The bytes of the file. WebVTT is UTF-8, with or without a BOM.
 
     Returns:
-        The segments that carry text. A file whose cues are all empty yields an
-        empty list.
+        The segments that carry speech. A file whose cues are all empty yields
+        an empty list.
 
     Raises:
         CaptionParseError: The file has no ``WEBVTT`` header, holds a block with
@@ -232,6 +239,9 @@ def parse_vtt(data: bytes) -> list[Segment]:
         raise CaptionParseError("vtt file does not start with a WEBVTT line")
 
     segments: list[Segment] = []
+    # Every word already written to a segment, in order. A rolling cue repeats a
+    # run of these at its start, and that run is not speech.
+    written: list[str] = []
     for index, block in enumerate(_vtt_blocks(lines[1:])):
         if block[0].startswith(_VTT_NON_CUE_BLOCKS):
             continue
@@ -245,20 +255,38 @@ def parse_vtt(data: bytes) -> list[Segment]:
         start_ms, end_ms = _vtt_cue_times(block[timing_at])
         if end_ms < start_ms:
             raise CaptionParseError(f"vtt cue ends before it starts: {block[timing_at]!r}")
-        cue_text, words = _vtt_cue_body(block[timing_at + 1 :])
+        # A bridge cue repeats the line that is already on screen and then blanks
+        # it, so the last line of its payload holds no text and the cue adds no
+        # speech. YouTube writes a single space for that blank line.
+        payload = block[timing_at + 1 :]
+        if not payload or not payload[-1].strip():
+            continue
+        # A cue's payload may still hold a one space padding line, which is not
+        # text and does not separate cues.
+        text_lines = [line for line in payload if line.strip()]
+        rolling = len(text_lines) > 1 and _vtt_ends_with(written, _vtt_text(text_lines[0]).split())
+        cue_text, words = _vtt_cue_words(
+            text_lines[-1:] if rolling else text_lines, start_ms, rolling
+        )
         if not cue_text:
             continue
         segments.append(Segment(start_ms=start_ms, end_ms=end_ms, text=cue_text, words=words))
+        written.extend(cue_text.split())
 
     return segments
 
 
 def _vtt_blocks(lines: list[str]) -> list[list[str]]:
-    """Split cue lines into blocks at blank lines, dropping empty blocks."""
+    """Split cue lines into blocks at empty lines, dropping empty blocks.
+
+    Only a truly empty line ends a block. A line holding one space does not,
+    which is what the WebVTT specification says and what YouTube writes as the
+    first text line of the cue it is rolling.
+    """
     blocks: list[list[str]] = []
     current: list[str] = []
     for line in lines:
-        if line.strip():
+        if line:
             current.append(line)
         elif current:
             blocks.append(current)
@@ -266,6 +294,11 @@ def _vtt_blocks(lines: list[str]) -> list[list[str]]:
     if current:
         blocks.append(current)
     return blocks
+
+
+def _vtt_ends_with(written: list[str], words: list[str]) -> bool:
+    """Say whether the text written so far ends with these words."""
+    return bool(words) and len(words) <= len(written) and written[-len(words) :] == words
 
 
 def _vtt_cue_times(timing_line: str) -> tuple[int, int]:
@@ -288,18 +321,44 @@ def _vtt_time_to_ms(timestamp: str) -> int:
     return ((hours * 60 + minutes) * 60 + seconds) * 1000 + milliseconds
 
 
-def _vtt_cue_body(payload: list[str]) -> tuple[str, tuple[Word, ...]]:
-    """Read the text and the inline word times of one cue."""
-    words: list[Word] = []
-    for line in payload:
-        parts = _INLINE_TIME.split(line)
-        # parts is [text before the first time, time, text, time, text, ...].
-        for index in range(1, len(parts) - 1, 2):
-            word_text = _vtt_text(parts[index + 1])
-            if word_text:
-                words.append(Word(start_ms=_vtt_time_to_ms(parts[index]), text=word_text))
-    cue_text = _normalize(" ".join(_vtt_text(line) for line in payload))
-    return cue_text, tuple(words)
+def _vtt_cue_words(
+    payload: list[str], start_ms: int, rolling: bool
+) -> tuple[str, tuple[Word, ...]]:
+    """Read the new words of one cue, without the rolling carry-over.
+
+    A word's time is the inline tag written in front of it. A word with no tag
+    sits on a line YouTube was still writing when the cue opened, so it starts at
+    the cue start. That is only done when the cue really is timed to the word:
+    a cue of plain WebVTT carries no word times at all.
+
+    Args:
+        payload: The lines holding the new words.
+        start_ms: The cue start.
+        rolling: Whether the cue is a rolling continuation of the text written
+            so far. Then its untimed first word is the word the roll added.
+
+    Returns:
+        The new text of the cue, and its words. The words are empty when the cue
+        carries no usable time, which is what plain WebVTT does.
+    """
+    parts = _INLINE_TIME.split(" ".join(payload))
+    # parts is [text before the first time, time, text, time, text, ...].
+    has_inline_times = len(parts) > 1
+    timed = rolling or has_inline_times
+    texts = _vtt_text(parts[0]).split()
+    times: list[int | None] = [start_ms if timed else None] * len(texts)
+    for step in range(1, len(parts) - 1, 2):
+        word_text = _vtt_text(parts[step + 1])
+        if word_text:
+            texts.append(word_text)
+            times.append(_vtt_time_to_ms(parts[step]))
+
+    words = tuple(
+        Word(start_ms=time, text=word)
+        for word, time in zip(texts, times, strict=True)
+        if time is not None
+    )
+    return " ".join(texts), words
 
 
 def _vtt_text(line: str) -> str:

@@ -18,11 +18,27 @@ FIXTURES = pathlib.Path(__file__).parent / "fixtures"
 EXCERPT_SRV3 = FIXTURES / "excerpt.srv3"
 DIRECT_TEXT_SRV3 = FIXTURES / "direct_text.srv3"
 YOUTUBE_VTT = FIXTURES / "youtube.en.vtt"
+ROLLING_VTT = FIXTURES / "youtube_rolling.en.vtt"
 
 REAL_SRV3 = pathlib.Path(
     r"C:\Users\scott\Desktop\Code\townrecord-oversight\evidence\fixtures\youtube"
     r"\captions\3qfQAkAAC9U.en.srv3"
 )
+
+REAL_VTT = pathlib.Path(
+    r"C:\Users\scott\Desktop\Code\townrecord-oversight\evidence\fixtures\youtube"
+    r"\captions-vtt\3qfQAkAAC9U.en.vtt"
+)
+
+# Measured on the real file on 2026-09-27 with the parser in this unit:
+# 11573 cues, 5786 of them bridge cues that only repeat the finished line, so
+# 5787 segments. 99 of the 37504 text words carry no inline tag, so there are
+# 37405 Word objects.
+REAL_VTT_CUES = 11573
+REAL_VTT_BRIDGE_CUES = 5786
+REAL_VTT_SEGMENTS = 5787
+REAL_VTT_WORDS = 37405
+REAL_VTT_TEXT_WORDS = 37504
 
 # Measured on the real file on 2026-09-27 with the parser in this unit:
 # 11573 <p> elements, 5787 of them not empty after trimming. 53 of those 5787 are
@@ -276,3 +292,89 @@ def test_real_longmont_srv3() -> None:
     assert sum(len(segment.words) for segment in segments) == REAL_SRV3_WORDS
     assert all(segment.words[0].start_ms >= segment.start_ms for segment in with_words)
     assert all(segment.words[-1].start_ms <= segment.end_ms for segment in with_words)
+
+
+# --- YouTube's rolling auto-caption VTT -----------------------------------
+
+#: The speech of the rolling excerpt fixture, one entry per cue that adds a line.
+ROLLING_VTT_TEXTS = [
+    "I would now like to call the city of",
+    "Longmont regular session September 8th,",
+    "2026",
+    "um regular session meeting to order. The",
+    "live stream of this meeting can be",
+    "viewed uh on the city's YouTube channel",
+]
+
+
+def test_rolling_vtt_keeps_only_the_line_a_cue_adds() -> None:
+    segments = parse_vtt(read_bytes(ROLLING_VTT))
+    # The excerpt holds 12 cues. Six carry a new line, six are bridge cues that
+    # only repeat the finished line, so six segments come out.
+    assert [segment.text for segment in segments] == ROLLING_VTT_TEXTS
+
+
+def test_rolling_vtt_does_not_repeat_a_word() -> None:
+    segments = parse_vtt(read_bytes(ROLLING_VTT))
+    words = [word.text for segment in segments for word in segment.words]
+    # Every cue repeats the line above it. Read naively, the first line arrives
+    # three times over. Each word arrives once per time it is really spoken.
+    spoken_once = " ".join(ROLLING_VTT_TEXTS).split()
+    assert words == spoken_once
+    assert all(
+        segment.text == " ".join(word.text for word in segment.words) for segment in segments
+    )
+
+
+def test_rolling_vtt_times_the_untimed_first_word_from_the_cue_start() -> None:
+    first = parse_vtt(read_bytes(ROLLING_VTT))[0]
+    # "I" carries no inline tag because the cue was still being written when it
+    # opened, so it starts when the cue starts. The rest carry their own tags.
+    assert first.words[0] == Word(start_ms=3280, text="I")
+    assert first.words[1] == Word(start_ms=3600, text="would")
+    assert first.words[-1] == Word(start_ms=5120, text="of")
+    # The bridge cue at 5.269 only repeats the line above it and is not a segment.
+    assert 5269 not in [segment.start_ms for segment in parse_vtt(read_bytes(ROLLING_VTT))]
+
+
+@pytest.mark.skipif(
+    not REAL_VTT.exists() or not REAL_SRV3.exists(),
+    reason=f"real caption fixtures not present at {REAL_VTT.parent} or {REAL_SRV3.parent}",
+)
+def test_real_longmont_vtt() -> None:
+    segments = parse_vtt(REAL_VTT.read_bytes())
+    assert len(segments) == REAL_VTT_SEGMENTS
+    assert len(segments) + REAL_VTT_BRIDGE_CUES == REAL_VTT_CUES
+    assert all(segment.text for segment in segments)
+    starts = [segment.start_ms for segment in segments]
+    assert starts == sorted(starts)
+    assert all(segment.end_ms >= segment.start_ms for segment in segments)
+    assert segments[0].start_ms == 3280
+    assert segments[0].text == "I would now like to call the city of"
+    assert sum(len(segment.words) for segment in segments) == REAL_VTT_WORDS
+    assert sum(len(segment.text.split()) for segment in segments) == REAL_VTT_TEXT_WORDS
+    # A bridge cue of this meeting is 10 ms long. A bridge cue that got through
+    # would show up as a segment of exactly that length, and none does.
+    assert all(segment.end_ms - segment.start_ms != 10 for segment in segments)
+    # Short cues are still kept when they carry text: this one is 2 ms long.
+    shortest = min(segments, key=lambda segment: segment.end_ms - segment.start_ms)
+    assert (shortest.start_ms, shortest.end_ms, shortest.text) == (
+        13285518,
+        13285520,
+        "[clears throat]",
+    )
+
+
+@pytest.mark.skipif(
+    not REAL_VTT.exists() or not REAL_SRV3.exists(),
+    reason=f"real caption fixtures not present at {REAL_VTT.parent} or {REAL_SRV3.parent}",
+)
+def test_real_longmont_vtt_carries_the_same_speech_as_srv3() -> None:
+    vtt = parse_vtt(REAL_VTT.read_bytes())
+    srv3 = parse_srv3(REAL_SRV3.read_bytes())
+    # The two files are two renderings of one auto-caption track, so the words
+    # must come out in the same order, once each.
+    vtt_words = " ".join(segment.text for segment in vtt).split()
+    srv3_words = " ".join(segment.text for segment in srv3).split()
+    assert vtt_words == srv3_words
+    assert [segment.start_ms for segment in vtt] == [segment.start_ms for segment in srv3]
