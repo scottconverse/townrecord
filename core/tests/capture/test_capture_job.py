@@ -16,10 +16,11 @@ import pytest
 from townrecord import artifacts, proc, repo
 from townrecord.capture import CaptionCapture, CaptureFailed, CaptureSettings
 from townrecord.capture.archive import archive_path
-from townrecord.capture.command import JOB_KIND
-from townrecord.capture.job import MISSING_SIDECAR_REASON
+from townrecord.capture.command import JOB_KIND, Runner
+from townrecord.capture.job import BOT_CHECK_DEFERRAL, MISSING_SIDECAR_REASON
 from townrecord.jobs import PAUSED, QUEUED, RUNNING, JobDeferred, JobPaused, get
 from townrecord.jobs.queue import stamp
+from townrecord.runtime.javascript import FALLBACK_RUNTIME
 
 from .fakes import (
     INFO_AUTO_CAPTIONS,
@@ -28,22 +29,31 @@ from .fakes import (
     FakeClock,
     FakeYtDlp,
     claimed_job,
+    deno_beside,
     fake_429,
+    fake_bot_check,
+    private_python,
 )
 
 
 def capture(
     storage_root: Path,
-    fake: FakeYtDlp,
+    runner: Runner | None,
     *,
     settings: CaptureSettings | None = None,
+    interpreter: str = "python",
 ) -> CaptionCapture:
-    """The handler under test, wired to the fake runner."""
+    """The handler under test, wired to the fake runner.
+
+    ``interpreter="python"`` is a name and not a path, so unless a test passes a
+    real path the JavaScript runtime resolves to the bare fallback name and the
+    argument list does not depend on what this machine has installed.
+    """
     return CaptionCapture(
         storage_root=storage_root,
         settings=settings or CaptureSettings(),
-        runner=fake,
-        interpreter="python",
+        runner=runner,
+        interpreter=interpreter,
     )
 
 
@@ -91,6 +101,10 @@ def test_a_finished_video_is_captured_and_stored(
     assert json.loads(caption_artifact["meta"]) == {
         "origin": "auto_captions",
         "video_id": PLATFORM_VIDEO_ID,
+        # Spec 8.3, 8.9: the runtime that ran, and the client that answered, are
+        # part of what the capture records about itself.
+        "js_runtime": FALLBACK_RUNTIME,
+        "player_client": "default",
     }
 
     stored = segments(conn, int(transcript["id"]))
@@ -267,6 +281,7 @@ def test_a_rate_limit_is_a_paced_retry_and_never_audio(
     # Never audio: one command was run, it was the caption command, and no
     # other job was enqueued to fetch anything at all.
     assert len(fake.calls) == 1
+    assert fake.player_clients == [""]
     assert "--skip-download" in fake.argv
     for audio_flag in ("-x", "--extract-audio", "--audio-format", "--format"):
         assert audio_flag not in fake.argv
@@ -292,6 +307,110 @@ def test_another_failure_is_a_failure_with_the_last_line_of_stderr(
     with pytest.raises(CaptureFailed) as caught:
         capture(storage_root, fake)(claimed_job(conn, video, clock))
     assert str(caught.value) == ("yt-dlp exited with 1: ERROR: unable to download video data")
+    assert transcripts(conn, video) == []
+
+
+# -- the JavaScript runtime (spec 8.3, 8.9) --------------------------------
+
+
+def test_the_capture_gives_yt_dlp_the_runtime_of_the_private_venv(
+    conn: sqlite3.Connection, storage_root: Path, video: int, tmp_path: Path
+) -> None:
+    """Spec 8.3, 8.9: the runtime comes from the venv, not from the user's PATH."""
+    python = private_python(tmp_path)
+    fake = FakeYtDlp()
+    capture(storage_root, fake, interpreter=str(python))(claimed_job(conn, video, FakeClock()))
+
+    deno = deno_beside(python)
+    assert fake.argv[fake.argv.index("--js-runtimes") + 1] == f"deno:{deno}"
+
+    transcript = transcripts(conn, video)[0]
+    artifact = conn.execute(
+        "SELECT * FROM artifacts WHERE id = ?", (transcript["artifact_id"],)
+    ).fetchone()
+    # Which runtime ran is part of what the capture records about itself.
+    assert json.loads(artifact["meta"])["js_runtime"] == f"deno:{deno}"
+
+
+def test_a_private_venv_with_no_javascript_program_uses_the_fallback_name(
+    conn: sqlite3.Connection, storage_root: Path, video: int, tmp_path: Path
+) -> None:
+    """An older runtime the user still has names no path that does not exist."""
+    python = private_python(tmp_path, deno=False)
+    fake = FakeYtDlp()
+    capture(storage_root, fake, interpreter=str(python))(claimed_job(conn, video, FakeClock()))
+
+    assert fake.argv[fake.argv.index("--js-runtimes") + 1] == FALLBACK_RUNTIME
+
+
+# -- the bot check (spec 8.3) ----------------------------------------------
+
+
+def test_a_bot_check_is_answered_by_the_first_client_that_works(
+    conn: sqlite3.Connection, storage_root: Path, video: int
+) -> None:
+    """Spec 8.3: one retry per client, in order, and the first that answers wins."""
+    clock = FakeClock()
+    fake = fake_bot_check("visionos")
+    ctx = claimed_job(conn, video, clock)
+
+    capture(storage_root, fake)(ctx)
+
+    assert fake.player_clients == ["", "android_vr", "visionos"]
+    last = fake.calls[-1]["argv"]
+    assert last[last.index("--extractor-args") + 1] == "youtube:player_client=visionos"
+    # The winning client is the one recorded, and the capture did store a
+    # transcript: a retry that works is the capture that happened.
+    transcript = transcripts(conn, video)[0]
+    artifact = conn.execute(
+        "SELECT * FROM artifacts WHERE id = ?", (transcript["artifact_id"],)
+    ).fetchone()
+    assert json.loads(artifact["meta"])["player_client"] == "visionos"
+    assert repo.get_video(conn, video).capture_state == "captions"
+    assert job_of(conn, ctx)["state"] == RUNNING
+
+
+def test_a_bot_check_no_client_answers_waits_and_never_audio(
+    conn: sqlite3.Connection, storage_root: Path, video: int
+) -> None:
+    """Spec 8.3, 8.10: every client refused is a deferral, never a failure or audio."""
+    clock = FakeClock()
+    fake = fake_bot_check()
+    ctx = claimed_job(conn, video, clock)
+
+    with pytest.raises(JobDeferred) as caught:
+        capture(storage_root, fake)(ctx)
+
+    assert fake.player_clients == ["", "android_vr", "visionos", "tv_embedded"]
+    assert str(caught.value) == BOT_CHECK_DEFERRAL.format(tried="android_vr, visionos, tv_embedded")
+    row = job_of(conn, ctx)
+    assert row["state"] == QUEUED
+    assert row["run_after"] > stamp(clock.now)
+    assert row["last_error"] == str(caught.value)
+    # Not a failure, and never audio: nothing else was run or queued, and the
+    # video is exactly where it was.
+    assert conn.execute("SELECT COUNT(*) AS n FROM jobs").fetchone()["n"] == 1
+    assert repo.get_video(conn, video).capture_state == "pending"
+    assert transcripts(conn, video) == []
+    for command in (fake.argv,):
+        for audio_flag in ("-x", "--extract-audio", "--audio-format"):
+            assert audio_flag not in command
+
+
+def test_a_rate_limit_during_a_retry_stops_the_ladder(
+    conn: sqlite3.Connection, storage_root: Path, video: int
+) -> None:
+    """Only a bot check goes round the ladder; a 429 ends it where it stands."""
+    clock = FakeClock()
+    fake = FakeYtDlp(bot_check_until=(), rate_limit_clients=("android_vr",))
+    ctx = claimed_job(conn, video, clock)
+
+    with pytest.raises(JobDeferred) as caught:
+        capture(storage_root, fake)(ctx)
+
+    assert fake.player_clients == ["", "android_vr"]
+    assert str(caught.value) == "rate limited by YouTube (http error 429), will retry later"
+    assert job_of(conn, ctx)["state"] == QUEUED
     assert transcripts(conn, video) == []
 
 
