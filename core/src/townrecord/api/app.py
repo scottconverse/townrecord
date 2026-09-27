@@ -17,6 +17,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 
 from ..config import Settings
 from ..db import connect, migrate
+from . import read
 from .auth import require_token
 
 DESCRIPTION = "Local API for TownRecord. Every request needs a bearer token."
@@ -53,6 +54,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = settings
     app.state.db_path = settings.db_path
+    # The artifact rows hold a path relative to a root the user chose, so the
+    # root is runtime state and the read routes take it from here (spec 8.6).
+    app.state.storage_root = settings.storage_root
+
+    app.include_router(read.router)
 
     @app.get("/v1/health")
     def health() -> dict[str, str]:

@@ -21,6 +21,16 @@ def default_db_path() -> Path:
     return Path.home() / ".townrecord" / "townrecord.db"
 
 
+def default_storage_root() -> Path:
+    """Return the artifact storage root used when nothing else is configured.
+
+    The artifact rows hold a path relative to a root the user chose (migration
+    0004), so the root is runtime state rather than a fact of the database. It
+    sits next to the database by default.
+    """
+    return Path.home() / ".townrecord" / "storage"
+
+
 @dataclass(frozen=True)
 class Settings:
     """Settings for one run of the core service."""
@@ -28,6 +38,7 @@ class Settings:
     host: str = DEFAULT_HOST
     port: int = DEFAULT_PORT
     db_path: Path = field(default_factory=default_db_path)
+    storage_root: Path = field(default_factory=default_storage_root)
     version: str = __version__
 
     @classmethod
@@ -40,8 +51,10 @@ class Settings:
         except ValueError:
             port = DEFAULT_PORT
         db_text = source.get("TOWNRECORD_DB", "").strip()
+        storage_text = source.get("TOWNRECORD_STORAGE", "").strip()
         return cls(
             host=source.get("TOWNRECORD_HOST", "").strip() or DEFAULT_HOST,
             port=port,
             db_path=Path(db_text) if db_text else default_db_path(),
+            storage_root=Path(storage_text) if storage_text else default_storage_root(),
         )

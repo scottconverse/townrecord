@@ -54,6 +54,22 @@ def get_vote(conn: sqlite3.Connection, vote_id: int) -> Vote | None:
     return None if row is None else Vote.from_row(row)
 
 
+def votes_of_item(conn: sqlite3.Connection, agenda_item_id: int) -> list[Vote]:
+    """Return the votes on an item, strongest source first (spec 10.4).
+
+    When sources disagree, every row is returned and none of them is picked:
+    the order shows which source outweighs which, and the caller can see the
+    disagreement instead of a silent winner.
+    """
+    rows = conn.execute(
+        "SELECT * FROM votes WHERE agenda_item_id = ?", (agenda_item_id,)
+    ).fetchall()
+    votes = [Vote.from_row(row) for row in rows]
+    precedence = {kind: index for index, kind in enumerate(VOTE_SOURCE_KINDS)}
+    votes.sort(key=lambda vote: (precedence.get(vote.source_kind, len(precedence)), vote.id))
+    return votes
+
+
 def insert_video_citation(
     conn: sqlite3.Connection,
     *,
