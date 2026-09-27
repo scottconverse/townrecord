@@ -67,27 +67,59 @@ MAX_REPORTED_SKIPS = 50
 #: The separators a portal title uses before the kind of sitting.
 _TITLE_SEPARATORS = (" - ", ": ")
 
-#: The words that name the kind of sitting rather than the body holding it,
-#: longest first so that "study session" is read before "session".
-_SESSION_WORDS = (
-    "regular session",
-    "study session",
-    "special session",
-    "executive session",
-    "special meeting",
+#: The words that name the kind of sitting rather than the body holding it.
+#: A portal writes them spaced or hyphenated ("Pre-Session", "Pre Session") and
+#: sometimes in front of the body rather than behind it, so every one of them
+#: is read out of the title wherever it stands. The live sync stored a body
+#: called "City Council Pre" from a "City Council Pre-Session" title before
+#: this list was spelled out.
+SITTING_WORDS = (
     "continued meeting",
+    "executive session",
+    "joint meeting",
     "joint session",
+    "pre session",
+    "regular session",
+    "special meeting",
+    "special session",
+    "study session",
+    "work session",
     "workshop",
     "hearings",
-    "session",
     "meeting",
+    "session",
 )
 
-#: The meeting types migration ``0005_core_model.sql`` allows.
+#: How a portal marks a cancelled meeting in a title.
+_CANCELLED_WORDS = ("cancelled", "canceled")
+
+#: Every word a body name cannot carry: the sitting words and the words that
+#: say the sitting did not happen (spec 9.5), longest first so that a phrase is
+#: read before the single word inside it.
+_BODY_WORDS = tuple(sorted(SITTING_WORDS + _CANCELLED_WORDS, key=len, reverse=True))
+
+#: The dashes a title may join a sitting word with. They are read as spaces, so
+#: that "Pre-Session" and "Pre Session" are one string to every reading here.
+_DASHES = str.maketrans({character: " " for character in "‐‑‒–—―−-"})
+
+#: The marks a title may put around a body name and that are not part of it.
+_TITLE_MARKS = " .,-~*:;|/"
+
+#: The words that name the kind of sitting, with the type spec 6.2 gives it.
+#: All four types of the schema are reachable: a pre-session and a work session
+#: are sittings where the body works through material rather than the ordinary
+#: one, a joint sitting and a special one are both called special, and the
+#: portal's own ``meetingTypeId`` is no help (one id covers four different
+#: kinds of Water Board sitting in the recorded list).
 _MEETING_TYPES = (
     ("executive", "executive"),
     ("study", "study"),
+    ("work session", "study"),
+    ("workshop", "study"),
+    ("pre session", "special"),
     ("special", "special"),
+    ("joint meeting", "special"),
+    ("joint session", "special"),
     ("regular", "regular"),
 )
 
@@ -106,9 +138,6 @@ _TEMPLATE_KINDS = (
 
 #: Spec 9.5: the document a clerk publishes to cancel a meeting.
 NOTICE_OF_CANCELLATION = "notice of cancellation"
-
-#: How a portal marks a cancelled meeting in a title.
-_CANCELLED_WORDS = ("cancelled", "canceled")
 
 #: The hosts a meeting video is published on. A URL elsewhere has no id this
 #: module can read, and guessing one would attach the wrong video.
@@ -364,33 +393,90 @@ def syncable_source(conn: sqlite3.Connection, source_id: int) -> Source:
 def body_name(title: str) -> str:
     """Return the name of the body a portal title names.
 
-    A portal title reads "City Council Regular Session" or "Golf Course
-    Advisory Board - CANCELLED". The body is the part before the first
-    separator, with the words that name the sitting trimmed off the end. Both
-    recorded separators and both recorded sittings are covered; anything else
-    falls through as the title wrote it, and the caller reports what it looked
-    for when the jurisdiction has no such body.
+    A portal title reads "City Council Regular Session", "City Council
+    Pre-Session" or "Golf Course Advisory Board - CANCELLED". The body is the
+    part of the title that is not the sitting: the part before the first
+    separator, or the part after one when the part before it says nothing but
+    the sitting, with every sitting word and every cancellation word read out
+    of it wherever it stands. A portal writes one sitting both ways round
+    ("Pre-Session" in front, "CANCELLED - Parks and Recreation Advisory Board"
+    behind), so the two are read as one title with the words taken out of it
+    rather than as a word trimmed off an end.
+
+    A title that is nothing but a sitting or a cancellation ("CANCELLED") names
+    no body this reading can find, and the tidied title is returned for the
+    caller to report. It is deliberately not empty: an empty name is what a
+    title that names no body at all looks like, and the caller answers that one
+    with the source's own configured body, which would file this meeting under
+    the wrong one. Anything else falls through as the title wrote it.
     """
+    parts = _title_parts(title)
+    if not parts:
+        return ""
+    for part in parts:
+        named = _without_body_words(part)
+        if named:
+            return named
+    return _tidy(parts[0])
+
+
+def _title_parts(title: str) -> list[str]:
+    """The parts of a title around its first separator, head first."""
     text = (title or "").strip()
+    if not text:
+        return []
     for separator in _TITLE_SEPARATORS:
         if separator in text:
-            text = text.split(separator, 1)[0]
-            break
-    lowered = text.casefold()
-    for word in _SESSION_WORDS:
-        if lowered.endswith(word):
-            text = text[: len(text) - len(word)]
-            break
-    return text.strip(" .,-")
+            head, tail = text.split(separator, 1)
+            return [head.strip(), tail.strip()]
+    return [text]
+
+
+def _without_body_words(text: str) -> str:
+    """Return a part of a title with the sitting and cancellation words gone.
+
+    The words are matched on a folded copy of the text, in which the dashes a
+    title joins a sitting word with read as spaces and the case is not the
+    title's, and they are matched whole: "session" comes out of "Pre-Session"
+    and stays inside "Sessionalia". The folded copy is the same length as the
+    text, so what comes back is the title as it was written, not lowercased.
+    """
+    folded = text.lower().translate(_DASHES)
+    keep = [True] * len(folded)
+    for word in _BODY_WORDS:
+        start = 0
+        while True:
+            at = folded.find(word, start)
+            if at < 0:
+                break
+            end = at + len(word)
+            if all(keep[at:end]) and _whole_word(folded, at, end):
+                keep[at:end] = [False] * (end - at)
+            start = at + 1
+    return _tidy("".join(character for index, character in enumerate(text) if keep[index]))
+
+
+def _whole_word(folded: str, at: int, end: int) -> bool:
+    """Whether the match at these offsets is a word of its own."""
+    before = folded[at - 1] if at else " "
+    after = folded[end] if end < len(folded) else " "
+    return not before.isalnum() and not after.isalnum()
+
+
+def _tidy(text: str) -> str:
+    """A name with its runs of space collapsed and its marks of separation gone."""
+    return re.sub(r"\s+", " ", text).strip(_TITLE_MARKS)
 
 
 def meeting_type(title: str) -> str:
     """Return the meeting type a title names (spec 6.2).
 
     A title that names none is a regular session, which is the ordinary case:
-    a portal lists an ordinary sitting without labelling it.
+    a portal lists an ordinary sitting without labelling it. The same folded
+    reading as :func:`body_name` is used, so that a hyphenated sitting word
+    names its type the same way it names its body.
     """
-    lowered = (title or "").casefold()
+    lowered = (title or "").lower().translate(_DASHES)
     for needle, kind in _MEETING_TYPES:
         if needle in lowered:
             return kind

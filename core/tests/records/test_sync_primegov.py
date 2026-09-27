@@ -33,6 +33,7 @@ from .conftest import (
     Sync,
     document,
     meeting,
+    trimmed_2026,
 )
 
 #: The meeting the sync tests list, unless a test says otherwise.
@@ -188,6 +189,34 @@ def test_a_meeting_that_names_no_known_body_is_reported(
     assert checkpoint["skipped_total"] == 1
     assert "Planning Commission" in checkpoint["skipped"][0]
     assert "no body of jurisdiction" in checkpoint["skipped"][0]
+
+
+def test_the_day_the_live_sync_stored_one_of_three_meetings_stores_two(
+    area: Area, wired: FakePortal, sync: Sync
+) -> None:
+    """The live defect, over the listing the portal really gave for that day.
+
+    The portal listed three meetings for 2026-09-08 and the sync stored one:
+    the pre-session of the City Council was read as a body called "City Council
+    Pre" and skipped with it. The Housing Authority is still skipped, and
+    correctly, so the count is two rows and one recorded skip, not two and none.
+    """
+    wired.meetings = trimmed_2026((3709, 3710, 3797))
+    job_id = sync.queue_sync(area.portal_id, from_date="2026-09-08", to_date="2026-09-09")
+    sync.lane("normal")
+
+    stored = {
+        row["portal_meeting_id"]: (row["type"], row["title"])
+        for row in sync.conn.execute("SELECT portal_meeting_id, type, title FROM meetings")
+    }
+    assert stored == {
+        3709: ("regular", "City Council Regular Session"),
+        3710: ("special", "City Council Pre-Session"),
+    }
+    checkpoint = read_checkpoint(sync.conn, job_id)
+    assert checkpoint["meetings_created"] == 2
+    assert checkpoint["skipped_total"] == 1
+    assert "Longmont Housing Authority Advisory Board" in checkpoint["skipped"][0]
 
 
 # -- Videos -------------------------------------------------------------------
