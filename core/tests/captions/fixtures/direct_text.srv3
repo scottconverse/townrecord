@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8" ?><timedtext format="3">
+<head>
+<ws id="0"/>
+</head>
+<body>
+<p t="1000" d="2000" w="1"><s ac="0">Roll</s><s t="500" ac="0"> call,</s><s t="900" ac="0"> please.</s></p>
+<p t="3000" d="1500" w="1" a="1">
+</p>
+<p t="4500" d="2020" w="1">>> [snorts and clears throat]</p>
+<p t="7000" d="3000" w="1"><s ac="0">The</s><s t="400" ac="0"> city&#39;s</s><s t="900" ac="0"> budget &amp; more</s></p>
+</body>
+</timedtext>
