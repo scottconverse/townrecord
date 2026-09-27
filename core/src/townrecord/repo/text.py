@@ -129,6 +129,93 @@ def get_agenda_item(conn: sqlite3.Connection, agenda_item_id: int) -> AgendaItem
     return None if row is None else AgendaItem.from_row(row)
 
 
+def agenda_item_by_number(
+    conn: sqlite3.Connection, meeting_id: int, number: str
+) -> AgendaItem | None:
+    """Return the item a meeting carries under that number, or None."""
+    row = conn.execute(
+        "SELECT * FROM agenda_items WHERE meeting_id = ? AND number = ?", (meeting_id, number)
+    ).fetchone()
+    return None if row is None else AgendaItem.from_row(row)
+
+
+def upsert_agenda_item(
+    conn: sqlite3.Connection,
+    *,
+    meeting_id: int,
+    number: str,
+    title: str = "",
+    identifiers: Mapping[str, Any] | None = None,
+) -> tuple[int, bool]:
+    """Store one agenda item, or update the one a past sync stored.
+
+    A meeting carries one item per number, so the number is the key and a
+    second sync of the same agenda writes no second row.
+
+    A title that changed clears the time range: a boundary measured against a
+    different title is evidence of nothing, and `none` with an empty reason is
+    the honest state until alignment runs again (spec 10.2). Alignment is
+    written by :func:`update_agenda_item_alignment`, never here.
+
+    Returns the item id and whether the row was created.
+    """
+    stored = json.dumps(dict(identifiers or {}), sort_keys=True)
+    found = agenda_item_by_number(conn, meeting_id, number)
+    if found is None:
+        return (
+            insert_agenda_item(
+                conn,
+                meeting_id=meeting_id,
+                number=number,
+                title=title,
+                identifiers=identifiers,
+            ),
+            True,
+        )
+    if found.title != title:
+        conn.execute(
+            "UPDATE agenda_items SET title = ?, identifiers = ?, start_ms = NULL, "
+            "end_ms = NULL, alignment_method = 'none', alignment_reason = '' WHERE id = ?",
+            (title, stored, found.id),
+        )
+    elif json.dumps(found.identifiers, sort_keys=True) != stored:
+        conn.execute("UPDATE agenda_items SET identifiers = ? WHERE id = ?", (stored, found.id))
+    return found.id, False
+
+
+def update_agenda_item_alignment(
+    conn: sqlite3.Connection,
+    agenda_item_id: int,
+    *,
+    start_ms: int | None,
+    end_ms: int | None,
+    alignment_method: str,
+    alignment_reason: str = "",
+) -> None:
+    """Write the time range one item was aligned to (spec 10.2).
+
+    The schema refuses a method other than 'none' with only one end, and
+    refuses a range when the method is 'none'. The check is repeated here so
+    that a caller gets a sentence about its own call rather than a constraint
+    error from SQLite, which names no agenda item.
+    """
+    if alignment_method not in ALIGNMENT_METHODS:
+        raise ValueError(
+            f"An alignment method is one of {', '.join(ALIGNMENT_METHODS)}, "
+            f"not {alignment_method!r}."
+        )
+    timed = start_ms is not None or end_ms is not None
+    if alignment_method == "none" and timed:
+        raise ValueError("An item with no alignment carries no time range.")
+    if alignment_method != "none" and (start_ms is None or end_ms is None):
+        raise ValueError(f"An item aligned by {alignment_method} needs both ends of its range.")
+    conn.execute(
+        "UPDATE agenda_items SET start_ms = ?, end_ms = ?, alignment_method = ?, "
+        "alignment_reason = ? WHERE id = ?",
+        (start_ms, end_ms, alignment_method, alignment_reason, agenda_item_id),
+    )
+
+
 def agenda_items(conn: sqlite3.Connection, meeting_id: int) -> list[AgendaItem]:
     """Return the items of a meeting, in time order, untimed ones last."""
     rows = conn.execute(

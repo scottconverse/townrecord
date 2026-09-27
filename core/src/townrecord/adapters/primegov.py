@@ -23,6 +23,7 @@ import httpx
 
 from .. import __version__
 from .base import (
+    HTML_LIMIT_BYTES,
     PACKET_LIMIT_BYTES,
     PDF_LIMIT_BYTES,
     VIDEO_TIME_MISSING,
@@ -298,6 +299,10 @@ class PrimeGovAdapter:
             f"?meetingId={meeting_id}&meetingTemplateId={template_id}"
         )
 
+    def html_agenda_url(self, template_id: int) -> str:
+        """The portal URL of an HTML agenda (compileOutputType 3, spec 9.2)."""
+        return f"{self.base_url}{PORTAL_MEETING_PATH}?meetingTemplateId={template_id}"
+
     # -- Listing --------------------------------------------------------------
 
     def list_meetings(self, from_date: date | datetime, to_date: date | datetime) -> list[Meeting]:
@@ -406,6 +411,42 @@ class PrimeGovAdapter:
                     response.headers.get("content-type"),
                 )
         raise RedirectLimitExceeded(f"{source_url} redirected more than {MAX_REDIRECTS} times.")
+
+    def get_html_agenda(
+        self, document: Document, *, limit_bytes: int | None = None
+    ) -> DocumentContent:
+        """Fetch an HTML agenda (compileOutputType 3) and hash it (spec 9.2).
+
+        The body is the portal page itself, so there is no redirect to a signed
+        link here. It is fetched and hashed like any other document: the caller
+        stores the bytes as an artifact and keeps the portal URL as the origin.
+
+        The size limit is checked twice, on the declared length and again while
+        the body streams (spec 9.6).
+        """
+        if document.compile_output_type != 3:
+            raise AdapterError(
+                f"Template {document.template_id} is compileOutputType "
+                f"{document.compile_output_type}, not an HTML agenda."
+            )
+        if document.meeting_id is None:
+            raise AdapterError(
+                f"Document {document.id} does not carry its meeting id, "
+                "so a citation origin cannot be built."
+            )
+
+        limit = HTML_LIMIT_BYTES if limit_bytes is None else limit_bytes
+        source_url = self.html_agenda_url(document.template_id)
+        content, content_type = self._download(source_url, limit)
+
+        return DocumentContent(
+            content=content,
+            content_type=content_type,
+            sha256=hashlib.sha256(content).hexdigest(),
+            size=len(content),
+            source_url=source_url,
+            citation_url=self.citation_url(document.meeting_id, document.template_id),
+        )
 
     # -- HTML agendas ---------------------------------------------------------
 

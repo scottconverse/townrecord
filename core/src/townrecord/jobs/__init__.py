@@ -18,6 +18,7 @@ from .queue import (
     JobContext,
     JobDeferred,
     JobInterrupted,
+    JobNotPaused,
     JobPaused,
     claim,
     enqueue,
@@ -26,13 +27,14 @@ from .queue import (
     heartbeat,
     pause,
     read_checkpoint,
+    requeue_paused,
     requeue_stale,
     return_to_queue,
     save_checkpoint,
     short_reason,
     utcnow,
 )
-from .registry import Handler, Registry, register
+from .registry import Handler, Registry, default_registry, register
 from .runner import Runner
 from .settings import JobsSettings
 
@@ -50,11 +52,13 @@ __all__ = [
     "JobContext",
     "JobDeferred",
     "JobInterrupted",
+    "JobNotPaused",
     "JobPaused",
     "JobsSettings",
     "Registry",
     "Runner",
     "claim",
+    "default_registry",
     "enqueue",
     "finish",
     "get",
@@ -62,6 +66,7 @@ __all__ = [
     "pause",
     "read_checkpoint",
     "register",
+    "requeue_paused",
     "requeue_stale",
     "return_to_queue",
     "save_checkpoint",

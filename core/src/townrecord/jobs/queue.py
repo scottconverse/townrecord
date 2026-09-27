@@ -84,6 +84,10 @@ class ClaimLost(RuntimeError):
     """A write was refused because another worker holds the claim now."""
 
 
+class JobNotPaused(RuntimeError):
+    """A job was asked to come back to the queue, and it was not paused."""
+
+
 class JobPaused(Exception):
     """Raised by JobContext.pause, after the job is recorded as paused."""
 
@@ -371,6 +375,31 @@ def return_to_queue(
         job_id,
         token,
     )
+
+
+def requeue_paused(conn: sqlite3.Connection, job_id: int, *, reason: str) -> None:
+    """Put a paused job back in the queue, because what it waited for is here.
+
+    A paused job holds no claim, so no worker can send it back the way a
+    running job is sent back: the queue has to be asked to take it again. The
+    reason is kept in `last_error` until the next run claims the job and clears
+    it, which is what makes the pause visible in the meantime.
+
+    `attempts` is not touched: that count is the times a run was lost and
+    recovered (spec 16.1), and a job that never ran was not lost. Raises
+    :class:`JobNotPaused` when the job is not paused, so a caller that raced
+    another one finds out instead of writing over a run in progress.
+    """
+    text = " ".join(str(reason).split())
+    if not text:
+        raise ValueError("A job asked back into the queue needs a plain reason.")
+    cursor = conn.execute(
+        "UPDATE jobs SET state = ?, last_error = ?, claim_token = NULL, claimed_at = NULL, "
+        "heartbeat_at = NULL WHERE id = ? AND state = ?",
+        (QUEUED, text[:MAX_REASON], job_id, PAUSED),
+    )
+    if cursor.rowcount != 1:
+        raise JobNotPaused(f"Job {job_id} is not paused, so it was not put back in the queue.")
 
 
 def requeue_stale(

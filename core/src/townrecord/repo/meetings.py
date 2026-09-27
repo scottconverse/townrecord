@@ -53,6 +53,92 @@ def get_meeting(conn: sqlite3.Connection, meeting_id: int) -> Meeting | None:
     return None if row is None else Meeting.from_row(row)
 
 
+def meeting_by_portal_id(
+    conn: sqlite3.Connection, portal_source_id: int, portal_meeting_id: int
+) -> Meeting | None:
+    """Return the meeting a portal listed under that id, or None.
+
+    This is the lookup a second sync of the same window does, and the partial
+    unique index of migration 0009 is what makes it one row at most.
+    """
+    row = conn.execute(
+        "SELECT * FROM meetings WHERE portal_source_id = ? AND portal_meeting_id = ?",
+        (portal_source_id, portal_meeting_id),
+    ).fetchone()
+    return None if row is None else Meeting.from_row(row)
+
+
+def upsert_meeting(
+    conn: sqlite3.Connection,
+    *,
+    body_id: int,
+    starts_at: str,
+    title: str | None = None,
+    type: str = "regular",
+    is_cancelled: bool = False,
+    portal_source_id: int | None = None,
+    portal_meeting_id: int | None = None,
+    portal_html_template_id: int | None = None,
+) -> tuple[int, bool]:
+    """Store a meeting a portal listed, or update the row a past sync made.
+
+    The portal's own id finds the row first, and the body and start time
+    second: a meeting another adapter stored is the same meeting, and the sync
+    adopts it rather than writing a second row for one sitting.
+
+    A cancellation is never cleared. The notice that cancelled a meeting is a
+    fact about it, so a later listing that does not carry the marker leaves
+    the flag where it was. A template id already known is kept when this
+    listing has none.
+
+    Returns the meeting id and whether the row was created.
+    """
+    found = None
+    if portal_source_id is not None and portal_meeting_id is not None:
+        found = meeting_by_portal_id(conn, portal_source_id, portal_meeting_id)
+    if found is None:
+        row = conn.execute(
+            "SELECT * FROM meetings WHERE body_id = ? AND starts_at = ?", (body_id, starts_at)
+        ).fetchone()
+        found = None if row is None else Meeting.from_row(row)
+    if found is None:
+        created = insert_meeting(
+            conn,
+            body_id=body_id,
+            starts_at=starts_at,
+            title=title,
+            type=type,
+            is_cancelled=is_cancelled,
+        )
+        # The portal columns are written here rather than through insert_meeting,
+        # which stores a meeting and knows nothing about portals. A row a portal
+        # listed must carry the ids it was listed under, or a download cannot be
+        # cited back to the portal that published it (spec 9.2).
+        conn.execute(
+            "UPDATE meetings SET portal_source_id = ?, portal_meeting_id = ?, "
+            "portal_html_template_id = ? WHERE id = ?",
+            (portal_source_id, portal_meeting_id, portal_html_template_id, created),
+        )
+        return created, True
+    conn.execute(
+        "UPDATE meetings SET title = ?, type = ?, is_cancelled = ?, "
+        "portal_source_id = ?, portal_meeting_id = ?, portal_html_template_id = ? "
+        "WHERE id = ?",
+        (
+            title,
+            type,
+            int(found.is_cancelled or is_cancelled),
+            portal_source_id,
+            portal_meeting_id,
+            found.portal_html_template_id
+            if portal_html_template_id is None
+            else portal_html_template_id,
+            found.id,
+        ),
+    )
+    return found.id, False
+
+
 def insert_video(
     conn: sqlite3.Connection,
     *,
@@ -66,6 +152,7 @@ def insert_video(
     is_primary: bool = False,
     capture_state: str = "pending",
     readiness: str = "unknown",
+    source_note: str | None = None,
 ) -> int:
     """Store one listed video and return its id (spec 7.2 step 7).
 
@@ -86,6 +173,7 @@ def insert_video(
             "is_primary": int(is_primary),
             "capture_state": capture_state,
             "readiness": readiness,
+            "source_note": source_note,
         },
     )
 
@@ -107,6 +195,44 @@ def set_capture_state(conn: sqlite3.Connection, video_id: int, state: str) -> No
     conn.execute("UPDATE videos SET capture_state = ? WHERE id = ?", (state, video_id))
 
 
+def videos_of_platform(conn: sqlite3.Connection, platform_video_id: str) -> list[Video]:
+    """Return every video row with that platform id, oldest row first.
+
+    More than one row can exist when two sources list the same platform video,
+    which is why this returns a list and lets the caller choose. The caller
+    that knows about watched channels is the one that can choose well.
+    """
+    rows = conn.execute(
+        "SELECT * FROM videos WHERE platform_video_id = ? ORDER BY id", (platform_video_id,)
+    ).fetchall()
+    return [Video.from_row(row) for row in rows]
+
+
+def attach_video(
+    conn: sqlite3.Connection,
+    video_id: int,
+    *,
+    meeting_id: int,
+    is_primary: bool = True,
+    url: str | None = None,
+) -> None:
+    """Fill in what a video row was missing. Nothing already said changes.
+
+    The title, the source and the capture state stay as they are: a row a
+    watched channel made is that channel's row, and a listing that carries the
+    same platform video id never renames it (spec 7.2 step 7). What a listing
+    can add is the meeting the video belongs to, the primary flag, and the URL
+    when the row had none.
+    """
+    conn.execute(
+        "UPDATE videos SET meeting_id = COALESCE(meeting_id, ?), "
+        "url = COALESCE(url, ?), "
+        "is_primary = CASE WHEN ? = 1 THEN 1 ELSE is_primary END "
+        "WHERE id = ?",
+        (meeting_id, url, int(is_primary), video_id),
+    )
+
+
 def primary_video(conn: sqlite3.Connection, meeting_id: int) -> Video | None:
     """Return the primary video of a meeting, or None when it has none."""
     row = conn.execute(
@@ -124,11 +250,14 @@ def insert_record(
     source_id: int | None = None,
     title: str | None = None,
     page_count: int | None = None,
+    portal_document_id: int | None = None,
+    portal_template_id: int | None = None,
 ) -> int:
     """Store one document of a meeting and return its id.
 
     ``artifact_id`` is the content-addressed file from migration 0004. A record
-    never holds a raw path.
+    never holds a raw path. The two portal ids are the ids the portal published
+    the document under, which is what a citation of it names (spec 9.2).
     """
     return insert(
         conn,
@@ -140,6 +269,8 @@ def insert_record(
             "title": title,
             "artifact_id": artifact_id,
             "page_count": page_count,
+            "portal_document_id": portal_document_id,
+            "portal_template_id": portal_template_id,
         },
     )
 
@@ -150,6 +281,29 @@ def get_record(conn: sqlite3.Connection, record_id: int) -> Record | None:
     return None if row is None else Record.from_row(row)
 
 
+def record_for_portal_document(
+    conn: sqlite3.Connection, meeting_id: int, portal_document_id: int
+) -> Record | None:
+    """Return the record a portal document was stored as, or None.
+
+    This is the lookup that makes a second download of the same document a
+    no-op rather than a second row (spec 9.2).
+    """
+    row = conn.execute(
+        "SELECT * FROM records WHERE meeting_id = ? AND portal_document_id = ?",
+        (meeting_id, portal_document_id),
+    ).fetchone()
+    return None if row is None else Record.from_row(row)
+
+
+def records_of_meeting(conn: sqlite3.Connection, meeting_id: int) -> list[Record]:
+    """Return the documents of a meeting, in id order."""
+    rows = conn.execute(
+        "SELECT * FROM records WHERE meeting_id = ? ORDER BY id", (meeting_id,)
+    ).fetchall()
+    return [Record.from_row(row) for row in rows]
+
+
 def insert_record_page(
     conn: sqlite3.Connection,
     *,
@@ -157,8 +311,14 @@ def insert_record_page(
     page_number: int,
     text: str = "",
     footer_page_number: int | None = None,
+    ocr_reason: str | None = None,
 ) -> int:
-    """Store one page of a record and return its id (spec 9.6)."""
+    """Store one page of a record and return its id (spec 9.6).
+
+    ``ocr_reason`` is the plain sentence a page with no text layer is stored
+    with: it is a page that needs OCR, which is a later unit, and the reason is
+    what says so rather than the empty text.
+    """
     return insert(
         conn,
         "record_pages",
@@ -167,8 +327,28 @@ def insert_record_page(
             "page_number": page_number,
             "footer_page_number": footer_page_number,
             "text": text,
+            "ocr_reason": ocr_reason,
         },
     )
+
+
+def delete_record_pages(conn: sqlite3.Connection, record_id: int) -> int:
+    """Remove every page of one record and return how many there were.
+
+    Reading a record again writes its pages fresh rather than editing them in
+    place: a second reading of the same bytes writes the same rows, and a
+    reading of bytes that changed does not leave a page of the old one behind.
+    """
+    before = conn.execute(
+        "SELECT COUNT(*) FROM record_pages WHERE record_id = ?", (record_id,)
+    ).fetchone()[0]
+    conn.execute("DELETE FROM record_pages WHERE record_id = ?", (record_id,))
+    return int(before)
+
+
+def set_record_page_count(conn: sqlite3.Connection, record_id: int, page_count: int) -> None:
+    """Record how many pages a record's file has (spec 9.6)."""
+    conn.execute("UPDATE records SET page_count = ? WHERE id = ?", (page_count, record_id))
 
 
 def get_record_page(conn: sqlite3.Connection, record_page_id: int) -> RecordPage | None:

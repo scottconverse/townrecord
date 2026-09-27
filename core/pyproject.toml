@@ -8,6 +8,7 @@ license = "Apache-2.0"
 dependencies = [
     "fastapi>=0.115",
     "httpx>=0.28.1",
+    "pypdf>=6.19.0",
     "tzdata>=2025.1",
     "uvicorn>=0.30",
 ]
