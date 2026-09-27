@@ -156,6 +156,38 @@ def transcript_for_artifact(
     return None if row is None else Transcript.from_row(row)
 
 
+def sister_transcript(conn: sqlite3.Connection, video_id: int) -> Transcript | None:
+    """Return a transcript of another video of the same meeting, or None.
+
+    Spec 8.4.1 is the first fallback when a video has no usable captions: "The
+    sister channel. The same meeting on another watched channel." A meeting is
+    one row in ``meetings`` and the videos of that meeting are the rows in
+    ``videos`` that point at it, whichever channel published them, so the
+    sister is a transcript of an *other* video of the same meeting that we
+    already hold.
+
+    A settled transcript is preferred to a provisional one, and among equals
+    the earliest row wins. The order is fixed so that the same meeting answers
+    the same way twice; a transcript that is still inside the 24 hour window of
+    spec 8.7 may yet be replaced, and one outside it may not.
+
+    A video that is not matched to a meeting has no sister, and neither has the
+    only captured video of its meeting: None.
+    """
+    row = conn.execute(
+        "SELECT transcripts.* FROM transcripts "
+        "JOIN videos ON videos.id = transcripts.video_id "
+        "JOIN videos AS ours ON ours.id = ? "
+        "WHERE videos.meeting_id = ours.meeting_id "
+        "AND transcripts.video_id <> ours.id "
+        "AND ours.meeting_id IS NOT NULL "
+        "ORDER BY transcripts.is_provisional, transcripts.id "
+        "LIMIT 1",
+        (video_id,),
+    ).fetchone()
+    return None if row is None else Transcript.from_row(row)
+
+
 def segments_of(conn: sqlite3.Connection, transcript_id: int) -> list[Segment]:
     """Return the timed lines of a transcript, in time order."""
     rows = conn.execute(

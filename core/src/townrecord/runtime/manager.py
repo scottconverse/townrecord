@@ -1,18 +1,25 @@
-"""The private yt-dlp runtime: install, test, switch, roll back (spec 8.9, 14.4).
+"""The private tool runtime: install, test, switch, roll back (spec 8.9, 14.4).
 
-TownRecord owns yt-dlp. The tool lives in its own venv under an app-data root
-the user chose, one folder per version::
+TownRecord owns its tools. Each one lives in its own venv under an app-data
+root the user chose, one folder per version::
 
     <app-data>/runtimes/yt-dlp/current.json          the pointer
     <app-data>/runtimes/yt-dlp/update.lock           one update at a time
     <app-data>/runtimes/yt-dlp/2026.8.19/Scripts/python.exe
+    <app-data>/runtimes/textflowkit/current.json     the same, for spec 8.5
 
-The capture job asks :meth:`RuntimeManager.interpreter` for the Python that
-runs ``-m yt_dlp``, so the child never depends on what the system Python
-happens to have installed. When there is no usable runtime, that call raises
-with a plain sentence instead of falling back to the system Python: the fallback
-is exactly the failure this unit answers (a user-site yt-dlp the allow-listed
-child cannot see).
+which tool is which is :mod:`townrecord.runtime.tools`, so this class is the
+same code for both. The capture job asks :meth:`RuntimeManager.interpreter` for
+the Python that runs ``-m yt_dlp``, so the child never depends on what the
+system Python happens to have installed. When there is no usable runtime, that
+call raises with a plain sentence instead of falling back to the system Python:
+the fallback is exactly the failure this unit answers (a user-site yt-dlp the
+allow-listed child cannot see).
+
+The transcription job needs a program rather than a module, because spec 8.5
+runs TextFlowKit's own console script. That is
+:meth:`RuntimeManager.program`, and it is the same pointer, the same pin and
+the same rollback as the interpreter.
 
 The daily update of spec 8.9 is :meth:`check_and_update`: ask PyPI, install a
 newer version beside the current one, run the known-video test against the new
@@ -28,7 +35,6 @@ setting.
 from __future__ import annotations
 
 import logging
-import os
 import re
 import shutil
 from collections.abc import Callable, Sequence
@@ -38,10 +44,10 @@ from pathlib import Path
 import httpx
 
 from .. import proc, storage
-from . import pypi, versions
+from . import pypi, tools, versions
 from .lock import UpdateLock
 from .pointer import Installed, Pointer, read_pointer, write_pointer
-from .settings import RUNTIMES_FOLDER, TOOL_MODULE, TOOL_NAME, RuntimeSettings
+from .settings import RUNTIMES_FOLDER, TOOL_NAME, RuntimeSettings
 
 logger = logging.getLogger(__name__)
 
@@ -133,7 +139,8 @@ class RuntimeManager:
     #: The app-data root the user chose. Required, and never a default: the
     #: runtime must not end up inside the application folder.
     root: Path
-    #: The tool this manager installs. One tool for now (spec 8.9, 14.4).
+    #: Which tool this manager installs: ``yt-dlp`` or ``textflowkit``
+    #: (spec 8.9, 14.4). The name is the folder, the pointer and the pin.
     tool: str = TOOL_NAME
     settings: RuntimeSettings = field(default_factory=RuntimeSettings)
     #: The path of `uv`. None means look for it on PATH.
@@ -150,6 +157,9 @@ class RuntimeManager:
         application = storage.application_folder()
         if storage.is_inside(self.root.resolve(), application):
             raise ValueError("The app-data root must be outside the application folder.")
+        # Raises UnknownTool for a name TownRecord does not manage, so a typo
+        # never becomes a folder of its own under the user's app-data root.
+        self.spec = tools.tool_spec(self.tool)
         if self.runner is None:
             self.runner = proc.run
 
@@ -166,25 +176,24 @@ class RuntimeManager:
 
     def python_in(self, venv: str | Path) -> Path:
         """The interpreter inside a venv folder, on this operating system."""
-        folder = Path(venv)
-        if os.name == "nt":
-            return folder / "Scripts" / "python.exe"
-        return folder / "bin" / "python"
+        return tools.python_in(venv)
+
+    def program_in(self, venv: str | Path) -> Path:
+        """The tool's own program inside a venv folder, on this system."""
+        return tools.program_in(venv, self.spec.program)
 
     def uv_executable(self) -> str:
         """Return the path of `uv`, from the setting or from PATH."""
         found = (self.uv_path or "").strip() or shutil.which("uv")
         if not found:
             raise RuntimeToolMissing(
-                "uv was not found, so TownRecord cannot install yt-dlp. "
+                f"uv was not found, so TownRecord cannot install {self.tool}. "
                 "Install uv, or set its path in settings."
             )
         return found
 
-    def _installed_python(self, installed: Installed | None) -> Path | None:
-        """The interpreter of an installed runtime, or None when it is not there."""
-        if installed is None:
-            return None
+    def _venv_of_active(self, installed: Installed) -> Path | None:
+        """The resolved venv of an installed runtime, or None when it is elsewhere."""
         # Resolve before checking: the check is lexical, so a folder written as
         # `runtimes/../..` would otherwise pass it and then run from outside
         # the root the user chose.
@@ -192,8 +201,37 @@ class RuntimeManager:
         if not storage.is_inside(venv, self.root.resolve()):
             logger.warning("The pointer names a runtime outside the app-data root: %s", venv)
             return None
+        return venv
+
+    def _installed_python(self, installed: Installed | None) -> Path | None:
+        """The interpreter of an installed runtime, or None when it is not there."""
+        if installed is None:
+            return None
+        venv = self._venv_of_active(installed)
+        if venv is None:
+            return None
         python = self.python_in(venv)
         return python if python.is_file() else None
+
+    def _active(self) -> Installed:
+        """The active runtime from the pointer, or raise saying to run setup."""
+        try:
+            installed = self.read_pointer().active
+        except Exception as exc:  # a pointer that cannot be read is not a runtime
+            raise RuntimeNotInstalled(
+                f"The {self.tool} pointer could not be read ({exc}). "
+                f"Run setup to install {self.tool}."
+            ) from exc
+        if installed is None:
+            raise RuntimeNotInstalled(f"{self.tool} is not installed yet; run setup.")
+        return installed
+
+    def _not_where_the_pointer_says(self, installed: Installed) -> RuntimeNotInstalled:
+        """The plain sentence for a pointer that names a runtime that is not there."""
+        return RuntimeNotInstalled(
+            f"The {self.tool} runtime {installed.version} is not where the pointer says it is "
+            f"({installed.venv}); run setup to install it again."
+        )
 
     # -- running a child ---------------------------------------------------
 
@@ -205,7 +243,7 @@ class RuntimeManager:
         """Return the pointer file's contents."""
         return read_pointer(self.tool_root)
 
-    # -- what the capture job asks ----------------------------------------
+    # -- what the jobs ask ------------------------------------------------
 
     def interpreter(self) -> str:
         """Return the interpreter of the active runtime.
@@ -216,21 +254,33 @@ class RuntimeManager:
         depend on: the allow-listed child environment cannot see a user-site
         install.
         """
-        try:
-            installed = self.read_pointer().active
-        except Exception as exc:  # a pointer that cannot be read is not a runtime
-            raise RuntimeNotInstalled(
-                f"The yt-dlp pointer could not be read ({exc}). Run setup to install yt-dlp."
-            ) from exc
-        if installed is None:
-            raise RuntimeNotInstalled("yt-dlp is not installed yet; run setup.")
+        installed = self._active()
         python = self._installed_python(installed)
         if python is None:
-            raise RuntimeNotInstalled(
-                f"The yt-dlp runtime {installed.version} is not where the pointer says it is "
-                f"({installed.venv}); run setup to install it again."
-            )
+            raise self._not_where_the_pointer_says(installed)
         return str(python)
+
+    def program(self) -> str:
+        """Return the tool's own program in the active runtime.
+
+        Spec 8.5 runs TextFlowKit as a program rather than as ``python -m``, so
+        the transcription job asks for this path the same way the capture job
+        asks for :meth:`interpreter`. The check is the same one: the program
+        must be inside the app-data root the user chose, and a pointer that
+        names anything else is a plain error rather than a program from
+        somewhere TownRecord did not install.
+        """
+        installed = self._active()
+        venv = self._venv_of_active(installed)
+        if venv is None:
+            raise self._not_where_the_pointer_says(installed)
+        program = self.program_in(venv)
+        if not program.is_file():
+            raise RuntimeNotInstalled(
+                f"The {self.tool} runtime {installed.version} holds no {self.spec.program} "
+                f"program ({installed.venv}); run setup to install it again."
+            )
+        return str(program)
 
     # -- installing --------------------------------------------------------
 
@@ -250,7 +300,8 @@ class RuntimeManager:
         created = self._run(argv, self.settings.install_timeout_s)
         if not created.ok:
             raise RuntimeInstallFailed(
-                f"uv could not create the runtime folder for yt-dlp {requested}: {_tail(created)}"
+                f"uv could not create the runtime folder for {self.tool} {requested}: "
+                f"{_tail(created)}"
             )
         python = self.python_in(target)
         if not python.is_file():
@@ -265,10 +316,11 @@ class RuntimeManager:
             raise RuntimeInstallFailed(
                 f"uv could not install {self.tool} {requested}: {_tail(installed)}"
             )
-        reported = self._ask_version(python)
+        reported = self._ask_version(python, target)
         if not versions.same_version(requested, reported):
             logger.warning(
-                "Asked for yt-dlp %s and the venv reports %s; the venv is the fact.",
+                "Asked for %s %s and the venv reports %s; the venv is the fact.",
+                self.tool,
                 requested,
                 reported,
             )
@@ -278,23 +330,23 @@ class RuntimeManager:
             venv=target.relative_to(self.root).as_posix(),
             python=str(python),
         )
-        logger.info("Installed yt-dlp %s in %s.", result.version, result.venv)
+        logger.info("Installed %s %s in %s.", self.tool, result.version, result.venv)
         return result
 
-    def _ask_version(self, python: Path) -> str:
+    def _ask_version(self, python: Path, venv: Path) -> str:
         """Ask the venv which version it holds. This is the version recorded."""
         result = self._run(
-            [str(python), "-m", TOOL_MODULE, "--version"], self.settings.version_timeout_s
+            self.spec.version_argv(python=python, venv=venv), self.settings.version_timeout_s
         )
         if not result.ok:
             raise RuntimeInstallFailed(
-                f"The new yt-dlp runtime would not say which version it holds: {_tail(result)}"
+                f"The new {self.tool} runtime would not say which version it holds: {_tail(result)}"
             )
         text = result.stdout.decode("utf-8", errors="replace")
         lines = [line.strip() for line in text.splitlines() if line.strip()]
         if not lines:
             raise RuntimeInstallFailed(
-                "The new yt-dlp runtime answered no version, so nothing can be pinned."
+                f"The new {self.tool} runtime answered no version, so nothing can be pinned."
             )
         return lines[0]
 
@@ -310,7 +362,7 @@ class RuntimeManager:
     def check_and_update(
         self, test_video_url: str, probe: Probe, *, client: httpx.Client
     ) -> UpdateOutcome:
-        """Check PyPI, install a newer yt-dlp, test it, and switch if it passes.
+        """Check PyPI, install a newer version, test it, switch if it passes.
 
         The known-video test is the only thing that decides (spec 8.9): a
         version that fails it is never made active, and the reason is returned
@@ -318,7 +370,7 @@ class RuntimeManager:
         lock file of :mod:`townrecord.runtime.lock`.
         """
         latest = pypi.latest_version(client, tool=self.tool)
-        with UpdateLock(self.tool_root, stale_after_s=self.settings.lock_stale_s):
+        with UpdateLock(self.tool_root, stale_after_s=self.settings.lock_stale_s, tool=self.tool):
             pointer = self.read_pointer()
             current = pointer.active if self._installed_python(pointer.active) else None
             if current is not None and not versions.is_newer(latest, current.version):
@@ -368,9 +420,8 @@ class RuntimeManager:
                 ),
             )
 
-    @staticmethod
-    def _kept_phrase(kept: str | None) -> str:
-        return f"{TOOL_NAME} {kept}" if kept else "no version (there was none that worked)"
+    def _kept_phrase(self, kept: str | None) -> str:
+        return f"{self.tool} {kept}" if kept else "no version (there was none that worked)"
 
     def _probe(self, python: str, probe: Probe) -> tuple[bool, str]:
         """Run the known-video test. A test that blows up is a failed test."""
@@ -390,16 +441,16 @@ class RuntimeManager:
         update does: swapping the pointer while an update is midway through
         would leave the two disagreeing about which version is active.
         """
-        with UpdateLock(self.tool_root, stale_after_s=self.settings.lock_stale_s):
+        with UpdateLock(self.tool_root, stale_after_s=self.settings.lock_stale_s, tool=self.tool):
             pointer = self.read_pointer()
             earlier = pointer.previous
             if earlier is None:
-                raise RollbackUnavailable("There is no earlier yt-dlp to go back to.")
+                raise RollbackUnavailable(f"There is no earlier {self.tool} to go back to.")
             if self._installed_python(earlier) is None:
                 raise RollbackUnavailable(
-                    f"The earlier yt-dlp {earlier.version} is not on disk any more "
+                    f"The earlier {self.tool} {earlier.version} is not on disk any more "
                     f"({earlier.venv}), so there is nothing to go back to."
                 )
             write_pointer(self.tool_root, pointer.swapped())
-        logger.info("Rolled yt-dlp back to %s.", earlier.version)
+        logger.info("Rolled %s back to %s.", self.tool, earlier.version)
         return earlier

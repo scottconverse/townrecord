@@ -5,7 +5,8 @@ the user chose, so capture never depends on what happens to be installed for
 the system Python. That is the failure this unit answers: the allow-listed
 child environment of :mod:`townrecord.proc` has no ``APPDATA``, so a yt-dlp in
 the user site is invisible to the child and the run ends with
-``No module named yt_dlp``.
+``No module named yt_dlp``. The local transcriber of spec 8.5 is managed the
+same way, one folder per tool under the same root.
 
 Every value can be changed with a TOWNRECORD_RUNTIME_* environment variable,
 the same way the jobs and capture settings are read.
@@ -17,12 +18,23 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-#: The tool this package manages. One name, used for the folder and the pin.
+#: The first managed tool. The name is the folder under the runtimes root and
+#: the pin handed to `uv pip install`, so it is the PyPI project name.
 TOOL_NAME = "yt-dlp"
 
 #: The module that name runs as. `python -m yt_dlp --version` is how the venv
 #: is asked which version it holds (spec 8.9).
 TOOL_MODULE = "yt_dlp"
+
+#: The second managed tool: the local transcriber of spec 8.5. Its PyPI project
+#: name is its folder name and its pin, the same way yt-dlp's is.
+TEXTFLOWKIT_TOOL = "textflowkit"
+
+#: The program TextFlowKit installs into its venv. It is the same console
+#: script the argument list of spec 8.5 names
+#: (:data:`townrecord.stt.textflowkit.TEXTFLOWKIT_PROGRAM`); this constant is
+#: the runtime's own copy, so the runtime does not depend on the stt package.
+TEXTFLOWKIT_PROGRAM = "textflowkit"
 
 #: The folder under the app-data root that holds the private runtimes.
 RUNTIMES_FOLDER = "runtimes"

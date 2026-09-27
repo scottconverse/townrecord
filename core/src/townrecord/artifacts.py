@@ -160,6 +160,43 @@ def store(
     return _row_to_artifact(_find(conn, kind, sha), root)
 
 
+def merge_meta(
+    conn: sqlite3.Connection, artifact_id: int, meta: Mapping[str, Any] | None
+) -> dict[str, Any]:
+    """Add facts to an artifact's metadata, and return the whole record.
+
+    An artifact's metadata is written with its bytes, and the bytes never
+    change (spec 8.6). This is for the facts that are only known after the
+    bytes arrive: a local transcription stores the JSON, and the provenance of
+    spec 8.5 is written with the transcript row it belongs to.
+
+    The same facts written twice change nothing, which is what makes a job that
+    ran twice the same artifact and the same transcript (spec 8.7). A *different*
+    value for a key that is already stored raises instead of replacing it.
+
+    Raises:
+        ArtifactIntegrityError: There is no such artifact, or a key is already
+            recorded with another value.
+    """
+    row = conn.execute("SELECT meta FROM artifacts WHERE id = ?", (artifact_id,)).fetchone()
+    if row is None:
+        raise ArtifactIntegrityError(f"There is no artifact with id {artifact_id}.")
+    current = _meta_dict(row["meta"])
+    added = dict(meta or {})
+    for key, value in added.items():
+        if key in current and current[key] != value:
+            raise ArtifactIntegrityError(
+                f"Artifact {artifact_id} already records {key} as {current[key]!r}, and "
+                f"{value!r} would replace it. TownRecord never rewrites what an artifact says."
+            )
+    if added and any(current.get(key) != value for key, value in added.items()):
+        current = {**current, **added}
+        conn.execute(
+            "UPDATE artifacts SET meta = ? WHERE id = ?", (_meta_text(current), artifact_id)
+        )
+    return current
+
+
 def get(conn: sqlite3.Connection, artifact_id: int, storage_root: str | Path) -> Artifact | None:
     """Return the artifact row, or None when there is no such row.
 

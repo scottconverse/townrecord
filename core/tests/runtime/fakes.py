@@ -23,6 +23,7 @@ from townrecord.jobs import JobContext, claim, enqueue
 from townrecord.runtime import RuntimeManager, RuntimeSettings
 from townrecord.runtime.pointer import Installed, Pointer, write_pointer
 from townrecord.runtime.settings import PYPI_JSON_URL, RUNTIMES_FOLDER, TOOL_NAME
+from townrecord.runtime.tools import program_in
 
 #: A clock the tests move by hand, so no test sleeps for real seconds.
 START = datetime(2026, 9, 27, 12, 0, 0, tzinfo=UTC)
@@ -62,8 +63,8 @@ class FakeUV:
     """Stands in for `uv`, and for the python inside the venv `uv` builds.
 
     A call whose program is `uv` creates or fills a venv folder. Any other
-    program is the venv's own python being asked for its version, which is what
-    spec 8.9 records.
+    program is the venv's own python, or the tool's own console script, being
+    asked for its version, which is what spec 8.9 records.
     """
 
     def __init__(
@@ -75,6 +76,7 @@ class FakeUV:
         version_rc: int = 0,
         version_stderr: str = "",
         build_python: bool = True,
+        program: str | None = None,
     ) -> None:
         self.reported = reported
         self.venv_rc = venv_rc
@@ -82,8 +84,11 @@ class FakeUV:
         self.version_rc = version_rc
         self.version_stderr = version_stderr
         self.build_python = build_python
+        #: The console script this tool's venv holds, when it has one. None
+        #: means the tool is asked through ``python -m <module>`` instead.
+        self.program = program
         self.calls: list[dict[str, Any]] = []
-        #: Every `yt-dlp==<version>` pin uv was asked for.
+        #: Every `<tool>==<version>` pin uv was asked for.
         self.pins: list[str] = []
         #: Interpreter paths, in order, of the "which version are you" calls.
         self.asked: list[str] = []
@@ -108,6 +113,10 @@ class FakeUV:
                 python = venv_python(target)
                 python.parent.mkdir(parents=True, exist_ok=True)
                 python.write_text("#!/fake python\n", encoding="utf-8")
+            if self.venv_rc == 0 and self.program:
+                script = program_in(target, self.program)
+                script.parent.mkdir(parents=True, exist_ok=True)
+                script.write_text("#!/fake program\n", encoding="utf-8")
             return result(command, self.venv_rc, stderr="" if self.venv_rc == 0 else "boom")
         if subcommand == "pip":
             self.pins.append(command[-1])
@@ -164,22 +173,34 @@ def venv_python(venv: Path) -> Path:
     return venv / "bin" / "python"
 
 
-def make_venv(root: Path, folder: str) -> Path:
-    """Create the interpreter file of a fake venv under the app-data root."""
-    python = venv_python(root / RUNTIMES_FOLDER / TOOL_NAME / folder)
+def make_venv(
+    root: Path, folder: str, *, tool: str = TOOL_NAME, program: str | None = None
+) -> Path:
+    """Create the files of a fake venv under the app-data root."""
+    venv = root / RUNTIMES_FOLDER / tool / folder
+    python = venv_python(venv)
     python.parent.mkdir(parents=True, exist_ok=True)
     python.write_text("#!/fake python\n", encoding="utf-8")
+    if program:
+        script = program_in(venv, program)
+        script.write_text("#!/fake program\n", encoding="utf-8")
     return python
 
 
-def installed(folder: str, version: str) -> Installed:
+def installed(folder: str, version: str, *, tool: str = TOOL_NAME) -> Installed:
     """The pointer entry of a fake venv folder."""
-    return Installed(version=version, venv=f"{RUNTIMES_FOLDER}/{TOOL_NAME}/{folder}")
+    return Installed(version=version, venv=f"{RUNTIMES_FOLDER}/{tool}/{folder}")
 
 
-def write_installed(root: Path, active: Installed | None, previous: Installed | None) -> None:
+def write_installed(
+    root: Path,
+    active: Installed | None,
+    previous: Installed | None,
+    *,
+    tool: str = TOOL_NAME,
+) -> None:
     """Write a pointer by hand, as an earlier run of the service would have."""
-    write_pointer(root / RUNTIMES_FOLDER / TOOL_NAME, Pointer(active=active, previous=previous))
+    write_pointer(root / RUNTIMES_FOLDER / tool, Pointer(active=active, previous=previous))
 
 
 def manager_for(root: Path, runner: Any = None, **kwargs: Any) -> RuntimeManager:

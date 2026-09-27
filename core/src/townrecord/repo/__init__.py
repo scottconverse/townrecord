@@ -71,6 +71,7 @@ from .text import (
     insert_transcript,
     item_for_segment,
     segments_of,
+    sister_transcript,
     transcript_for_artifact,
 )
 
@@ -132,5 +133,6 @@ __all__ = [
     "record_source_failure",
     "segments_of",
     "set_capture_state",
+    "sister_transcript",
     "transcript_for_artifact",
 ]

@@ -14,7 +14,10 @@ One job, one video, and the order the spec gives:
 6. the caption file and the sidecar are stored as artifacts, and a missing
    sidecar is recorded rather than passed off as a success (8.6);
 7. the transcript and its lines are written in one transaction, the video is
-   marked captured, and the same bytes again change nothing (8.7).
+   marked captured, and the same bytes again change nothing (8.7);
+8. a run that ends with no usable captions is handed to the fallbacks of
+   spec 8.4 -- the sister channel, then the audio -- and is never a silent
+   success (the "Show transcript" panel of 8.4.2 is not implemented yet).
 
 The storage root is a setting the user chooses (spec 8.6), and the settings
 screen that saves it is a later unit, so the job takes the root as an argument
@@ -24,20 +27,21 @@ and is wired with it. Nothing here reads a root from a default.
 from __future__ import annotations
 
 import logging
-import sqlite3
 import sys
-from collections.abc import Mapping, Sequence
-from contextlib import suppress
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from .. import artifacts, proc, repo
+from ..captions import CaptionParseError
 from ..captions.parse import Segment, parse_srv3, parse_vtt
 from ..jobs import JobContext
-from . import archive, command, gate, limits, sidecar, work
+from ..stt.audio import AudioTrigger
+from . import archive, command, fallback, gate, limits, sidecar, work
 from .command import CaptureFailed
 from .settings import CaptureSettings
+from .store import insert_transcript_with_segments
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +59,17 @@ NO_ENGLISH_TRACK = (
 
 #: The reason recorded when a run wrote no caption file at all.
 NO_CAPTION_FILE = "yt-dlp finished without writing an English caption file."
+
+#: The capture state a stored caption leaves behind, from ``repo.CAPTURE_STATES``.
+#: ``repo.set_capture_state`` refuses a word that is not one of the five, so a
+#: typo here fails loudly instead of writing a state nothing looks for.
+CAPTIONS_STATE = "captions"
+
+#: The reason recorded when "Local transcription only" (spec 8.10) skipped the
+#: caption command: the video is transcribed instead, and the reason says so.
+LOCAL_TRANSCRIPTION_ONLY_REASON = (
+    "Local transcription only is on for this machine, so no caption track was fetched."
+)
 
 
 def video_id_from(payload: Any) -> int:
@@ -85,45 +100,6 @@ def parse_caption(path: Path) -> list[Segment]:
     return parse_vtt(data)
 
 
-def insert_transcript_with_segments(
-    conn: sqlite3.Connection,
-    *,
-    video_id: int,
-    artifact_id: int,
-    origin: str,
-    segments: Sequence[Segment],
-) -> int:
-    """Store a transcript and its lines in one transaction, and return its id.
-
-    Half a transcript is worse than none: a row whose lines are missing reads
-    like a meeting where nobody spoke. So the two writes are one transaction
-    and either both land or neither does (spec 8.7, PROJECT-BRIEF rule F).
-
-    The capture is provisional: the 24 hour rule of spec 8.7 is what makes a
-    capture final, and the pass that rechecks it is a later unit.
-    """
-    conn.execute("BEGIN IMMEDIATE")
-    try:
-        transcript_id = repo.insert_transcript(
-            conn, video_id=video_id, artifact_id=artifact_id, origin=origin, is_provisional=True
-        )
-        for segment in segments:
-            repo.insert_segment(
-                conn,
-                transcript_id=transcript_id,
-                start_ms=segment.start_ms,
-                end_ms=segment.end_ms,
-                text=segment.text,
-                speaker_label=None,
-            )
-        conn.execute("COMMIT")
-    except BaseException:
-        with suppress(sqlite3.Error):  # nothing to roll back
-            conn.execute("ROLLBACK")
-        raise
-    return transcript_id
-
-
 @dataclass
 class CaptionCapture:
     """The handler for the `capture_captions` job kind."""
@@ -151,13 +127,42 @@ class CaptionCapture:
         video = self._video(ctx)
         if self._wait_if_not_ready(ctx, video):
             return
+        if self.settings.local_transcription_only:
+            self._transcribe_instead(ctx, video)
+            return
         folder = work.work_dir(self.storage_root, video.platform_video_id)
         result = self._run(ctx, video, folder)
         if not result.ok:
             self._handle_failure(ctx, result)
-        self._store(ctx, video, folder)
-        repo.set_capture_state(ctx.conn, video.id, "captions")
-        logger.info("Captured the captions of video %s (%s).", video.id, video.platform_video_id)
+        state = self._store(ctx, video, folder)
+        if state is not None:
+            repo.set_capture_state(ctx.conn, video.id, state)
+        logger.info(
+            "Video %s (%s) finished as %s.",
+            video.id,
+            video.platform_video_id,
+            state if state is not None else "a hand-off (spec 8.4)",
+        )
+
+    def _transcribe_instead(self, ctx: JobContext, video: repo.Video) -> None:
+        """Skip the caption command entirely (spec 8.10).
+
+        "Local transcription only" is a setting, not a failure: nothing is run
+        and nothing is downloaded from the caption path, and the video goes
+        straight to the audio fallback of spec 8.4.3. The reason is recorded,
+        so the video does not read as a capture that quietly did nothing.
+        """
+        handoff = fallback.enqueue_transcription(
+            ctx,
+            video,
+            trigger=AudioTrigger.LOCAL_TRANSCRIPTION_ONLY,
+            reason=LOCAL_TRANSCRIPTION_ONLY_REASON,
+        )
+        logger.info(
+            "Video %s: local transcription only is on, so transcription job %s was queued.",
+            video.id,
+            handoff.job_id,
+        )
 
     # -- steps -------------------------------------------------------------
 
@@ -221,8 +226,15 @@ class CaptionCapture:
             + (f": {last}" if last else " and said nothing.")
         )
 
-    def _store(self, ctx: JobContext, video: repo.Video, folder: Path) -> None:
-        """Store the artifacts, the transcript and the lines (spec 8.6, 8.7)."""
+    def _store(self, ctx: JobContext, video: repo.Video, folder: Path) -> str | None:
+        """Store the artifacts, the transcript and the lines (spec 8.6, 8.7).
+
+        Returns:
+            The capture state to leave the video in, or None when the captions
+            were not stored and a spec 8.4 hand-off took over. A hand-off
+            records its own reason and moves the capture state itself, so the
+            caller writes nothing twice.
+        """
         info_path = work.info_file(folder)
         if info_path is None:
             artifacts.record_missing_sidecar(
@@ -234,7 +246,12 @@ class CaptionCapture:
             )
         caption_path = work.caption_file(folder)
         if caption_path is None:
-            raise CaptureFailed(NO_CAPTION_FILE)
+            # Spec 8.4: a run that wrote no caption file is the first fallback
+            # trigger, ``no_captions``. It is never reported as a capture that
+            # succeeded, and it is not an error either.
+            return self._hand_off(
+                ctx, video, reason=NO_CAPTION_FILE, trigger=AudioTrigger.NO_CAPTIONS
+            )
         info = work.read_info(info_path)
         origin = sidecar.caption_origin(info)
         if origin is None:
@@ -249,6 +266,28 @@ class CaptionCapture:
         )
         if refusal is not None:
             ctx.pause(refusal)
+        # The file is parsed before it is stored: a caption file that holds no
+        # lines is not worth keeping as the artifact of a transcript, and the
+        # spec 8.4 fallback starts from what it actually held.
+        try:
+            segments = parse_caption(caption_path)
+        except CaptionParseError as exc:
+            return self._hand_off(
+                ctx,
+                video,
+                reason=f"The caption file {caption_path.name} could not be read: {exc}",
+                trigger=AudioTrigger.CAPTIONS_UNUSABLE,
+            )
+        if not segments:
+            return self._hand_off(
+                ctx,
+                video,
+                reason=(
+                    f"The caption file {caption_path.name} "
+                    f"({caption_path.stat().st_size} bytes) parsed to no caption lines."
+                ),
+                trigger=AudioTrigger.CAPTIONS_UNUSABLE,
+            )
         caption_artifact = artifacts.store(
             ctx.conn,
             self.storage_root,
@@ -270,8 +309,7 @@ class CaptionCapture:
             # The same bytes are already the transcript of this video, so this
             # run adds nothing: same artifact, same transcript, same lines.
             logger.info("Video %s already has this transcript (%s).", video.id, known.id)
-            return
-        segments = parse_caption(caption_path)
+            return CAPTIONS_STATE
         transcript_id = insert_transcript_with_segments(
             ctx.conn,
             video_id=video.id,
@@ -286,4 +324,23 @@ class CaptionCapture:
             len(segments),
             origin,
             info_artifact.id,
+        )
+        return CAPTIONS_STATE
+
+    def _hand_off(
+        self,
+        ctx: JobContext,
+        video: repo.Video,
+        *,
+        reason: str,
+        trigger: AudioTrigger,
+    ) -> None:
+        """Take the next step of spec 8.4. The hand-off records the outcome."""
+        handoff = fallback.hand_off_captions(ctx, video, reason=reason, trigger=trigger)
+        logger.warning(
+            "Video %s: %s (%s, %s)",
+            video.id,
+            reason,
+            trigger.value,
+            "the meeting's other channel" if handoff.followed_sister else "a transcription job",
         )

@@ -31,6 +31,21 @@ CAPTION_EXTENSIONS: tuple[str, ...] = (SRV3, VTT)
 
 INFO_SUFFIX = ".info.json"
 
+#: The folder the audio of one meeting is downloaded into, inside its work
+#: folder (spec 8.5). Its own folder, so the audio download's sidecar cannot be
+#: read as the caption capture's sidecar: the two runs ask for different things.
+AUDIO_DIR_NAME = "audio"
+
+#: The folder one transcription writes its JSON into (spec 8.5). It is a folder
+#: of our own, never the one the audio sits in, so a transcript file can be read
+#: back without guessing which of its neighbours it is.
+TRANSCRIPT_DIR_NAME = "textflowkit"
+
+#: The audio extensions, in the order the download might produce them. The
+#: command asks for opus (spec 8.5); the rest are here so a run that converted
+#: to something else is still found rather than reported as no audio at all.
+AUDIO_EXTENSIONS: tuple[str, ...] = ("opus", "ogg", "m4a", "webm", "mp3", "wav", "aac", "mka")
+
 
 class WorkFolderError(ValueError):
     """A video id cannot be used to build a folder name."""
@@ -84,6 +99,30 @@ def info_file(folder: str | Path) -> Path | None:
         return None
     found = sorted(entry for entry in path.iterdir() if entry.name.endswith(INFO_SUFFIX))
     return found[0] if found else None
+
+
+def audio_dir(storage_root: str | Path, platform_video_id: str) -> Path:
+    """Return the folder the audio of a video is downloaded into (spec 8.5)."""
+    return work_dir(storage_root, platform_video_id) / AUDIO_DIR_NAME
+
+
+def transcript_dir(storage_root: str | Path, platform_video_id: str) -> Path:
+    """Return the folder a transcription of a video writes its JSON into."""
+    return work_dir(storage_root, platform_video_id) / TRANSCRIPT_DIR_NAME
+
+
+def audio_file(folder: str | Path) -> Path | None:
+    """Return the audio file a download wrote, or None (spec 8.5).
+
+    The command asks for opus, and that is what is looked for first; the other
+    extensions are looked for after it, so a machine whose converter produced
+    something else still yields the file that exists.
+    """
+    for extension in AUDIO_EXTENSIONS:
+        found = files_with_extension(folder, extension)
+        if found:
+            return found[0]
+    return None
 
 
 def read_info(path: str | Path) -> dict[str, Any]:

@@ -1,8 +1,9 @@
 """The `runtime_update` job (spec 8.9, 16.1, 16.2).
 
 The daily schedule of spec 16.2 enqueues this job once a day, and the job does
-the whole update in one run: ask PyPI, install a newer yt-dlp if there is one,
-test it against one known video, and switch only when the test passes.
+the whole update in one run: ask PyPI, install a newer version if there is one,
+test it against one known video, and switch only when the test passes. One job
+of this kind updates one tool, which is the manager it was built with.
 
 What the run found is left where the user can see it: a short checkpoint on the
 job, and, when the update could not be applied, a pause with the plain reason
@@ -21,7 +22,7 @@ import httpx
 from ..jobs import JobContext
 from ..jobs.registry import Registry, default_registry
 from .manager import Probe, RuntimeManager
-from .settings import RuntimeSettings
+from .settings import TOOL_NAME, RuntimeSettings
 
 logger = logging.getLogger(__name__)
 
@@ -46,11 +47,17 @@ class RuntimeUpdate:
     #: The video the probe captures, kept for the reason the user reads.
     test_video_url: str
 
+    @property
+    def tool(self) -> str:
+        """The tool this job updates. One job updates one tool (spec 8.9)."""
+        return self.manager.tool
+
     def __call__(self, ctx: JobContext) -> None:
         ctx.heartbeat()
         outcome = self.manager.check_and_update(self.test_video_url, self.probe, client=self.client)
         ctx.save_checkpoint(
             {
+                "tool": self.tool,
                 "checked": outcome.checked,
                 "requested": outcome.requested,
                 "active": outcome.active,
@@ -60,7 +67,7 @@ class RuntimeUpdate:
                 "reason": outcome.reason,
             }
         )
-        logger.info("The yt-dlp update check finished: %s", outcome.reason)
+        logger.info("The %s update check finished: %s", self.manager.tool, outcome.reason)
         if outcome.failed:
             ctx.pause(outcome.reason)
 
@@ -74,16 +81,24 @@ def register(
     registry: Registry | None = None,
     settings: RuntimeSettings | None = None,
     uv_path: str | None = None,
+    tool: str = TOOL_NAME,
 ) -> RuntimeUpdate:
     """Register the runtime update job and return the handler.
 
     The app-data root is required and is never defaulted: it is the folder the
     user chose, and a runtime installed under a guess would be a runtime
     nobody asked for.
+
+    `tool` says which tool this job updates, `yt-dlp` by default. It is passed
+    straight to the manager, which is where the name lives, so the checkpoint
+    and the log line cannot disagree with the folder being updated.
     """
     handler = RuntimeUpdate(
         manager=RuntimeManager(
-            root=Path(root), settings=settings or RuntimeSettings(), uv_path=uv_path
+            root=Path(root),
+            settings=settings or RuntimeSettings(),
+            uv_path=uv_path,
+            tool=tool,
         ),
         client=client,
         probe=probe,

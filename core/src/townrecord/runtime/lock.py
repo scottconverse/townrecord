@@ -24,7 +24,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .settings import LOCK_NAME
+from .settings import LOCK_NAME, TOOL_NAME
 
 
 class UpdateInProgress(RuntimeError):
@@ -38,6 +38,10 @@ class UpdateLock:
     Used as a context manager: :meth:`acquire` raises
     :class:`UpdateInProgress` when the lock is held, and the file is removed
     when the block ends.
+
+    There is one lock per tool, because the folder it guards is that tool's
+    (``<runtimes>/<tool>``). The tool's name is read from that folder unless it
+    is given, so the file and the sentences name the tool they are about.
     """
 
     tool_root: Path
@@ -45,8 +49,17 @@ class UpdateLock:
     #: The clock the staleness rule reads. Tests move it by hand.
     now: Callable[[], float] = field(default=time.time, repr=False)
     #: What the lock is for, kept in the file for the person who finds it.
-    purpose: str = "yt-dlp update"
+    #: Empty means ``<tool> update``.
+    purpose: str = ""
+    #: The tool this lock guards. Empty means the folder's own name.
+    tool: str = ""
     _taken: bool = field(default=False, init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        if not self.tool.strip():
+            self.tool = Path(self.tool_root).name or TOOL_NAME
+        if not self.purpose.strip():
+            self.purpose = f"{self.tool} update"
 
     @property
     def path(self) -> Path:
@@ -65,7 +78,8 @@ class UpdateLock:
                 stale = self._stale_reason()
                 if attempt == 2 or stale is None:
                     raise UpdateInProgress(
-                        stale or "Another yt-dlp update is running, so this one did not start."
+                        stale
+                        or f"Another {self.tool} update is running, so this one did not start."
                     ) from None
                 # The holder is gone: take the file over and try once more.
                 with contextlib.suppress(OSError):
@@ -86,7 +100,7 @@ class UpdateLock:
                 self._taken = True
                 return
         raise UpdateInProgress(  # pragma: no cover - the loop either takes it or raises
-            "Another yt-dlp update is running, so this one did not start."
+            f"Another {self.tool} update is running, so this one did not start."
         )
 
     def _stale_reason(self) -> str | None:
@@ -98,8 +112,8 @@ class UpdateLock:
         if age <= max(0.0, self.stale_after_s):
             return None
         return (
-            f"A yt-dlp update started {age / 3600:.1f} hours ago and never finished, so its "
-            "lock was taken over."
+            f"A {self.tool} update started {age / 3600:.1f} hours ago and never finished, "
+            "so its lock was taken over."
         )
 
     def release(self) -> None:
