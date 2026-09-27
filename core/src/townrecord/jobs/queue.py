@@ -46,6 +46,16 @@ STATES = (QUEUED, RUNNING, DONE, FAILED, PAUSED)
 #: States that a finished job may end in.
 FINISHED_STATES = (DONE, FAILED, PAUSED)
 
+#: A job a person or an API route asked for.
+ORIGIN_MANUAL = "manual"
+
+#: A job the daily schedule enqueued (spec 16.2). The two are recorded
+#: separately, which is what the column is for.
+ORIGIN_SCHEDULED = "scheduled"
+
+#: Every origin the table accepts, in order.
+ORIGINS = (ORIGIN_MANUAL, ORIGIN_SCHEDULED)
+
 #: The longest plain reason kept in `last_error`. A stack trace never goes here.
 MAX_REASON = 300
 
@@ -147,6 +157,7 @@ def enqueue(
     payload: Any = None,
     lane: str | None = None,
     *,
+    origin: str = ORIGIN_MANUAL,
     registry: Any = None,
     clock: Clock = utcnow,
 ) -> int:
@@ -155,15 +166,21 @@ def enqueue(
     `lane` None means the lane the kind is registered under, or `normal` when
     the kind is unknown. An API route calls this and returns at once
     (decision 10 rule 1).
+
+    `origin` says who asked for the job. The daily schedule of spec 16.2 passes
+    ``scheduled`` so that a scheduled run and a manual one are told apart by
+    every reader of the job, without a join.
     """
+    if origin not in ORIGINS:
+        raise ValueError(f"The origin must be one of {', '.join(ORIGINS)}.")
     chosen = lane
     if chosen is None:
         known = (default_registry if registry is None else registry).lane_for(kind)
         chosen = known or "normal"
     cursor = conn.execute(
-        "INSERT INTO jobs (kind, payload, lane, state, attempts, created_at) "
-        "VALUES (?, ?, ?, ?, 0, ?)",
-        (kind, _encode(payload), chosen, QUEUED, _moment(clock)),
+        "INSERT INTO jobs (kind, payload, lane, state, attempts, origin, created_at) "
+        "VALUES (?, ?, ?, ?, 0, ?, ?)",
+        (kind, _encode(payload), chosen, QUEUED, origin, _moment(clock)),
     )
     return int(cursor.lastrowid or 0)
 
