@@ -98,7 +98,12 @@ class Source(Row):
 
 @dataclass(frozen=True)
 class Meeting(Row):
-    """One sitting of one body."""
+    """One sitting of one body.
+
+    ``portal_source_id`` and ``portal_meeting_id`` are the id a meeting portal
+    listed this meeting under (spec 9.2). They are what a second sync of the
+    same window looks the meeting up by, so the row is not written twice.
+    """
 
     id: int
     body_id: int
@@ -107,12 +112,20 @@ class Meeting(Row):
     type: str
     is_cancelled: bool
     is_continued: bool
+    portal_source_id: int | None
+    portal_meeting_id: int | None
+    portal_html_template_id: int | None
     created_at: str
 
 
 @dataclass(frozen=True)
 class Video(Row):
-    """A recording on a video source."""
+    """A recording on a video source.
+
+    ``source_note`` is where the plain words go when a video was listed by an
+    adapter and no watched channel holds it (spec 9.2). The video is still one
+    row on the source that listed it, and the note says so.
+    """
 
     id: int
     source_id: int
@@ -125,12 +138,18 @@ class Video(Row):
     is_primary: bool
     capture_state: str
     readiness: str
+    source_note: str | None
     created_at: str
 
 
 @dataclass(frozen=True)
 class Record(Row):
-    """A document of a meeting, stored as an artifact."""
+    """A document of a meeting, stored as an artifact.
+
+    ``portal_document_id`` and ``portal_template_id`` are the ids the portal
+    published the document under. A citation names the portal and those ids;
+    the signed storage link is never one of them (spec 9.2).
+    """
 
     id: int
     meeting_id: int
@@ -139,6 +158,8 @@ class Record(Row):
     title: str | None
     artifact_id: int
     page_count: int | None
+    portal_document_id: int | None
+    portal_template_id: int | None
     created_at: str
 
 
@@ -243,6 +264,42 @@ class Citation(Row):
     created_at: str
 
 
+@dataclass(frozen=True)
+class MeetingAlignment(Row):
+    """One alignment run over one meeting (spec 10.2, migration 0009).
+
+    The offset is the one measured over the whole video and ``anchors`` are the
+    items it was measured from, so a reader can see why the boundaries are
+    where they are without re-running the aligner. One meeting has one row: a
+    second run rewrites it.
+    """
+
+    id: int
+    meeting_id: int
+    video_id: int | None
+    transcript_id: int | None
+    agenda_item_count: int
+    offset_s: int | None
+    offset_accepted: bool
+    offset_reason: str
+    anchors: list[dict[str, Any]]
+    anchors_agreeing: int
+    spoken_transitions: int
+    html_video_times: int
+    no_alignment: int
+    spoken_reason: str | None
+    html_reason: str | None
+    created_at: str
+    updated_at: str
+
+    @classmethod
+    def from_row(cls, row: sqlite3.Row) -> Self:
+        values = {field.name: row[field.name] for field in fields(cls)}
+        values["offset_accepted"] = bool(row["offset_accepted"])
+        values["anchors"] = _json_list(row["anchors"])
+        return cls(**values)
+
+
 def _json_object(text: Any) -> dict[str, Any]:
     """Read a JSON object from a text column. Anything else is an empty one."""
     if not text:
@@ -252,3 +309,16 @@ def _json_object(text: Any) -> dict[str, Any]:
     except (TypeError, ValueError):
         return {}
     return loaded if isinstance(loaded, dict) else {}
+
+
+def _json_list(text: Any) -> list[dict[str, Any]]:
+    """Read a JSON list of objects from a text column. Anything else is empty."""
+    if not text:
+        return []
+    try:
+        loaded = json.loads(text)
+    except (TypeError, ValueError):
+        return []
+    if not isinstance(loaded, list):
+        return []
+    return [entry for entry in loaded if isinstance(entry, dict)]

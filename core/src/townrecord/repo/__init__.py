@@ -5,6 +5,10 @@ Small typed functions that insert and read rows of migration
 column names of its table, and a query is written as SQL.
 """
 
+from .alignments import (
+    get_meeting_alignment,
+    save_meeting_alignment,
+)
 from .area import (
     BROKEN_AFTER_FAILURES,
     add_overlap,
@@ -23,6 +27,7 @@ from .area import (
     jurisdictions,
     overlaps_of,
     record_source_failure,
+    record_source_success,
 )
 from .evidence import (
     VOTE_SOURCE_KINDS,
@@ -35,6 +40,7 @@ from .evidence import (
     votes_of_item,
 )
 from .meetings import (
+    attach_video,
     get_meeting,
     get_record,
     get_record_page,
@@ -43,9 +49,14 @@ from .meetings import (
     insert_record,
     insert_record_page,
     insert_video,
+    meeting_by_portal_id,
     meetings_of_body,
     primary_video,
+    record_for_portal_document,
     record_pages,
+    records_of_meeting,
+    upsert_meeting,
+    videos_of_platform,
 )
 from .rows import (
     AgendaItem,
@@ -53,6 +64,7 @@ from .rows import (
     Citation,
     Jurisdiction,
     Meeting,
+    MeetingAlignment,
     Person,
     Record,
     RecordPage,
@@ -74,6 +86,7 @@ from .search import (
 )
 from .text import (
     ALIGNMENT_METHODS,
+    agenda_item_by_number,
     agenda_items,
     get_agenda_item,
     get_segment,
@@ -85,6 +98,8 @@ from .text import (
     items_for_segments,
     latest_transcript,
     segments_of,
+    update_agenda_item_alignment,
+    upsert_agenda_item,
 )
 
 __all__ = [
@@ -98,6 +113,7 @@ __all__ = [
     "Citation",
     "Jurisdiction",
     "Meeting",
+    "MeetingAlignment",
     "Person",
     "Record",
     "RecordPage",
@@ -110,8 +126,10 @@ __all__ = [
     "Video",
     "Vote",
     "add_overlap",
+    "agenda_item_by_number",
     "agenda_items",
     "all_sources",
+    "attach_video",
     "bodies",
     "citation_sha256",
     "get_agenda_item",
@@ -119,6 +137,7 @@ __all__ = [
     "get_citation",
     "get_jurisdiction",
     "get_meeting",
+    "get_meeting_alignment",
     "get_person",
     "get_record",
     "get_record_page",
@@ -148,13 +167,22 @@ __all__ = [
     "jurisdictions",
     "latest_transcript",
     "match_expression",
+    "meeting_by_portal_id",
     "meetings_of_body",
     "overlaps_of",
     "primary_video",
     "query_terms",
+    "record_for_portal_document",
     "record_pages",
     "record_source_failure",
+    "record_source_success",
+    "records_of_meeting",
+    "save_meeting_alignment",
     "search",
     "segments_of",
+    "update_agenda_item_alignment",
+    "upsert_agenda_item",
+    "upsert_meeting",
+    "videos_of_platform",
     "votes_of_item",
 ]

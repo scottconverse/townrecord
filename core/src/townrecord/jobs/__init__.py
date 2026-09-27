@@ -31,7 +31,7 @@ from .queue import (
     short_reason,
     utcnow,
 )
-from .registry import Handler, Registry, register
+from .registry import Handler, Registry, default_registry, register
 from .runner import Runner
 from .settings import JobsSettings
 
@@ -53,6 +53,7 @@ __all__ = [
     "Registry",
     "Runner",
     "claim",
+    "default_registry",
     "enqueue",
     "finish",
     "get",

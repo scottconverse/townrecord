@@ -14,6 +14,9 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Protocol
 
+#: Spec 9.6: an HTML agenda is at most 5 MB by default.
+HTML_LIMIT_BYTES = 5 * 1024 * 1024
+
 #: Spec 9.6: a PDF is at most 25 MB by default.
 PDF_LIMIT_BYTES = 25 * 1024 * 1024
 

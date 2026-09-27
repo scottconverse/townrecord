@@ -1,0 +1,542 @@
+"""The sync job: what one window of a PrimeGov portal becomes (spec 7.2, 7.3, 9.5).
+
+Every test here names its own city through a source row and a fake portal on a
+test host. Nothing in this file, and nothing in the job, knows a real city's
+URL: the origin comes off the source row and from nowhere else (rule D), which
+``test_the_origin_comes_off_the_source_row`` checks by syncing two different
+sources and looking at which host each one asked.
+"""
+
+from __future__ import annotations
+
+import json
+import sqlite3
+from typing import Any
+
+from townrecord.jobs import DONE, FAILED, PAUSED, read_checkpoint
+from townrecord.repo import (
+    agenda_items,
+    all_sources,
+    get_meeting,
+    insert_video,
+    meeting_by_portal_id,
+    primary_video,
+    records_of_meeting,
+    videos_of_platform,
+)
+
+from .conftest import (
+    BASE_URL,
+    SIGNED_MARKER,
+    Area,
+    FakePortal,
+    Sync,
+    document,
+    meeting,
+)
+
+#: The meeting the sync tests list, unless a test says otherwise.
+A_MEETING = 4100
+
+#: The video URL of that meeting.
+A_VIDEO_URL = "https://www.youtube.com/watch?v=3qfQAkAAC9U"
+
+
+def one_meeting(portal: FakePortal, **entry: Any) -> int:
+    """List exactly one meeting on the fake portal and return its portal id."""
+    listed = meeting(A_MEETING, "2026-09-08T19:00:00", "City Council Regular Session", **entry)
+    portal.meetings = [listed]
+    return int(listed["id"])
+
+
+# -- Rule D: no city of the job's own -----------------------------------------
+
+
+def test_the_origin_comes_off_the_source_row(area: Area, wired: FakePortal, sync: Sync) -> None:
+    """Two sources, two origins: each sync asks its own portal and no other.
+
+    Both fake sources share one transport, so the host of every request is the
+    host of the source row the job was given, and nothing else: the sync of the
+    second source asks the second origin, which is the whole of rule D.
+    """
+    one_meeting(wired, video_url=None)
+    first = sync.queue_sync(area.portal_id)
+    sync.lane("normal")
+    first_hosts = set(wired.hosts())
+
+    wired.reset_requests()
+    second = sync.queue_sync(area.other_portal_id)
+    sync.lane("normal")
+    second_hosts = set(wired.hosts())
+
+    assert first_hosts == {"portal.test.invalid"}, "the first sync asked its own portal only"
+    assert second_hosts == {"second.test.invalid"}, "the second sync asked its own origin"
+    assert sync.job(first)["state"] == DONE
+    assert sync.job(second)["state"] == DONE
+
+
+def test_a_sync_no_city_appears_in_the_requests(area: Area, wired: FakePortal, sync: Sync) -> None:
+    """Nothing the job asked for names a city, because no row did (rule D)."""
+    one_meeting(wired, video_url=A_VIDEO_URL)
+    sync.queue_sync(area.portal_id)
+    sync.lane("normal")
+
+    asked = " ".join(str(request.url) for request in wired.requests).casefold()
+
+    assert "longmont" not in asked, "no real city was asked for"
+    assert BASE_URL.casefold() in asked, "the configured origin is what was asked for"
+
+
+def test_a_source_of_another_type_is_refused_by_name(
+    area: Area, wired: FakePortal, sync: Sync
+) -> None:
+    """A video channel is not a meeting portal, and the job says which it is."""
+    job_id = sync.queue_sync(area.channel_id)
+    sync.lane("normal")
+
+    row = sync.job(job_id)
+    assert row["state"] == PAUSED
+    assert "video_channel" in row["last_error"]
+    assert "not a meeting portal" in row["last_error"]
+    assert wired.requests == [], "a refused sync reads nothing"
+
+
+def test_a_source_nobody_accepted_is_refused(area: Area, wired: FakePortal, sync: Sync) -> None:
+    """A suggested source is not synced, and the reason says so."""
+    suggested = area.source(
+        type="meeting_portal", origin="https://suggested.test.invalid", status="suggested"
+    )
+    job_id = sync.queue_sync(suggested)
+    sync.lane("normal")
+
+    row = sync.job(job_id)
+    assert row["state"] == PAUSED
+    assert "suggested" in row["last_error"]
+    assert "accepted or broken" in row["last_error"]
+
+
+# -- Meetings, their portal ids and their cancellation ------------------------
+
+
+def test_the_portal_meeting_id_lands_in_its_own_column(
+    area: Area, wired: FakePortal, sync: Sync
+) -> None:
+    """Spec 9.2: the portal's id is a column, not a field of a JSON blob."""
+    one_meeting(wired)
+    sync.queue_sync(area.portal_id)
+    sync.lane("normal")
+
+    row = sync.conn.execute("SELECT * FROM meetings").fetchone()
+    assert row["portal_meeting_id"] == A_MEETING
+    assert row["portal_source_id"] == area.portal_id
+    assert row["body_id"] == area.body_id
+    assert row["type"] == "regular"
+    assert row["title"] == "City Council Regular Session"
+
+    stored = meeting_by_portal_id(sync.conn, area.portal_id, A_MEETING)
+    assert stored is not None and stored.id == row["id"]
+
+
+def test_a_notice_of_cancellation_marks_the_meeting(
+    area: Area, wired: FakePortal, sync: Sync
+) -> None:
+    """Spec 9.5: the clerk's notice is the signal, and the meeting is marked."""
+    one_meeting(
+        wired,
+        documents=(document(9001, 900, 1, "Notice of Cancellation"),),
+    )
+    sync.queue_sync(area.portal_id)
+    sync.lane("normal")
+
+    found = meeting_by_portal_id(sync.conn, area.portal_id, A_MEETING)
+    assert found is not None
+    assert found.is_cancelled is True
+    titles = {record.title for record in records_of_meeting(sync.conn, found.id)}
+    assert "Notice of Cancellation" not in titles, (
+        "a cancellation notice is not a record of the meeting"
+    )
+
+
+def test_a_title_that_says_cancelled_marks_the_meeting(
+    area: Area, wired: FakePortal, sync: Sync
+) -> None:
+    """The other signal spec 9.5 records: a portal that marks it in the title."""
+    wired.meetings = [
+        meeting(A_MEETING, "2026-09-08T19:00:00", "City Council Regular Session - CANCELLED")
+    ]
+    sync.queue_sync(area.portal_id)
+    sync.lane("normal")
+
+    found = meeting_by_portal_id(sync.conn, area.portal_id, A_MEETING)
+    assert found is not None
+    assert found.is_cancelled is True
+    assert found.body_id == area.body_id, "the body is still read out of the title"
+
+
+def test_a_meeting_that_names_no_known_body_is_reported(
+    area: Area, wired: FakePortal, sync: Sync
+) -> None:
+    """A body the jurisdiction does not hold is a skip with a reason, not a row."""
+    wired.meetings = [
+        meeting(A_MEETING, "2026-09-08T19:00:00", "Planning Commission Regular Session")
+    ]
+    job_id = sync.queue_sync(area.portal_id)
+    sync.lane("normal")
+
+    assert sync.conn.execute("SELECT COUNT(*) FROM meetings").fetchone()[0] == 0
+    checkpoint = read_checkpoint(sync.conn, job_id)
+    assert checkpoint["skipped_total"] == 1
+    assert "Planning Commission" in checkpoint["skipped"][0]
+    assert "no body of jurisdiction" in checkpoint["skipped"][0]
+
+
+# -- Videos -------------------------------------------------------------------
+
+
+def test_a_video_url_becomes_a_video_row(area: Area, wired: FakePortal, sync: Sync) -> None:
+    """Spec 7.2 step 7: the listing's videoUrl is the video, with no title invented."""
+    one_meeting(wired, video_url=A_VIDEO_URL)
+    sync.queue_sync(area.portal_id)
+    sync.lane("normal")
+
+    rows = videos_of_platform(sync.conn, "3qfQAkAAC9U")
+    assert len(rows) == 1
+    video = rows[0]
+    assert video.meeting_id is not None
+    assert video.url == A_VIDEO_URL
+    assert video.is_primary is True
+    assert video.title is None, "a listing gives no title, and none is invented"
+    assert str(area.portal_id) in (video.source_note or "")
+    assert video.capture_state == "pending", "a listing is not a capture"
+
+    found = get_meeting(sync.conn, video.meeting_id)
+    assert found is not None and found.portal_meeting_id == A_MEETING
+
+
+def test_a_video_a_watched_channel_holds_is_adopted_and_never_renamed(
+    area: Area, wired: FakePortal, sync: Sync
+) -> None:
+    """Spec 7.2 step 7: the channel's row is the video, and it keeps its title."""
+    video_id = insert_video(
+        sync.conn,
+        source_id=area.channel_id,
+        platform_video_id="3qfQAkAAC9U",
+        title="City Council Regular Session, September 8 2026",
+        duration_s=14407,
+        capture_state="captions",
+        readiness="finished",
+    )
+    one_meeting(wired, video_url=A_VIDEO_URL)
+    sync.queue_sync(area.portal_id)
+    sync.lane("normal")
+
+    rows = videos_of_platform(sync.conn, "3qfQAkAAC9U")
+    assert [row.id for row in rows] == [video_id], "no second row was made for one video"
+    adopted = rows[0]
+    assert adopted.title == "City Council Regular Session, September 8 2026"
+    assert adopted.source_id == area.channel_id, "the row stays the channel's"
+    assert adopted.duration_s == 14407
+    assert adopted.capture_state == "captions", "the sync does not touch a capture's state"
+    assert adopted.meeting_id is not None
+    assert adopted.url == A_VIDEO_URL
+    assert primary_video(sync.conn, adopted.meeting_id) is not None
+
+
+def test_a_video_url_that_is_not_a_video_link_is_reported(
+    area: Area, wired: FakePortal, sync: Sync
+) -> None:
+    """A link with no id this job can read is a skip with its reason."""
+    one_meeting(wired, video_url="https://example.invalid/watch/whatever")
+    job_id = sync.queue_sync(area.portal_id)
+    sync.lane("normal")
+
+    assert sync.conn.execute("SELECT COUNT(*) FROM videos").fetchone()[0] == 0
+    checkpoint = read_checkpoint(sync.conn, job_id)
+    assert "not a link this sync can read an id out of" in checkpoint["skipped"][0]
+
+
+# -- Documents ----------------------------------------------------------------
+
+
+def test_each_compiled_document_becomes_one_heavy_download_job(
+    area: Area, wired: FakePortal, sync: Sync
+) -> None:
+    """Spec 9.6: a packet is heavy, and one document is one job."""
+    wired.meetings = [
+        meeting(
+            A_MEETING,
+            "2026-09-08T19:00:00",
+            "City Council Regular Session",
+            documents=(
+                document(18613, 16805, 1, "Agenda"),
+                document(18658, 16807, 1, "Agenda Packet"),
+                document(18657, 16805, 3, "HTML Agenda"),
+                document(9001, 900, 1, "Notice of Cancellation"),
+            ),
+        )
+    ]
+    job_id = sync.queue_sync(area.portal_id)
+    sync.lane("normal")
+
+    downloads = sync.jobs_of_kind("download_record")
+    assert [row["lane"] for row in downloads] == ["heavy", "heavy"]
+    assert {row["state"] for row in downloads} == {"queued"}
+    assert [json.loads(row["payload"]) for row in downloads] == [
+        {
+            "source_id": area.portal_id,
+            "meeting_id": 1,
+            "document_id": 18613,
+            "template_id": 16805,
+            "compile_output_type": 1,
+            "template_name": "Agenda",
+        },
+        {
+            "source_id": area.portal_id,
+            "meeting_id": 1,
+            "document_id": 18658,
+            "template_id": 16807,
+            "compile_output_type": 1,
+            "template_name": "Agenda Packet",
+        },
+    ], "one job per compiled document, in the order the portal listed them"
+
+    checkpoint = read_checkpoint(sync.conn, job_id)
+    assert checkpoint["documents_queued"] == 2
+    assert checkpoint["html_agendas_read"] == 1
+    assert any("Notice of Cancellation" in sentence for sentence in checkpoint["skipped"])
+
+
+def test_the_html_agenda_is_read_here_and_its_items_are_stored(
+    area: Area, wired: FakePortal, sync: Sync
+) -> None:
+    """Spec 9.2: the HTML agenda is small, and its items are stored without times."""
+    wired.meetings = [
+        meeting(
+            A_MEETING,
+            "2026-09-08T19:00:00",
+            "City Council Regular Session",
+            video_url=A_VIDEO_URL,
+            documents=(document(18657, 16805, 3, "HTML Agenda"),),
+        )
+    ]
+    job_id = sync.queue_sync(area.portal_id)
+    sync.lane("normal")
+
+    found = meeting_by_portal_id(sync.conn, area.portal_id, A_MEETING)
+    assert found is not None
+    assert found.portal_html_template_id == 16805
+
+    items = agenda_items(sync.conn, found.id)
+    by_number = {item.number: item for item in items}
+    assert by_number["1."].title == "MEETING CALLED TO ORDER"
+    assert by_number["1."].start_ms is None, "the sync stores no time; alignment does that"
+    assert by_number["1."].alignment_method == "none"
+    assert by_number["9.B"].identifiers == {"O-2026-58": "ordinance"}
+
+    checkpoint = read_checkpoint(sync.conn, job_id)
+    assert checkpoint["agenda_items_written"] == len(items)
+    assert checkpoint["alignments_queued"] == 1, "items and a video are what an align job needs"
+
+
+def test_no_align_job_without_a_video(area: Area, wired: FakePortal, sync: Sync) -> None:
+    """Items with nothing to align to queue no align job."""
+    wired.meetings = [
+        meeting(
+            A_MEETING,
+            "2026-09-08T19:00:00",
+            "City Council Regular Session",
+            documents=(document(18657, 16805, 3, "HTML Agenda"),),
+        )
+    ]
+    sync.queue_sync(area.portal_id)
+    sync.lane("normal")
+
+    assert sync.jobs_of_kind("align_meeting") == []
+
+
+def test_an_agenda_page_that_cannot_be_read_does_not_stop_the_window(
+    area: Area, wired: FakePortal, sync: Sync
+) -> None:
+    """One unreadable page is a skip with its reason; the rest of the window runs."""
+    wired.portal_meeting_status = 500
+    wired.meetings = [
+        meeting(
+            A_MEETING,
+            "2026-09-08T19:00:00",
+            "City Council Regular Session",
+            documents=(document(18657, 16805, 3, "HTML Agenda"),),
+        ),
+        meeting(
+            A_MEETING + 1,
+            "2026-09-15T19:00:00",
+            "City Council Regular Session",
+            video_url=A_VIDEO_URL,
+            documents=(document(18613, 16805, 1, "Agenda"),),
+        ),
+    ]
+    job_id = sync.queue_sync(area.portal_id)
+    sync.lane("normal")
+
+    row = sync.job(job_id)
+    assert row["state"] == DONE, "the window ran to its end"
+    assert sync.conn.execute("SELECT COUNT(*) FROM meetings").fetchone()[0] == 2
+    assert len(sync.jobs_of_kind("download_record")) == 1
+    checkpoint = read_checkpoint(sync.conn, job_id)
+    assert checkpoint["html_agendas_read"] == 0
+    assert any(
+        "could not be read" in sentence and "answered with status 500" in sentence
+        for sentence in checkpoint["skipped"]
+    ), "the skip carries the page and the reason"
+
+
+# -- Source health (spec 7.3) -------------------------------------------------
+
+
+def test_three_failed_listings_make_the_source_broken_then_a_success_resets_it(
+    area: Area, wired: FakePortal, sync: Sync
+) -> None:
+    """Spec 7.3, the whole arc: three in a row, then one success."""
+    wired.archived_status = 500
+    job_ids = [sync.queue_sync(area.portal_id) for _ in range(3)]
+    sync.lane("normal")
+
+    for job_id in job_ids:
+        row = sync.job(job_id)
+        assert row["state"] == FAILED, "a listing that failed is a failed job"
+        assert "AdapterHttpError" in row["last_error"]
+
+    source = next(row for row in all_sources(sync.conn) if row.id == area.portal_id)
+    assert source.consecutive_failures == 3
+    assert source.status == "broken"
+    assert source.last_error and "answered with status 500" in source.last_error
+    assert "It is broken." in sync.job(job_ids[-1])["last_error"]
+
+    wired.archived_status = 200
+    one_meeting(wired)
+    sync.queue_sync(area.portal_id)
+    sync.lane("normal")
+
+    restored = next(row for row in all_sources(sync.conn) if row.id == area.portal_id)
+    assert restored.consecutive_failures == 0
+    assert restored.status == "accepted", "a source that answers again is usable again"
+    assert restored.last_error is None
+
+
+def test_one_oversized_document_does_not_make_the_source_broken(
+    area: Area, wired: FakePortal, sync: Sync, monkeypatch: Any
+) -> None:
+    """Spec 9.6: a document is refused by itself; the portal answered fine."""
+    monkeypatch.setenv("TOWNRECORD_PDF_LIMIT_BYTES", "1024")
+    wired.document_bytes = b"x" * 4096
+    wired.meetings = [
+        meeting(
+            A_MEETING,
+            "2026-09-08T19:00:00",
+            "City Council Regular Session",
+            documents=(document(18613, 16805, 1, "Agenda"),),
+        )
+    ]
+    sync.queue_sync(area.portal_id)
+    sync.all_lanes()
+
+    source = next(row for row in all_sources(sync.conn) if row.id == area.portal_id)
+    assert source.status == "accepted"
+    assert source.consecutive_failures == 0
+
+
+# -- Running the same window twice --------------------------------------------
+
+
+def test_a_second_sync_of_the_same_window_writes_no_second_row(
+    area: Area, wired: FakePortal, sync: Sync
+) -> None:
+    """A re-sync is the ordinary case, and it is idempotent."""
+    wired.meetings = [
+        meeting(
+            A_MEETING,
+            "2026-09-08T19:00:00",
+            "City Council Regular Session",
+            video_url=A_VIDEO_URL,
+            documents=(
+                document(18613, 16805, 1, "Agenda"),
+                document(18657, 16805, 3, "HTML Agenda"),
+            ),
+        )
+    ]
+    sync.queue_sync(area.portal_id)
+    sync.lane("normal")
+    first = {
+        "meetings": sync.conn.execute("SELECT COUNT(*) FROM meetings").fetchone()[0],
+        "videos": sync.conn.execute("SELECT COUNT(*) FROM videos").fetchone()[0],
+        "items": sync.conn.execute("SELECT COUNT(*) FROM agenda_items").fetchone()[0],
+        "downloads": len(sync.jobs_of_kind("download_record")),
+    }
+
+    second_id = sync.queue_sync(area.portal_id)
+    sync.lane("normal")
+    second = {
+        "meetings": sync.conn.execute("SELECT COUNT(*) FROM meetings").fetchone()[0],
+        "videos": sync.conn.execute("SELECT COUNT(*) FROM videos").fetchone()[0],
+        "items": sync.conn.execute("SELECT COUNT(*) FROM agenda_items").fetchone()[0],
+        "downloads": len(sync.jobs_of_kind("download_record")),
+    }
+
+    assert first == second
+    checkpoint = read_checkpoint(sync.conn, second_id)
+    assert checkpoint["meetings_created"] == 0
+    assert checkpoint["meetings_updated"] == 1
+    assert checkpoint["documents_queued"] == 0
+    assert checkpoint["documents_pending"] == 1, "the queued download already does that work"
+    assert checkpoint["alignments_queued"] == 1, (
+        "the align job of the first window ran and paused for want of a transcript, "
+        "and a job that could not run is queued again (spec 7.1 step 7)"
+    )
+
+
+def test_the_signed_link_of_a_download_is_never_written(
+    area: Area, wired: FakePortal, sync: Sync
+) -> None:
+    """Spec 9.2: the download passes through the signed link and drops it."""
+    wired.meetings = [
+        meeting(
+            A_MEETING,
+            "2026-09-08T19:00:00",
+            "City Council Regular Session",
+            documents=(document(18613, 16805, 1, "Agenda"),),
+        )
+    ]
+    sync.queue_sync(area.portal_id)
+    sync.all_lanes()
+
+    asked = [str(request.url) for request in wired.compiled_requests()]
+    assert asked[0].startswith(BASE_URL), "the download starts at the portal"
+    assert wired.signed_url(1) in asked, "and it passes through the signed storage link"
+    assert _database_text(sync.conn).count(SIGNED_MARKER) == 0, "and it was not written anywhere"
+
+
+def _database_text(conn: sqlite3.Connection) -> str:
+    """Every text value of every table, for a search that has no column to miss."""
+    pieces: list[str] = []
+    tables = [
+        row["name"]
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+        )
+    ]
+    for table in tables:
+        rows = conn.execute(f"SELECT * FROM {table}").fetchall()  # noqa: S608 - a test's own tables
+        pieces.extend(str(value) for row in rows for value in tuple(row))
+    return "\n".join(pieces)
+
+
+def test_a_window_that_ends_before_it_starts_is_refused(
+    area: Area, wired: FakePortal, sync: Sync
+) -> None:
+    """A payload nobody can act on is refused with a sentence, not run backwards."""
+    job_id = sync.queue_sync(area.portal_id, from_date="2026-09-30", to_date="2026-09-01")
+    sync.lane("normal")
+
+    row = sync.job(job_id)
+    assert row["state"] == FAILED
+    assert "before it starts" in row["last_error"]
+    assert wired.requests == []
