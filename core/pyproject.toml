@@ -42,3 +42,8 @@ quote-style = "double"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    # Reaches the network or runs a real tool install, so CI can deselect it:
+    # `uv run pytest -m "not integration"`.
+    "integration: really installs a tool through PyPI; needs uv and the network",
+]

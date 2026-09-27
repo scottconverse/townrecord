@@ -18,6 +18,7 @@ from townrecord.jobs import (
     Claim,
     ClaimLost,
     JobContext,
+    JobDeferred,
     JobPaused,
     JobsSettings,
     Registry,
@@ -32,7 +33,7 @@ from townrecord.jobs import (
     return_to_queue,
     save_checkpoint,
 )
-from townrecord.jobs.queue import STALE_REASON
+from townrecord.jobs.queue import STALE_REASON, stamp
 
 START = datetime(2026, 9, 27, 12, 0, 0, tzinfo=UTC)
 
@@ -361,3 +362,84 @@ def test_a_kind_with_no_handler_has_no_lane() -> None:
     assert registry.handler_for("nothing") is None
     assert registry.lane_for("nothing") is None
     assert registry.kinds() == ()
+
+
+def test_a_job_that_is_not_due_yet_is_left_in_the_queue(conn: sqlite3.Connection) -> None:
+    """A delay is a delay: the claimer walks past the job until its time comes."""
+    clock = FakeClock()
+    job_id = enqueue(conn, "capture", clock=clock)
+    taken = claim(conn, "normal", "worker-1", clock=clock)
+    assert taken is not None
+    return_to_queue(
+        conn,
+        job_id,
+        taken.token,
+        reason="rate limited, will retry later",
+        run_after=clock.now + timedelta(seconds=900),
+        clock=clock,
+    )
+    assert claim(conn, "normal", "worker-1", clock=clock) is None
+    clock.advance(899)
+    assert claim(conn, "normal", "worker-1", clock=clock) is None
+    clock.advance(1)
+    again = claim(conn, "normal", "worker-1", clock=clock)
+    assert again is not None
+    assert again.job_id == job_id
+
+
+def test_claiming_a_job_clears_its_delay(conn: sqlite3.Connection) -> None:
+    clock = FakeClock()
+    job_id = enqueue(conn, "capture", clock=clock)
+    taken = claim(conn, "normal", "worker-1", clock=clock)
+    assert taken is not None
+    return_to_queue(conn, job_id, taken.token, reason="later", run_after=clock.now, clock=clock)
+    assert claim(conn, "normal", "worker-1", clock=clock) is not None
+    assert get(conn, job_id)["run_after"] is None
+
+
+def test_a_delayed_job_does_not_hold_up_the_job_behind_it(conn: sqlite3.Connection) -> None:
+    clock = FakeClock()
+    first = enqueue(conn, "capture", clock=clock)
+    second = enqueue(conn, "capture", clock=clock)
+    taken = claim(conn, "normal", "worker-1", clock=clock)
+    assert taken is not None and taken.job_id == first
+    return_to_queue(
+        conn,
+        first,
+        taken.token,
+        reason="upcoming, will retry",
+        run_after=clock.now + timedelta(hours=1),
+        clock=clock,
+    )
+    next_taken = claim(conn, "normal", "worker-1", clock=clock)
+    assert next_taken is not None
+    assert next_taken.job_id == second
+
+
+def test_defer_queues_the_job_with_a_reason_and_a_time(conn: sqlite3.Connection) -> None:
+    """What a handler does when it has to wait, and what the user then reads."""
+    clock = FakeClock()
+    job_id = enqueue(conn, "capture", clock=clock)
+    taken = claim(conn, "normal", "worker-1", clock=clock)
+    assert taken is not None
+    ctx = context(conn, taken, clock)
+    with pytest.raises(JobDeferred) as caught:
+        ctx.defer("upcoming, will retry", delay_s=3600)
+    assert str(caught.value) == "upcoming, will retry"
+    row = get(conn, job_id)
+    assert row["state"] == QUEUED
+    assert row["last_error"] == "upcoming, will retry"
+    assert row["run_after"] == stamp(START + timedelta(seconds=3600))
+    assert row["claim_token"] is None
+    assert row["heartbeat_at"] is None
+
+
+def test_defer_without_a_reason_is_refused(conn: sqlite3.Connection) -> None:
+    clock = FakeClock()
+    job_id = enqueue(conn, "capture", clock=clock)
+    taken = claim(conn, "normal", "worker-1", clock=clock)
+    assert taken is not None
+    ctx = context(conn, taken, clock)
+    with pytest.raises(ValueError):
+        ctx.defer("  ", delay_s=60)
+    assert get(conn, job_id)["state"] == RUNNING
