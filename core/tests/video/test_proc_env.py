@@ -11,6 +11,7 @@ import inspect
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -28,6 +29,27 @@ FORBIDDEN_NAMES = (
     "AWS_SECRET_ACCESS_KEY",
     "GITHUB_TOKEN",
 )
+
+#: A name no allow-list entry and no operating system uses. The parent holds
+#: it with a value nothing else uses, so a child that shows it was handed the
+#: parent's environment rather than the allow-list.
+MARKER_NAME = "TOWNRECORD_MARKER_PARENT_ONLY"
+MARKER_VALUE = "marker-only-the-parent-holds"
+
+#: Names the operating system itself adds to a child's environment, which the
+#: parent never passed and the allow-list therefore cannot contain.
+#:
+#: macOS: the platform's CoreFoundation runtime sets ``__CF_USER_TEXT_ENCODING``
+#: in the environment of a process that links it, and the Python interpreter on
+#: macOS does. The child therefore reports a name the parent was told not to
+#: pass. GitHub's macos-latest job of 2026-09-27 reported it as the only name
+#: the child saw beyond the allow-list (evidence: ``evidence/ci-pr5-macos.log``).
+#: It describes the user's locale, and the locale names the allow-list covers
+#: (LANG, LC_ALL) arrive from the parent instead.
+#:
+#: Linux and Windows have added no name in the runs so far. If a platform
+#: starts adding one, add it here with its reason. Never widen the check.
+OS_INJECTED_ENV_NAMES: frozenset[str] = frozenset({"__CF_USER_TEXT_ENCODING"})
 
 
 def test_only_allow_listed_names_pass() -> None:
@@ -59,20 +81,69 @@ def test_allow_list_matching_ignores_name_case() -> None:
     assert env["PATH"] == "C:\\Windows\\system32"
 
 
-def test_a_secret_in_the_parent_never_reaches_the_child(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_allowlisted_passes_allow_listed_names_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The strict check, on what the runner hands over.
+
+    This reads the ``env=`` that reaches :func:`townrecord.proc.run`, so it
+    is about the runner's own dict and not about what a child later reports.
+    Every name in it comes from the allow-list, and no other name does.
+    """
     monkeypatch.setenv("OPENAI_API_KEY", "sk-not-a-real-key")
     monkeypatch.setenv("TOWNRECORD_DB", "C:\\somewhere\\townrecord.db")
     monkeypatch.setenv("PATH", "C:\\Windows\\system32")
+    monkeypatch.setenv(MARKER_NAME, MARKER_VALUE)
+
+    handed_over: dict[str, dict[str, str]] = {}
+    real_run = proc.run
+
+    def spy(argv: Any, *, timeout_s: float, env: Any, cwd: Any = None) -> Any:
+        handed_over["env"] = dict(env)
+        return real_run(argv, timeout_s=timeout_s, env=env, cwd=cwd)
+
+    monkeypatch.setattr(proc, "run", spy)
+    result = proc.run_allowlisted([sys.executable, "-c", "pass"], timeout_s=60)
+
+    assert result.returncode == 0
+    assert set(handed_over) == {"env"}, "run_allowlisted never reached proc.run"
+    passed = handed_over["env"]
+    assert set(passed) <= set(proc.ALLOWED_ENV_NAMES), (
+        "run_allowlisted passed the child a name the allow-list does not hold"
+    )
+    assert passed == proc.allowed_environment(), "the runner passes the allow-list, and only that"
+    for name in FORBIDDEN_NAMES + (MARKER_NAME,):
+        assert name.upper() not in {key.upper() for key in passed}
+
+
+def test_a_secret_in_the_parent_never_reaches_the_child(monkeypatch: pytest.MonkeyPatch) -> None:
+    """What a real child sees: no parent-only name, and nothing unexplained.
+
+    The child's report is the ground truth for this rule, so the check stays
+    on the child. It cannot demand an exact set: the operating system adds
+    names of its own (see :data:`OS_INJECTED_ENV_NAMES`). It demands that no
+    name the parent alone holds arrives, and that anything beyond the
+    allow-list is a name the OS is known to add.
+    """
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-not-a-real-key")
+    monkeypatch.setenv("TOWNRECORD_DB", "C:\\somewhere\\townrecord.db")
+    monkeypatch.setenv("PATH", "C:\\Windows\\system32")
+    monkeypatch.setenv(MARKER_NAME, MARKER_VALUE)
 
     result = proc.run_allowlisted([sys.executable, "-c", CHILD_ENV_SCRIPT], timeout_s=60)
 
     assert result.returncode == 0
     child = json.loads(result.stdout.decode("utf-8"))
     seen = {key.upper() for key in child}
-    assert "OPENAI_API_KEY" not in seen
-    assert "TOWNRECORD_DB" not in seen
+    for name in FORBIDDEN_NAMES + (MARKER_NAME,):
+        assert name.upper() not in seen
+    assert MARKER_VALUE not in child.values(), "the parent's marker value reached the child"
     assert "PATH" in seen, "the child still needs its path"
-    assert seen <= {name.upper() for name in proc.ALLOWED_ENV_NAMES}
+    extra = seen - {name.upper() for name in proc.ALLOWED_ENV_NAMES}
+    assert extra <= OS_INJECTED_ENV_NAMES, (
+        "the child saw a name the parent did not pass and the OS is not known to add:"
+        f" {sorted(extra - OS_INJECTED_ENV_NAMES)}"
+    )
 
 
 def test_the_child_reads_its_command_from_argv() -> None:
