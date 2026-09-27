@@ -23,15 +23,15 @@ def column_names(conn: sqlite3.Connection, table: str) -> set[str]:
 def test_the_shipped_migrations_are_numbered_in_order() -> None:
     found = discover()
     assert [version for version, _, _ in found] == sorted(version for version, _, _ in found)
-    assert [version for version, _, _ in found] == [1, 2]
+    assert [version for version, _, _ in found] == [1, 2, 3]
 
 
 def test_migrate_applies_every_migration(db_path: Path) -> None:
     conn = connect(db_path)
     try:
         applied = migrate(conn)
-        assert applied == [1, 2]
-        assert applied_versions(conn) == {1, 2}
+        assert applied == [1, 2, 3]
+        assert applied_versions(conn) == {1, 2, 3}
     finally:
         conn.close()
 
@@ -62,6 +62,16 @@ def test_a_job_accepts_the_two_lanes_and_rejects_others(conn: sqlite3.Connection
     conn.execute("INSERT INTO jobs (kind, lane) VALUES ('scan', 'normal')")
     with pytest.raises(sqlite3.IntegrityError):
         conn.execute("INSERT INTO jobs (kind, lane) VALUES ('scan', 'editorial')")
+
+
+def test_a_job_accepts_every_state_of_spec_16_1(conn: sqlite3.Connection) -> None:
+    for state in ("queued", "running", "done", "failed", "paused"):
+        conn.execute("INSERT INTO jobs (kind, state) VALUES ('scan', ?)", (state,))
+
+
+def test_a_job_state_outside_the_list_is_refused(conn: sqlite3.Connection) -> None:
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("INSERT INTO jobs (kind, state) VALUES ('scan', 'stalled')")
 
 
 def test_a_job_starts_queued_with_no_claim(conn: sqlite3.Connection) -> None:
