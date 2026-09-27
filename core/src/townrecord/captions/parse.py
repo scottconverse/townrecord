@@ -32,6 +32,7 @@ __all__ = [
     "CaptionParseError",
     "Segment",
     "Word",
+    "normalize_text",
     "parse_srv3",
     "parse_vtt",
 ]
@@ -83,28 +84,45 @@ class CaptionParseError(ValueError):
 
 @dataclass(frozen=True)
 class Word:
-    """One captioned word with the time it starts, in milliseconds."""
+    """One word of speech with the time it starts, in milliseconds.
+
+    ``end_ms`` is the time the word stops, or None when the source gave only a
+    start. srv3 and the inline word times of YouTube's auto-captions give a
+    start; the local transcriber of spec 8.5 gives both. A missing end is left
+    missing, never guessed from the next word.
+    """
 
     start_ms: int
     text: str
+    end_ms: int | None = None
 
 
 @dataclass(frozen=True)
 class Segment:
-    """One line of captioned speech with the time it covers.
+    """One line of speech with the time it covers.
 
-    ``words`` is empty when the format gives no word times. srv3 gives them;
+    ``words`` is empty when the source gives no word times. srv3 gives them;
     plain WebVTT does not.
+
+    ``speaker`` is the label the source wrote, kept as written. Caption files
+    carry none, so it is None there; the local transcriber of spec 8.5 may
+    label one. None means the source named no speaker, which spec 10.6 stores
+    as an unidentified speaker.
     """
 
     start_ms: int
     end_ms: int
     text: str
     words: tuple[Word, ...] = ()
+    speaker: str | None = None
 
 
-def _normalize(text: str) -> str:
-    """Collapse whitespace and trim. Caption wording is left alone."""
+def normalize_text(text: str) -> str:
+    """Collapse whitespace and trim. Wording is left alone.
+
+    One rule for every source of speech: captions, and the local transcriber
+    that reads its output into the same segment type (spec 10.5).
+    """
     return _WHITESPACE.sub(" ", text).strip()
 
 
@@ -155,7 +173,7 @@ def parse_srv3(data: bytes) -> list[Segment]:
     for element in body.iter("p"):
         # <p> text can sit in <s> children or directly in the element, and both
         # kinds carry speech: ">> [snorts]" arrives as direct text.
-        text = _normalize("".join(element.itertext()))
+        text = normalize_text("".join(element.itertext()))
         if not text:
             # A line-append marker or an empty cue. It repeats no speech.
             continue
@@ -180,7 +198,7 @@ def _srv3_words(element: ET.Element, segment_start_ms: int) -> tuple[Word, ...]:
     """
     words: list[Word] = []
     for index, child in enumerate(element.findall("s")):
-        text = _normalize(child.text or "")
+        text = normalize_text(child.text or "")
         if not text:
             continue
         offset = child.get("t")
@@ -363,7 +381,7 @@ def _vtt_cue_words(
 
 def _vtt_text(line: str) -> str:
     """Strip markup from one cue line and decode its character references."""
-    return _normalize(_vtt_unescape(_TAG.sub("", line)))
+    return normalize_text(_vtt_unescape(_TAG.sub("", line)))
 
 
 def _vtt_unescape(text: str) -> str:
