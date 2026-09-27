@@ -31,6 +31,7 @@ from .evidence import (
     insert_vote,
 )
 from .meetings import (
+    CAPTURE_STATES,
     get_meeting,
     get_record,
     get_record_page,
@@ -41,6 +42,7 @@ from .meetings import (
     insert_video,
     primary_video,
     record_pages,
+    set_capture_state,
 )
 from .rows import (
     AgendaItem,
@@ -68,11 +70,14 @@ from .text import (
     insert_segment,
     insert_transcript,
     item_for_segment,
+    segments_of,
+    transcript_for_artifact,
 )
 
 __all__ = [
     "ALIGNMENT_METHODS",
     "BROKEN_AFTER_FAILURES",
+    "CAPTURE_STATES",
     "VOTE_SOURCE_KINDS",
     "AgendaItem",
     "Body",
@@ -125,4 +130,7 @@ __all__ = [
     "primary_video",
     "record_pages",
     "record_source_failure",
+    "segments_of",
+    "set_capture_state",
+    "transcript_for_artifact",
 ]

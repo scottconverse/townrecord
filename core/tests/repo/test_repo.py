@@ -318,3 +318,53 @@ def test_the_item_of_a_citation_is_the_item_of_its_range(
     assert stored.kind == "record"
     assert stored.page_number == 1
     assert stored.start_ms is None, "a document citation has no seconds"
+
+
+def test_item_for_segment_picks_the_most_specific_of_nested_ranges(
+    conn: sqlite3.Connection, area: Area, transcript: int
+) -> None:
+    """Spec 10.2 over 10.A: the council sits as a whole, and as a redevelopment
+    authority inside the same meeting, so two items cover the same second.
+
+    The most specific one is the item that starts last: the range that opens
+    later is the range that took over at that moment. The item that starts
+    first is the umbrella, and it is the slower one to reach.
+    """
+    council = insert_agenda_item(
+        conn,
+        meeting_id=area.meeting,
+        number="10",
+        title="Council business",
+        start_ms=1_800_000,
+        end_ms=7_200_000,
+        alignment_method="html_video_times",
+    )
+    authority = insert_agenda_item(
+        conn,
+        meeting_id=area.meeting,
+        number="10.A",
+        title="Redevelopment authority",
+        start_ms=3_600_000,
+        end_ms=5_400_000,
+        alignment_method="html_video_times",
+    )
+    assert council != authority
+
+    def item_at(start_ms: int) -> int | None:
+        segment = insert_segment(
+            conn,
+            transcript_id=transcript,
+            start_ms=start_ms,
+            end_ms=start_ms + 1000,
+            text="A line of the meeting.",
+        )
+        item = item_for_segment(conn, segment)
+        return None if item is None else int(item.id)
+
+    assert item_at(1_800_000) == council, "before 10.A opens, item 10 holds the floor"
+    assert item_at(3_599_999) == council, "the millisecond before 10.A opens"
+    assert item_at(3_600_000) == authority, "10.A took over at its own start"
+    assert item_at(5_000_000) == authority, "inside the nested range"
+    assert item_at(5_399_999) == authority, "the last millisecond of 10.A"
+    assert item_at(5_400_000) == council, "10.A closed, so 10 holds the floor again"
+    assert item_at(7_200_000) is None, "the range is half open at the end too"

@@ -139,6 +139,32 @@ def agenda_items(conn: sqlite3.Connection, meeting_id: int) -> list[AgendaItem]:
     return [AgendaItem.from_row(row) for row in rows]
 
 
+def transcript_for_artifact(
+    conn: sqlite3.Connection, video_id: int, artifact_id: int
+) -> Transcript | None:
+    """Return the transcript of a video made from these exact bytes, or None.
+
+    The same captions stored twice are the same artifact (spec 8.6), and the
+    unique index on ``(video_id, artifact_id)`` makes them the same transcript.
+    This read is how a caller finds that out before it writes anything
+    (spec 8.7).
+    """
+    row = conn.execute(
+        "SELECT * FROM transcripts WHERE video_id = ? AND artifact_id = ?",
+        (video_id, artifact_id),
+    ).fetchone()
+    return None if row is None else Transcript.from_row(row)
+
+
+def segments_of(conn: sqlite3.Connection, transcript_id: int) -> list[Segment]:
+    """Return the timed lines of a transcript, in time order."""
+    rows = conn.execute(
+        "SELECT * FROM segments WHERE transcript_id = ? ORDER BY start_ms, id",
+        (transcript_id,),
+    ).fetchall()
+    return [Segment.from_row(row) for row in rows]
+
+
 def item_for_segment(conn: sqlite3.Connection, segment_id: int) -> AgendaItem | None:
     """Return the agenda item a segment falls in, or None (spec 10.2).
 
@@ -147,6 +173,13 @@ def item_for_segment(conn: sqlite3.Connection, segment_id: int) -> AgendaItem | 
     ``start_ms`` inclusive to ``end_ms`` exclusive, so two items that touch do
     not both claim the same line. The test is on the start of the segment,
     which is the moment the line begins.
+
+    Ranges may nest: a council sits as a whole for the consent agenda and also
+    as a redevelopment authority inside the same meeting, so two items of one
+    meeting can each cover the same second. The most specific one is the item
+    that starts last, because the range that opens later is the one that took
+    over at that moment. So the answer is the item with the greatest start that
+    still contains the segment.
 
     None is the honest answer when the segment is unknown, when its video is
     not matched to a meeting, when no item has a time range (method 3 of
@@ -162,7 +195,7 @@ def item_for_segment(conn: sqlite3.Connection, segment_id: int) -> AgendaItem | 
         "AND agenda_items.end_ms IS NOT NULL "
         "AND agenda_items.start_ms <= segments.start_ms "
         "AND segments.start_ms < agenda_items.end_ms "
-        "ORDER BY agenda_items.start_ms "
+        "ORDER BY agenda_items.start_ms DESC "
         "LIMIT 1",
         (segment_id,),
     ).fetchone()
