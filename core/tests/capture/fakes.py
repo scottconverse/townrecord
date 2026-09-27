@@ -22,7 +22,9 @@ from typing import Any
 
 from townrecord import proc
 from townrecord.capture.command import JOB_KIND
-from townrecord.jobs import JobContext, claim, enqueue
+from townrecord.jobs import DONE, JobContext, claim, enqueue, finish
+from townrecord.runtime.settings import RUNTIMES_FOLDER, TOOL_NAME
+from townrecord.runtime.tools import program_in, program_name, python_in
 
 #: A clock the test moves by hand, so no test sleeps for real minutes.
 START = datetime(2026, 9, 27, 12, 0, 0, tzinfo=UTC)
@@ -99,6 +101,14 @@ class FakeYtDlp:
     #: The sidecar the audio download writes beside the audio, when it writes
     #: one. Its ``duration`` is what sets the transcription timeout.
     audio_info: dict[str, Any] | None = field(default_factory=lambda: {"duration": 7200})
+    #: When set, YouTube asks for a bot check unless the command named one of
+    #: these player clients. ``()` means every client is refused, so the whole
+    #: ladder of spec 8.3 fails; ``("visionos",)`` means android_vr is refused
+    #: and visionos answers. None means no bot check at all.
+    bot_check_until: tuple[str, ...] | None = None
+    #: When set, a call naming one of these clients is rate limited instead of
+    #: bot-checked, which is how a test puts a 429 in the middle of the ladder.
+    rate_limit_clients: tuple[str, ...] = ()
     calls: list[dict[str, Any]] = field(default_factory=list)
 
     def __call__(
@@ -107,6 +117,17 @@ class FakeYtDlp:
         command = [str(part) for part in argv]
         self.calls.append({"argv": command, "timeout_s": timeout_s, "env": dict(env)})
         self.skipped_by_archive = self._already_captured(command)
+        if self.rate_limit_clients and self._player_client(command) in self.rate_limit_clients:
+            return proc.ProcessResult(
+                argv=tuple(command), returncode=1, stdout=b"", stderr=RATE_LIMIT_STDERR
+            )
+        if self._refuses_bot_check(command):
+            return proc.ProcessResult(
+                argv=tuple(command),
+                returncode=1,
+                stdout=b"",
+                stderr=BOT_CHECK_STDERR,
+            )
         if self.returncode == 0 and not self.skipped_by_archive:
             self._write_output(command)
         return proc.ProcessResult(
@@ -127,6 +148,29 @@ class FakeYtDlp:
             line.strip().endswith(f" {self.platform_video_id}")
             for line in archive.read_text(encoding="utf-8").splitlines()
         )
+
+    def _refuses_bot_check(self, command: Sequence[str]) -> bool:
+        """True when the client this command named is one YouTube will not answer."""
+        if self.bot_check_until is None:
+            return False
+        return self._player_client(command) not in self.bot_check_until
+
+    @staticmethod
+    def _player_client(command: Sequence[str]) -> str:
+        """The player client this command named, or "" when it named none."""
+        for part in command:
+            if part.startswith("youtube:player_client="):
+                return part.rpartition("=")[2]
+        return ""
+
+    @property
+    def player_clients(self) -> list[str]:
+        """The player client of every call this fake saw, in order.
+
+        "" is the plain command that named none, which is what YouTube serves a
+        signed-out reader by default.
+        """
+        return [self._player_client(call["argv"]) for call in self.calls]
 
     def _write_output(self, command: Sequence[str]) -> None:
         """Write the files the real yt-dlp would have written."""
@@ -183,6 +227,44 @@ RATE_LIMIT_STDERR = (
 def fake_429(**kwargs: Any) -> FakeYtDlp:
     """A second fake: exit code 1, a 429 on stderr, and nothing written."""
     return FakeYtDlp(returncode=1, stderr=RATE_LIMIT_STDERR, **kwargs)
+
+
+#: What yt-dlp printed on a machine with no JavaScript runtime when YouTube
+#: refused, tested 2026-09-27: yt-dlp's own complaint first, then YouTube's
+#: sentence. It holds no rate-limit wording, so the two causes stay apart.
+BOT_CHECK_STDERR = (
+    "WARNING: Only images are available for download. "
+    "No supported JavaScript runtime could be found\n"
+    "ERROR: [youtube] abc123XYZ: Sign in to confirm you're not a bot. Use --cookies-from-browser "
+    "or --cookies for the authentication.\n"
+)
+
+
+def fake_bot_check(*clients: str, **kwargs: Any) -> FakeYtDlp:
+    """A fake that refuses every client except the ones named."""
+    return FakeYtDlp(bot_check_until=tuple(clients), **kwargs)
+
+
+def deno_beside(python: Path) -> Path:
+    """The JavaScript program a private runtime puts beside this interpreter."""
+    return python.parent / program_name("deno")
+
+
+def private_python(root: Path, *, folder: str = "2026.8.19", deno: bool = True) -> Path:
+    """The interpreter of a folder shaped like the private runtime of spec 8.9.
+
+    Written by the same helpers the manager uses, so the file name of the
+    interpreter and of the JavaScript program is the one this system spells
+    (PROJECT-BRIEF rule 11b): no test here depends on Windows-only names.
+    Returns the interpreter, which is what a job is given.
+    """
+    venv = root / RUNTIMES_FOLDER / TOOL_NAME / folder
+    python = python_in(venv)
+    python.parent.mkdir(parents=True, exist_ok=True)
+    python.write_text("#!/fake python\n", encoding="utf-8")
+    if deno:
+        program_in(venv, "deno").write_text("#!/fake program\n", encoding="utf-8")
+    return python
 
 
 #: A transcript in the shape TextFlowKit writes (spec 8.5): a list of segments,
@@ -298,9 +380,19 @@ def claimed_job(
     kind: str = JOB_KIND,
     lane: str = "normal",
 ) -> JobContext:
-    """Enqueue one capture job, claim it, and return its context."""
+    """Enqueue one capture job, claim it, and return its context.
+
+    Claiming takes the oldest queued job of a lane, and a capture that stored a
+    transcript leaves an alignment job of spec 16.3 in this same lane (part 1 of
+    this unit). So a test that captures a video twice finds that job in front of
+    the one it just enqueued: it is closed here, because it is not what the test
+    is asking for and a later claim would otherwise never reach its own job.
+    """
     job_id = enqueue(conn, kind, video_id)
     taken = claim(conn, lane, "worker-1", clock=clock)
+    while taken is not None and taken.job_id != job_id:
+        finish(conn, taken.job_id, taken.token, DONE, clock=clock)
+        taken = claim(conn, lane, "worker-1", clock=clock)
     assert taken is not None
     assert taken.job_id == job_id
     return JobContext(

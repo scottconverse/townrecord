@@ -15,9 +15,10 @@ from pathlib import Path
 import pytest
 
 from townrecord import proc
+from townrecord.runtime.javascript import FALLBACK_RUNTIME
+from townrecord.runtime.tools import program_in, python_in
 from townrecord.video.youtube.listing import SOURCE_YTDLP, VideoError, VideoListing
 from townrecord.video.youtube.ytdlp import (
-    JS_RUNTIME,
     YTDLP_MODULE,
     YTDLP_PLAYLIST_END,
     YTDLP_TABS,
@@ -67,10 +68,32 @@ def test_the_command_is_the_documented_one() -> None:
     ]
     assert isinstance(argv, list), "an argument list, never one string for a shell"
     assert YTDLP_MODULE == "yt_dlp"
-    assert JS_RUNTIME == "node"
+    assert FALLBACK_RUNTIME == "node"
     assert YTDLP_PLAYLIST_END == 50
     assert YTDLP_TABS == ("/streams", "/videos")
     assert YTDLP_TIMEOUT_S == 60
+
+
+def test_a_named_javascript_runtime_reaches_the_command() -> None:
+    """Spec 8.3, 8.9: the runtime the private venv installed, spelled with its path.
+
+    yt-dlp splits ``--js-runtimes`` at the first colon, so a path runtime is
+    ``deno:<full path>`` and never a bare name it would look for on PATH.
+    """
+    argv = ytdlp_argv("python", CHANNEL_URL, "/streams", js_runtime="deno:/opt/venv/bin/deno")
+
+    assert argv == [
+        "python",
+        "-m",
+        "yt_dlp",
+        "--flat-playlist",
+        "--dump-single-json",
+        "--playlist-end",
+        "50",
+        "--js-runtimes",
+        "deno:/opt/venv/bin/deno",
+        f"{CHANNEL_URL}/streams",
+    ]
 
 
 def test_a_trailing_slash_does_not_double() -> None:
@@ -82,6 +105,40 @@ def test_a_trailing_slash_does_not_double() -> None:
 def test_the_private_python_runtime_is_the_default() -> None:
     """Spec 8.9: TownRecord manages its own Python and its own yt-dlp."""
     assert YtdlpFlatLister(runner=FakeRunner()).interpreter == sys.executable
+
+
+def test_the_lister_gives_yt_dlp_the_runtime_beside_its_own_interpreter(tmp_path: Path) -> None:
+    """Spec 8.3, 8.9: no system Node is needed, and none is looked for.
+
+    The folder is written by the same helpers the private runtime uses, so the
+    file name of the program is the one this system spells (rule 11b).
+    """
+    interpreter = python_in(tmp_path)
+    interpreter.parent.mkdir(parents=True, exist_ok=True)
+    interpreter.write_text("#!/fake python\n", encoding="utf-8")
+    deno = program_in(tmp_path, "deno")
+    deno.write_text("#!/fake program\n", encoding="utf-8")
+    runner = FakeRunner()
+    runner.answers["streams"] = (listing_bytes([an_entry("aaa", "One")]), 0, "")
+
+    listing = YtdlpFlatLister(runner=runner, interpreter=str(interpreter))
+    listing.list_videos(CHANNEL_URL)
+
+    assert listing.js_runtime == f"deno:{deno}"
+    assert runner.calls[0]["argv"][runner.calls[0]["argv"].index("--js-runtimes") + 1] == (
+        f"deno:{deno}"
+    )
+
+
+def test_a_lister_whose_interpreter_has_no_runtime_falls_back(tmp_path: Path) -> None:
+    """A user's computer with no Node and no deno still gets a command built."""
+    interpreter = python_in(tmp_path)
+    interpreter.parent.mkdir(parents=True, exist_ok=True)
+    interpreter.write_text("#!/fake python\n", encoding="utf-8")
+
+    listing = YtdlpFlatLister(runner=FakeRunner(), interpreter=str(interpreter))
+
+    assert listing.js_runtime == FALLBACK_RUNTIME
 
 
 def test_the_recorded_flat_listing_parses(flat_bytes: bytes, runner: FakeRunner) -> None:

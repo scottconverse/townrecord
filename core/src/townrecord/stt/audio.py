@@ -26,7 +26,8 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
-from townrecord.video.youtube.ytdlp import JS_RUNTIME, YTDLP_MODULE
+from townrecord.runtime.javascript import FALLBACK_RUNTIME
+from townrecord.video.youtube.ytdlp import YTDLP_MODULE
 
 __all__ = [
     "AUDIO_OUTPUT_TEMPLATE",
@@ -113,13 +114,19 @@ class AudioRequest:
         if trigger is not self.trigger:
             object.__setattr__(self, "trigger", trigger)
 
-    def argv(self, work_dir: str | Path, archive_file: str | Path) -> list[str]:
+    def argv(
+        self, work_dir: str | Path, archive_file: str | Path, *, js_runtime: str | None = None
+    ) -> list[str]:
         """The download command for this request, as an argument list."""
-        return audio_download_argv(self.watch_url, work_dir, archive_file)
+        return audio_download_argv(self.watch_url, work_dir, archive_file, js_runtime=js_runtime)
 
 
 def audio_download_argv(
-    watch_url: str, work_dir: str | Path, archive_file: str | Path
+    watch_url: str,
+    work_dir: str | Path,
+    archive_file: str | Path,
+    *,
+    js_runtime: str | None = None,
 ) -> list[str]:
     """The audio-only download command of spec 8.5, as an argument list.
 
@@ -130,6 +137,10 @@ def audio_download_argv(
             capture resumes in the same folder (spec 8.3).
         archive_file: The yt-dlp download archive, regenerated from the
             database before each capture (spec 8.7).
+        js_runtime: The value for ``--js-runtimes``: the JavaScript runtime of
+            spec 8.3, which the private runtime of spec 8.9 installs beside
+            yt-dlp. None means the bare fallback name, which yt-dlp searches
+            for itself.
 
     Returns:
         The command, ready for :func:`townrecord.proc.run_allowlisted`. It is
@@ -147,7 +158,7 @@ def audio_download_argv(
         "5",
         "--write-info-json",
         "--js-runtimes",
-        JS_RUNTIME,
+        js_runtime or FALLBACK_RUNTIME,
         "--sleep-requests",
         "1",
         "--download-archive",
