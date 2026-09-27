@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
+
+import pytest
 
 from townrecord import proc
 from townrecord.capture.command import capture_argv, rate_limit_marker, run_capture
@@ -61,7 +64,8 @@ def test_a_stopped_capture_resumes_with_continue_in_the_same_folder() -> None:
     assert argv == SPEC_8_3[:21] + ["--continue"] + SPEC_8_3[21:]
 
 
-def test_the_folder_is_written_with_forward_slashes() -> None:
+@pytest.mark.skipif(sys.platform != "win32", reason="a backslash separates only on Windows")
+def test_a_windows_folder_is_written_with_forward_slashes() -> None:
     """yt-dlp reads the folder itself, and a backslash is an escape there."""
     argv = capture_argv(
         interpreter=INTERPRETER,
@@ -72,6 +76,43 @@ def test_the_folder_is_written_with_forward_slashes() -> None:
     )
     assert "C:/storage/work/abc123XYZ" in argv
     assert "C:\\storage\\work\\abc123XYZ" not in argv
+
+
+def test_a_posix_folder_passes_through_unchanged() -> None:
+    """The twin of the Windows case above, and it runs on every system.
+
+    A POSIX path has no backslash in it, so there is nothing to convert: the
+    folder reaches yt-dlp exactly as the caller wrote it. This is the half of
+    the rule that macOS and Linux CI checks.
+    """
+    argv = capture_argv(
+        interpreter=INTERPRETER,
+        work_dir="/storage/work/abc123XYZ",
+        archive="/storage/work/download-archive.txt",
+        url=URL,
+        resume=False,
+    )
+    assert "/storage/work/abc123XYZ" in argv
+    assert argv[argv.index("--paths") + 1] == "/storage/work/abc123XYZ"
+    assert argv[argv.index("-o") + 1] == "/storage/work/abc123XYZ/%(id)s.%(ext)s"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="a backslash separates on Windows")
+def test_a_backslash_is_an_ordinary_character_on_posix() -> None:
+    """On POSIX the Windows spelling is one file name, and it is left alone.
+
+    Nothing is rewritten, because a backslash is not a separator there. The
+    product is right on both systems; only the expectation differs. Written
+    after the Ubuntu and macOS CI run of PR #10 failed on exactly this.
+    """
+    argv = capture_argv(
+        interpreter=INTERPRETER,
+        work_dir=r"C:\storage\work\abc123XYZ",
+        archive=r"C:\storage\work\download-archive.txt",
+        url=URL,
+        resume=False,
+    )
+    assert argv[argv.index("--paths") + 1] == "C:\\storage\\work\\abc123XYZ"
 
 
 def test_the_environment_carries_no_secret(monkeypatch) -> None:
