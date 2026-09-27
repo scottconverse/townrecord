@@ -1,0 +1,294 @@
+{
+ "_type": "playlist",
+ "_version": {
+  "version": "2026.08.19",
+  "current_git_head": null,
+  "release_git_head": "594bd50c2c78ac432f81600d309fdc4e0a92d82c",
+  "repository": "yt-dlp/yt-dlp"
+ },
+ "id": "UCH5_wkpLrKYb1JuUk6-UdNg",
+ "title": "City of Longmont Colorado - Live",
+ "channel": "City of Longmont Colorado",
+ "channel_id": "UCH5_wkpLrKYb1JuUk6-UdNg",
+ "channel_url": "https://www.youtube.com/channel/UCH5_wkpLrKYb1JuUk6-UdNg",
+ "uploader": "City of Longmont Colorado",
+ "uploader_id": "@cityoflongmont",
+ "uploader_url": "https://www.youtube.com/@cityoflongmont",
+ "webpage_url": "https://www.youtube.com/channel/UCH5_wkpLrKYb1JuUk6-UdNg/streams",
+ "original_url": "https://www.youtube.com/channel/UCH5_wkpLrKYb1JuUk6-UdNg/streams",
+ "extractor": "youtube:tab",
+ "extractor_key": "YoutubeTab",
+ "epoch": 1790540034,
+ "entries": [
+  {
+   "title": "City Council Regular Session - 15 December 2026",
+   "thumbnails": [
+    {
+     "url": "https://i.ytimg.com/vi/7WmcO8mBaCk/hq720.jpg?sqp=-oaymwEgCOgCEMoBSFXyq4qpAxIIARUAAIhCGAFwAcABBrgC9xg=&rs=AOn4CLAC8_H8ezs5ptdrq20RTTsRgSQa-A",
+     "height": 202,
+     "width": 360
+    },
+    {
+     "url": "https://i.ytimg.com/vi/7WmcO8mBaCk/hq720.jpg?sqp=-oaymwEgCNAFEJQDSFXyq4qpAxIIARUAAIhCGAFwAcABBrgC9xg=&rs=AOn4CLBUZ3JHvl82MKqyueQEUIQhdZvSow",
+     "height": 404,
+     "width": 720
+    }
+   ],
+   "duration": null,
+   "view_count": null,
+   "timestamp": null,
+   "live_status": "is_upcoming",
+   "availability": null,
+   "channel_url": null,
+   "uploader_url": null,
+   "creators": null,
+   "ie_key": "Youtube",
+   "id": "7WmcO8mBaCk",
+   "_type": "url",
+   "url": "https://www.youtube.com/watch?v=7WmcO8mBaCk"
+  },
+  {
+   "title": "City Council Regular Session - 01 December 2026",
+   "thumbnails": [
+    {
+     "url": "https://i.ytimg.com/vi/G4k0dhS02mc/hq720.jpg?sqp=-oaymwEgCOgCEMoBSFXyq4qpAxIIARUAAIhCGAFwAcABBrgC9xg=&rs=AOn4CLB2tLhPtLvOEA419O3uwwd6a_manw",
+     "height": 202,
+     "width": 360
+    },
+    {
+     "url": "https://i.ytimg.com/vi/G4k0dhS02mc/hq720.jpg?sqp=-oaymwEgCNAFEJQDSFXyq4qpAxIIARUAAIhCGAFwAcABBrgC9xg=&rs=AOn4CLAZTVlBq0XQNXzqXR3VwULk-f2S9Q",
+     "height": 404,
+     "width": 720
+    }
+   ],
+   "duration": null,
+   "view_count": null,
+   "timestamp": null,
+   "live_status": "is_upcoming",
+   "availability": null,
+   "channel_url": null,
+   "uploader_url": null,
+   "creators": null,
+   "ie_key": "Youtube",
+   "id": "G4k0dhS02mc",
+   "_type": "url",
+   "url": "https://www.youtube.com/watch?v=G4k0dhS02mc"
+  },
+  {
+   "title": "City Council Regular Session - 17 November 2026",
+   "thumbnails": [
+    {
+     "url": "https://i.ytimg.com/vi/5ckzCsFAvv4/hq720.jpg?sqp=-oaymwEgCOgCEMoBSFXyq4qpAxIIARUAAIhCGAFwAcABBrgC9xg=&rs=AOn4CLDBkvn29iEHdztdT7qpfl3itCyNjw",
+     "height": 202,
+     "width": 360
+    },
+    {
+     "url": "https://i.ytimg.com/vi/5ckzCsFAvv4/hq720.jpg?sqp=-oaymwEgCNAFEJQDSFXyq4qpAxIIARUAAIhCGAFwAcABBrgC9xg=&rs=AOn4CLCVVNlX_TY4-TUDMqEs8nTxB9DOZA",
+     "height": 404,
+     "width": 720
+    }
+   ],
+   "duration": null,
+   "view_count": null,
+   "timestamp": null,
+   "live_status": "is_upcoming",
+   "availability": null,
+   "channel_url": null,
+   "uploader_url": null,
+   "creators": null,
+   "ie_key": "Youtube",
+   "id": "5ckzCsFAvv4",
+   "_type": "url",
+   "url": "https://www.youtube.com/watch?v=5ckzCsFAvv4"
+  },
+  {
+   "title": "City Council Regular Session - 03 November 2026",
+   "thumbnails": [
+    {
+     "url": "https://i.ytimg.com/vi/oWZpzjzjwnE/hq720.jpg?sqp=-oaymwEgCOgCEMoBSFXyq4qpAxIIARUAAIhCGAFwAcABBrgC9xg=&rs=AOn4CLBPOHP5TmZz2cIDreks2oTHqS58Fw",
+     "height": 202,
+     "width": 360
+    },
+    {
+     "url": "https://i.ytimg.com/vi/oWZpzjzjwnE/hq720.jpg?sqp=-oaymwEgCNAFEJQDSFXyq4qpAxIIARUAAIhCGAFwAcABBrgC9xg=&rs=AOn4CLBwKEnixTEfCyi2K-BBGdzn8aJ0TA",
+     "height": 404,
+     "width": 720
+    }
+   ],
+   "duration": null,
+   "view_count": null,
+   "timestamp": null,
+   "live_status": "is_upcoming",
+   "availability": null,
+   "channel_url": null,
+   "uploader_url": null,
+   "creators": null,
+   "ie_key": "Youtube",
+   "id": "oWZpzjzjwnE",
+   "_type": "url",
+   "url": "https://www.youtube.com/watch?v=oWZpzjzjwnE"
+  },
+  {
+   "title": "City Council Study Session - 27 October 2026",
+   "thumbnails": [
+    {
+     "url": "https://i.ytimg.com/vi/Fcdk3MPz8Ic/hq720.jpg?sqp=-oaymwEgCOgCEMoBSFXyq4qpAxIIARUAAIhCGAFwAcABBrgC9xg=&rs=AOn4CLCIik7O1IXs_uM47_AcR1duShZEXg",
+     "height": 202,
+     "width": 360
+    },
+    {
+     "url": "https://i.ytimg.com/vi/Fcdk3MPz8Ic/hq720.jpg?sqp=-oaymwEgCNAFEJQDSFXyq4qpAxIIARUAAIhCGAFwAcABBrgC9xg=&rs=AOn4CLAObxwJgZ2KDipeoNDN9MkeeHi1_Q",
+     "height": 404,
+     "width": 720
+    }
+   ],
+   "duration": null,
+   "view_count": null,
+   "timestamp": null,
+   "live_status": "is_upcoming",
+   "availability": null,
+   "channel_url": null,
+   "uploader_url": null,
+   "creators": null,
+   "ie_key": "Youtube",
+   "id": "Fcdk3MPz8Ic",
+   "_type": "url",
+   "url": "https://www.youtube.com/watch?v=Fcdk3MPz8Ic"
+  },
+  {
+   "title": "City Council Regular Session - 20 October 2026",
+   "thumbnails": [
+    {
+     "url": "https://i.ytimg.com/vi/uHFuCfd5MVQ/hq720.jpg?sqp=-oaymwEgCOgCEMoBSFXyq4qpAxIIARUAAIhCGAFwAcABBrgC9xg=&rs=AOn4CLCk8IyGuMenWr9XksoJFtixpf8B1A",
+     "height": 202,
+     "width": 360
+    },
+    {
+     "url": "https://i.ytimg.com/vi/uHFuCfd5MVQ/hq720.jpg?sqp=-oaymwEgCNAFEJQDSFXyq4qpAxIIARUAAIhCGAFwAcABBrgC9xg=&rs=AOn4CLCNOlneG4gdEn3k_xMvCNwUf1NTzQ",
+     "height": 404,
+     "width": 720
+    }
+   ],
+   "duration": null,
+   "view_count": null,
+   "timestamp": null,
+   "live_status": "is_upcoming",
+   "availability": null,
+   "channel_url": null,
+   "uploader_url": null,
+   "creators": null,
+   "ie_key": "Youtube",
+   "id": "uHFuCfd5MVQ",
+   "_type": "url",
+   "url": "https://www.youtube.com/watch?v=uHFuCfd5MVQ"
+  },
+  {
+   "title": "Habitat for Humanity @160 11th Ave Neighborhood Meeting",
+   "thumbnails": [
+    {
+     "url": "https://i.ytimg.com/vi/_QwxfS6bkLQ/hq720.jpg?sqp=-oaymwEgCOgCEMoBSFXyq4qpAxIIARUAAIhCGAFwAcABBrgC9xg=&rs=AOn4CLBJawh2Fh_288mgR_EWjBqJKEMIuA",
+     "height": 202,
+     "width": 360
+    },
+    {
+     "url": "https://i.ytimg.com/vi/_QwxfS6bkLQ/hq720.jpg?sqp=-oaymwEgCNAFEJQDSFXyq4qpAxIIARUAAIhCGAFwAcABBrgC9xg=&rs=AOn4CLBDe3XGjySHV2tt9RVQ97p9abvynQ",
+     "height": 404,
+     "width": 720
+    }
+   ],
+   "duration": null,
+   "view_count": null,
+   "timestamp": null,
+   "live_status": "is_upcoming",
+   "availability": null,
+   "channel_url": null,
+   "uploader_url": null,
+   "creators": null,
+   "ie_key": "Youtube",
+   "id": "_QwxfS6bkLQ",
+   "_type": "url",
+   "url": "https://www.youtube.com/watch?v=_QwxfS6bkLQ"
+  },
+  {
+   "title": "City Council Regular Session - 06 October 2026",
+   "thumbnails": [
+    {
+     "url": "https://i.ytimg.com/vi/nN9cxsQngms/hq720.jpg?sqp=-oaymwEgCOgCEMoBSFXyq4qpAxIIARUAAIhCGAFwAcABBrgC9xg=&rs=AOn4CLDZbKLH_D8D5tWGoPjKBkt4bZ_Vag",
+     "height": 202,
+     "width": 360
+    },
+    {
+     "url": "https://i.ytimg.com/vi/nN9cxsQngms/hq720.jpg?sqp=-oaymwEgCNAFEJQDSFXyq4qpAxIIARUAAIhCGAFwAcABBrgC9xg=&rs=AOn4CLD0BWkbK5M6As-WYg3TZurgOhCDKw",
+     "height": 404,
+     "width": 720
+    }
+   ],
+   "duration": null,
+   "view_count": null,
+   "timestamp": null,
+   "live_status": "is_upcoming",
+   "availability": null,
+   "channel_url": null,
+   "uploader_url": null,
+   "creators": null,
+   "ie_key": "Youtube",
+   "id": "nN9cxsQngms",
+   "_type": "url",
+   "url": "https://www.youtube.com/watch?v=nN9cxsQngms"
+  },
+  {
+   "title": "City Council Study Session - 29 September 2026",
+   "thumbnails": [
+    {
+     "url": "https://i.ytimg.com/vi/fWMTQj830Ho/hq720.jpg?sqp=-oaymwEgCOgCEMoBSFXyq4qpAxIIARUAAIhCGAFwAcABBrgC9xg=&rs=AOn4CLAi4f50XAdfVFjoaIekJehmfVr-Tw",
+     "height": 202,
+     "width": 360
+    },
+    {
+     "url": "https://i.ytimg.com/vi/fWMTQj830Ho/hq720.jpg?sqp=-oaymwEgCNAFEJQDSFXyq4qpAxIIARUAAIhCGAFwAcABBrgC9xg=&rs=AOn4CLAjSPIWMojM2gECtMW42sRwTj9zSg",
+     "height": 404,
+     "width": 720
+    }
+   ],
+   "duration": null,
+   "view_count": null,
+   "timestamp": null,
+   "live_status": "is_upcoming",
+   "availability": null,
+   "channel_url": null,
+   "uploader_url": null,
+   "creators": null,
+   "ie_key": "Youtube",
+   "id": "fWMTQj830Ho",
+   "_type": "url",
+   "url": "https://www.youtube.com/watch?v=fWMTQj830Ho"
+  },
+  {
+   "title": "2360 Mountain Brook Drive - McDonald's Neighborhood Meeting",
+   "thumbnails": [
+    {
+     "url": "https://i.ytimg.com/vi/DDrMAVD9N34/hq720.jpg?sqp=-oaymwEgCOgCEMoBSFXyq4qpAxIIARUAAIhCGAFwAcABBrgC9xg=&rs=AOn4CLCtnxgSqw0jQJS187SXiMrMah5R2A",
+     "height": 202,
+     "width": 360
+    },
+    {
+     "url": "https://i.ytimg.com/vi/DDrMAVD9N34/hq720.jpg?sqp=-oaymwEgCNAFEJQDSFXyq4qpAxIIARUAAIhCGAFwAcABBrgC9xg=&rs=AOn4CLAo49mk5yBWXdPRF2GfpE1ABc8opA",
+     "height": 404,
+     "width": 720
+    }
+   ],
+   "duration": 1551,
+   "view_count": 105,
+   "timestamp": null,
+   "live_status": "was_live",
+   "availability": null,
+   "channel_url": null,
+   "uploader_url": null,
+   "creators": null,
+   "ie_key": "Youtube",
+   "id": "DDrMAVD9N34",
+   "_type": "url",
+   "url": "https://www.youtube.com/watch?v=DDrMAVD9N34"
+  }
+ ]
+}
