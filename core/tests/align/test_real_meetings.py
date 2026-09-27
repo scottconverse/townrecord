@@ -24,9 +24,9 @@ import pytest
 from townrecord.adapters.base import AgendaItem
 from townrecord.adapters.primegov import PrimeGovAdapter
 from townrecord.align import (
-    HTML_AGENDA_TIME,
+    HTML_VIDEO_TIMES,
     NO_ALIGNMENT,
-    SPOKEN_TRANSITION,
+    SPOKEN_TRANSITIONS,
     AlignmentResult,
     align_agenda_with_transcript,
 )
@@ -47,8 +47,8 @@ BASE_URL = "https://portal.test.invalid"
 
 #: What the September 8, 2026 meeting was measured to align as, item by item.
 MEASURED_COUNTS = {
-    SPOKEN_TRANSITION: 22,
-    HTML_AGENDA_TIME: 6,
+    SPOKEN_TRANSITIONS: 22,
+    HTML_VIDEO_TIMES: 6,
     NO_ALIGNMENT: 12,
 }
 
@@ -117,7 +117,7 @@ def test_the_september_meeting_puts_the_measured_items_where_they_were_said(
 ) -> None:
     """The places a person can check by watching the recording."""
     first_ordinance = next(item for item in september.items if item.number == "10.A.1")
-    assert first_ordinance.method == SPOKEN_TRANSITION
+    assert first_ordinance.method == SPOKEN_TRANSITIONS
     assert first_ordinance.start_ms == 3_978_160
     assert first_ordinance.evidence is not None
     assert "2026-54" in first_ordinance.evidence
@@ -127,7 +127,7 @@ def test_the_september_meeting_puts_the_measured_items_where_they_were_said(
 
     # Method 1's own placements, moved by the measured offset.
     council_comments = next(item for item in september.items if item.number == "13.")
-    assert council_comments.method == HTML_AGENDA_TIME
+    assert council_comments.method == HTML_VIDEO_TIMES
     assert council_comments.offset_s == MEASURED_OFFSET_S
     assert council_comments.agenda_seconds == 14_105
     assert council_comments.start_ms == 13_639_000
@@ -235,8 +235,8 @@ def test_the_study_session_without_times_or_a_transcript_places_nothing() -> Non
     )
 
     assert result.counts_by_method() == {
-        SPOKEN_TRANSITION: 0,
-        HTML_AGENDA_TIME: 0,
+        SPOKEN_TRANSITIONS: 0,
+        HTML_VIDEO_TIMES: 0,
         NO_ALIGNMENT: 14,
     }
     assert not result.offset.accepted

@@ -17,9 +17,9 @@ from __future__ import annotations
 
 from townrecord.adapters.base import AgendaItem
 from townrecord.align import (
-    HTML_AGENDA_TIME,
+    HTML_VIDEO_TIMES,
     NO_ALIGNMENT,
-    SPOKEN_TRANSITION,
+    SPOKEN_TRANSITIONS,
     AlignmentResult,
     AlignmentSettings,
     align_agenda_with_transcript,
@@ -101,8 +101,8 @@ def test_three_agreeing_anchors_measure_one_offset() -> None:
     assert len(result.offset.agreeing) == 3
     assert "466 s ahead of the video" in result.offset.reason
     assert result.counts_by_method() == {
-        SPOKEN_TRANSITION: 3,
-        HTML_AGENDA_TIME: 0,
+        SPOKEN_TRANSITIONS: 3,
+        HTML_VIDEO_TIMES: 0,
         NO_ALIGNMENT: 0,
     }
     assert result.html_reason is None, "an accepted offset leaves no reason to report"
@@ -134,7 +134,7 @@ def test_an_agenda_time_shifted_by_the_offset_places_an_item() -> None:
     result = _align(items, transcript)
 
     item = _item(result, "4.")
-    assert item.method == HTML_AGENDA_TIME
+    assert item.method == HTML_VIDEO_TIMES
     assert item.start_ms == 2_534_000, "3000 s published minus the 466 s offset"
     assert item.offset_s == 466
     assert item.agenda_seconds == 3000
@@ -162,8 +162,8 @@ def test_a_placeholder_agenda_time_is_never_used() -> None:
     assert "falls outside the 3600 s video" in item.reason
     assert "shifted" not in item.reason
     assert result.counts_by_method() == {
-        SPOKEN_TRANSITION: 3,
-        HTML_AGENDA_TIME: 0,
+        SPOKEN_TRANSITIONS: 3,
+        HTML_VIDEO_TIMES: 0,
         NO_ALIGNMENT: 1,
     }
 
@@ -188,8 +188,8 @@ def test_a_two_anchor_agreement_is_not_enough_for_an_offset() -> None:
     assert _item(result, "4.").start_ms is None, "no offset, so no published time is placed"
     assert "could not be shifted" in _item(result, "4.").reason
     assert result.counts_by_method() == {
-        SPOKEN_TRANSITION: 2,
-        HTML_AGENDA_TIME: 0,
+        SPOKEN_TRANSITIONS: 2,
+        HTML_VIDEO_TIMES: 0,
         NO_ALIGNMENT: 2,
     }
     assert result.html_reason == result.offset.reason
@@ -214,7 +214,7 @@ def test_the_anchor_threshold_is_what_refuses_two_anchors() -> None:
     assert result.offset.accepted
     assert result.offset.offset_s == 466
     assert len(result.offset.agreeing) == 2
-    assert _item(result, "4.").method == HTML_AGENDA_TIME
+    assert _item(result, "4.").method == HTML_VIDEO_TIMES
     assert _item(result, "4.").start_ms == 2_534_000
 
 
@@ -245,10 +245,10 @@ def test_anchors_further_apart_than_the_tolerance_do_not_agree() -> None:
     assert "only 2 of them land within 30 s of each other" in result.offset.reason
     # Nothing published is placed, and the two items the chair named keep the
     # times the transcript gave them.
-    assert _item(result, "1.").method == SPOKEN_TRANSITION
+    assert _item(result, "1.").method == SPOKEN_TRANSITIONS
     assert result.counts_by_method() == {
-        SPOKEN_TRANSITION: 3,
-        HTML_AGENDA_TIME: 0,
+        SPOKEN_TRANSITIONS: 3,
+        HTML_VIDEO_TIMES: 0,
         NO_ALIGNMENT: 0,
     }
 
@@ -282,7 +282,7 @@ def test_a_published_time_that_would_land_after_a_later_item_gives_way() -> None
     )
     result = _align(items, transcript, duration_ms=TWO_HOURS_MS)
 
-    assert _item(result, "10.A.").method == SPOKEN_TRANSITION
+    assert _item(result, "10.A.").method == SPOKEN_TRANSITIONS
     assert _item(result, "10.A.").start_ms == 3_972_400
     ten = _item(result, "10.")
     assert ten.method == NO_ALIGNMENT
@@ -371,8 +371,8 @@ def test_the_items_the_transcript_really_reaches_are_taken_in_order() -> None:
     assert _item(result, "9.B.").start_ms == 3_680_880
     assert _item(result, "9.C.").start_ms == 3_690_400
     assert result.counts_by_method() == {
-        SPOKEN_TRANSITION: 3,
-        HTML_AGENDA_TIME: 0,
+        SPOKEN_TRANSITIONS: 3,
+        HTML_VIDEO_TIMES: 0,
         NO_ALIGNMENT: 3,
     }
     assert result.spoken_reason is None
@@ -416,8 +416,8 @@ def test_without_a_transcript_nothing_is_placed_and_the_reason_says_so() -> None
     )
     assert result.html_reason == result.offset.reason
     assert result.counts_by_method() == {
-        SPOKEN_TRANSITION: 0,
-        HTML_AGENDA_TIME: 0,
+        SPOKEN_TRANSITIONS: 0,
+        HTML_VIDEO_TIMES: 0,
         NO_ALIGNMENT: 2,
     }
     for item in result.items:

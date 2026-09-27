@@ -3,13 +3,20 @@
 Three ways an item gets a start time, and every boundary says which one
 produced it:
 
-* ``spoken_transition``. The chair says the item and the transcript records
-  it. This is measured evidence and it wins whenever it exists.
-* ``html_agenda_time``. The clerk published a video time for the item, the
-  transcript gives a constant offset for the whole video, and the shifted
-  time falls inside the video where the transcript mentions the item.
-* ``none``. Nothing above held. The item keeps no boundary and carries a
-  plain reason. A boundary is never invented.
+* ``spoken_transitions`` (spec 10.2 method 2). The chair says the item and the
+  transcript records it. This is measured evidence and it wins whenever it
+  exists.
+* ``html_video_times`` (spec 10.2 method 1). The clerk published a video time
+  for the item, the transcript gives a constant offset for the whole video,
+  and the shifted time falls inside the video where the transcript mentions
+  the item.
+* ``none`` (spec 10.2 method 3). Nothing above held. The item keeps no
+  boundary and carries a plain reason. A boundary is never invented.
+
+The three values are the schema's. Migration ``0005_core_model.sql`` allows
+exactly ``html_video_times``, ``spoken_transitions`` and ``none`` on
+``agenda_items.alignment_method``, so a value this module emits can always be
+stored. They are defined once, here.
 
 The offset is the interesting part. The clerk's ``data-videolocation`` times
 on the September 8, 2026 Longmont agenda (16805, video 3qfQAkAAC9U) run about
@@ -47,9 +54,10 @@ from townrecord.align.identifiers import (
 from townrecord.captions.parse import Segment
 
 __all__ = [
-    "HTML_AGENDA_TIME",
+    "ALIGNMENT_METHODS",
+    "HTML_VIDEO_TIMES",
     "NO_ALIGNMENT",
-    "SPOKEN_TRANSITION",
+    "SPOKEN_TRANSITIONS",
     "AlignedItem",
     "AlignmentResult",
     "AlignmentSettings",
@@ -58,14 +66,20 @@ __all__ = [
     "align_agenda_with_transcript",
 ]
 
-#: The item's start came from the agenda's video time, shifted by the offset.
-HTML_AGENDA_TIME = "html_agenda_time"
+#: The item's start came from the agenda's video times, shifted by the offset.
+#: Spelled as migration ``0005_core_model.sql`` allows.
+HTML_VIDEO_TIMES = "html_video_times"
 
 #: The item's start came from the transcript saying the item.
-SPOKEN_TRANSITION = "spoken_transition"
+SPOKEN_TRANSITIONS = "spoken_transitions"
 
 #: No boundary was established. The item carries the reason.
 NO_ALIGNMENT = "none"
+
+#: The three methods of spec 10.2, in the spelling migration 0005's CHECK
+#: constraint allows. ``repo.text.ALIGNMENT_METHODS`` is the database layer's
+#: copy of the same list, and a test holds the two together.
+ALIGNMENT_METHODS: tuple[str, ...] = (HTML_VIDEO_TIMES, SPOKEN_TRANSITIONS, NO_ALIGNMENT)
 
 #: How a spoken candidate was found, strongest first. Two candidates in one
 #: segment are taken in this order for the same item, and the agenda order
@@ -177,7 +191,7 @@ class AlignmentResult:
 
     def counts_by_method(self) -> dict[str, int]:
         """How many items each method accounted for, ``none`` included."""
-        counts = {SPOKEN_TRANSITION: 0, HTML_AGENDA_TIME: 0, NO_ALIGNMENT: 0}
+        counts = dict.fromkeys(ALIGNMENT_METHODS, 0)
         for item in self.items:
             counts[item.method] = counts.get(item.method, 0) + 1
         return counts
@@ -656,7 +670,7 @@ def align_agenda_with_transcript(
 
     for index, boundary in taken.items():
         starts[index] = boundary.start_ms
-        methods[index] = SPOKEN_TRANSITION
+        methods[index] = SPOKEN_TRANSITIONS
         evidence[index] = (boundary.matched_text, boundary.start_ms, None)
 
     spoken_starts = {index: boundary.start_ms for index, boundary in taken.items()}
@@ -672,7 +686,7 @@ def align_agenda_with_transcript(
             reasons[item.index] = why
             continue
         starts[item.index] = placed
-        methods[item.index] = HTML_AGENDA_TIME
+        methods[item.index] = HTML_VIDEO_TIMES
         evidence[item.index] = (mention, None, offset.offset_s)
 
     placed_indices = sorted(starts, key=lambda index: starts[index])

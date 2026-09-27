@@ -16,9 +16,10 @@ function of its arguments.
 from __future__ import annotations
 
 from townrecord.align.align import (
-    HTML_AGENDA_TIME,
+    ALIGNMENT_METHODS,
+    HTML_VIDEO_TIMES,
     NO_ALIGNMENT,
-    SPOKEN_TRANSITION,
+    SPOKEN_TRANSITIONS,
     AlignedItem,
     AlignmentResult,
     AlignmentSettings,
@@ -38,11 +39,12 @@ from townrecord.align.identifiers import (
 )
 
 __all__ = [
-    "HTML_AGENDA_TIME",
+    "ALIGNMENT_METHODS",
+    "HTML_VIDEO_TIMES",
     "NO_ALIGNMENT",
     "ORDINANCE",
     "RESOLUTION",
-    "SPOKEN_TRANSITION",
+    "SPOKEN_TRANSITIONS",
     "AlignedItem",
     "AlignmentResult",
     "AlignmentSettings",
