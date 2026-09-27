@@ -11,6 +11,13 @@ number everywhere (spec 9.4): on a Longmont agenda they happen to be equal, and
 the checkpoint says how many pages they agreed on, so a document where they do
 not agree is visible rather than silent.
 
+A page can print more than one footer. The draft minutes of a regular session
+are not approved until the next regular session, so those pages sit in the next
+session's packet and carry both the packet's own footer and the one the draft
+printed on them. The footer this job stores is the packet's own, which is the
+page's place in this file: the other one numbers a page of a different file,
+and a citation of this page is not a citation of that one.
+
 A page with no text layer is a scan. OCR is a later unit, so the page is
 stored with the plain reason it has no text (spec 9.6) and its row is what a
 later unit reads to find the work.
@@ -45,7 +52,9 @@ NEEDS_OCR = "The page has no text layer, so it needs OCR."
 
 #: The footer a document prints at the foot of a page ("Page 3"). Spec 9.4:
 #: on a Longmont agenda this number is the page's number in the file, and the
-#: checkpoint reports how often that held.
+#: checkpoint reports how often that held. A line rather than a search, because
+#: a page can quote the phrase in its own text and the footer is a line of its
+#: own.
 _PAGE_FOOTER = re.compile(r"^Page\s+(\d+)\s*$", re.IGNORECASE | re.MULTILINE)
 
 
@@ -89,13 +98,17 @@ def extract_pages(ctx: JobContext) -> None:
 
     pages = _read(content, record)
     replaced = delete_record_pages(ctx.conn, record.id)
+    several = 0
     for number, text in pages:
+        printed = _footer_numbers(text)
+        if len(printed) > 1:
+            several += 1
         insert_record_page(
             ctx.conn,
             record_id=record.id,
             page_number=number,
             text=text,
-            footer_page_number=_footer_number(text),
+            footer_page_number=_own_footer(printed, number),
             ocr_reason=None if text else NEEDS_OCR,
         )
     set_record_page_count(ctx.conn, record.id, len(pages))
@@ -109,6 +122,7 @@ def extract_pages(ctx: JobContext) -> None:
             "replaced_pages": replaced,
             "pages_with_text": sum(1 for page in written if page.text),
             "footers_found": sum(1 for page in written if page.footer_page_number is not None),
+            "pages_with_several_footers": several,
             "footers_matching": sum(
                 1
                 for page in written
@@ -148,15 +162,32 @@ def _read(content: bytes, record: Record) -> list[tuple[int, str]]:
     return pages
 
 
-def _footer_number(text: str) -> int | None:
-    """The number the page prints in its footer, or None when it prints none.
+def _footer_numbers(text: str) -> list[int]:
+    """Every number the page prints in a footer, in the order it prints them.
 
-    The last line that is nothing but "Page N" is the footer: a page of a
-    record can quote the phrase in its own body, and the footer is what comes
-    after that.
+    Empty for a page that prints no footer at all, and more than one number for
+    a page that carries a draft minutes page of an earlier session.
     """
-    found = _PAGE_FOOTER.findall(text)
-    return int(found[-1]) if found else None
+    return [int(found) for found in _PAGE_FOOTER.findall(text)]
+
+
+def _own_footer(printed: list[int], page_number: int) -> int | None:
+    """Which of the numbers a page printed is this record's own footer.
+
+    The record's own footer is the one that agrees with the page's place in the
+    file, which is what spec 9.4 says the footer of a page of these packets is.
+    A page that prints two footers prints the number of the page it is along
+    with the number the draft minutes gave it, and the one to store is the
+    first. When neither agrees with where the page is, the last one printed is
+    kept: that is the footer of a page that prints one, whatever number it
+    carries, and the checkpoint's count of the footers that agree is what shows
+    a document where the numbering is not the file's.
+    """
+    if not printed:
+        return None
+    if page_number in printed:
+        return page_number
+    return printed[-1]
 
 
 __all__ = ["NEEDS_OCR", "PagesRefused", "extract_pages"]
