@@ -20,7 +20,16 @@ from pathlib import Path
 
 from ..db import connect as default_connect
 from . import queue
-from .queue import Claim, ClaimLost, Clock, JobContext, JobInterrupted, JobPaused, utcnow
+from .queue import (
+    Claim,
+    ClaimLost,
+    Clock,
+    JobContext,
+    JobDeferred,
+    JobInterrupted,
+    JobPaused,
+    utcnow,
+)
 from .registry import Registry, default_registry
 from .settings import JobsSettings
 
@@ -221,6 +230,9 @@ class Runner:
         except JobPaused as exc:
             # pause() already wrote the state and the reason.
             logger.info("Job %s paused: %s", taken.job_id, exc)
+        except JobDeferred as exc:
+            # defer() already put the job back in the queue with its delay.
+            logger.info("Job %s deferred: %s", taken.job_id, exc)
         except JobInterrupted as exc:
             self._requeue(conn, taken, str(exc))
         except ClaimLost:

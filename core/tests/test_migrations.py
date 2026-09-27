@@ -23,15 +23,15 @@ def column_names(conn: sqlite3.Connection, table: str) -> set[str]:
 def test_the_shipped_migrations_are_numbered_in_order() -> None:
     found = discover()
     assert [version for version, _, _ in found] == sorted(version for version, _, _ in found)
-    assert [version for version, _, _ in found] == [1, 2, 3, 4, 5]
+    assert [version for version, _, _ in found] == [1, 2, 3, 4, 5, 6]
 
 
 def test_migrate_applies_every_migration(db_path: Path) -> None:
     conn = connect(db_path)
     try:
         applied = migrate(conn)
-        assert applied == [1, 2, 3, 4, 5]
-        assert applied_versions(conn) == {1, 2, 3, 4, 5}
+        assert applied == [1, 2, 3, 4, 5, 6]
+        assert applied_versions(conn) == {1, 2, 3, 4, 5, 6}
     finally:
         conn.close()
 
@@ -55,6 +55,17 @@ def test_the_jobs_table_has_the_columns_of_spec_16_1(conn: sqlite3.Connection) -
         "finished_at",
     ):
         assert expected in columns, f"jobs is missing {expected}"
+
+
+def test_the_jobs_table_can_hold_a_job_back_until_a_moment(conn: sqlite3.Connection) -> None:
+    """Migration 0006: a job that cannot run yet says when to try again (spec 8.2)."""
+    assert "run_after" in column_names(conn, "jobs")
+    assert conn.execute("SELECT run_after FROM jobs").fetchall() == []
+    conn.execute(
+        "INSERT INTO jobs (kind, payload, lane, state) VALUES ('x', '1', 'normal', 'queued')"
+    )
+    row = conn.execute("SELECT run_after FROM jobs").fetchone()
+    assert row["run_after"] is None, "a new job is claimable now"
 
 
 def test_a_job_accepts_the_two_lanes_and_rejects_others(conn: sqlite3.Connection) -> None:

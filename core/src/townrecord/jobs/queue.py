@@ -92,6 +92,15 @@ class JobInterrupted(Exception):
     """Raised to put an unfinished job back in the queue with its checkpoint."""
 
 
+class JobDeferred(Exception):
+    """Raised by JobContext.defer, after the job is queued again with a delay.
+
+    The job is not finished and it is not broken: something outside it has to
+    change first. It goes back in the queue with `run_after` set and its
+    checkpoint kept, so no work is lost (spec 8.2, 8.3).
+    """
+
+
 def _encode(value: Any) -> str | None:
     return None if value is None else json.dumps(value)
 
@@ -183,13 +192,17 @@ def _kind_is_full(conn: sqlite3.Connection, kind: str, settings: JobsSettings) -
 
 
 def _next_startable(
-    conn: sqlite3.Connection, lane: str, settings: JobsSettings
+    conn: sqlite3.Connection, lane: str, settings: JobsSettings, now: str
 ) -> sqlite3.Row | None:
-    """Return the oldest queued job of the lane that no limit blocks."""
+    """Return the oldest queued job of the lane that no limit blocks.
+
+    A job whose ``run_after`` is still in the future is not due yet: it stays
+    queued and the worker looks at the jobs behind it (spec 8.2, "retry later").
+    """
     cursor = conn.execute(
         "SELECT id, kind, payload, lane, attempts FROM jobs "
-        "WHERE lane = ? AND state = ? ORDER BY id",
-        (lane, QUEUED),
+        "WHERE lane = ? AND state = ? AND (run_after IS NULL OR run_after <= ?) ORDER BY id",
+        (lane, QUEUED, now),
     )
     for row in cursor:
         if not _kind_is_full(conn, row["kind"], settings):
@@ -218,15 +231,16 @@ def claim(
         if _lane_is_full(conn, lane, settings):
             conn.execute("COMMIT")
             return None
-        row = _next_startable(conn, lane, settings)
+        token = new_claim_token(worker_id)
+        moment = _moment(clock)
+        row = _next_startable(conn, lane, settings, moment)
         if row is None:
             conn.execute("COMMIT")
             return None
-        token = new_claim_token(worker_id)
-        moment = _moment(clock)
         cursor = conn.execute(
             "UPDATE jobs SET state = ?, claim_token = ?, claimed_at = ?, heartbeat_at = ?, "
-            "started_at = ?, last_error = NULL WHERE id = ? AND state = ?",
+            "started_at = ?, last_error = NULL, run_after = NULL "
+            "WHERE id = ? AND state = ?",
             (RUNNING, token, moment, moment, moment, row["id"], QUEUED),
         )
         if cursor.rowcount != 1:
@@ -333,14 +347,27 @@ def pause(
 
 
 def return_to_queue(
-    conn: sqlite3.Connection, job_id: int, token: str, *, reason: str, clock: Clock = utcnow
+    conn: sqlite3.Connection,
+    job_id: int,
+    token: str,
+    *,
+    reason: str,
+    run_after: datetime | None = None,
+    clock: Clock = utcnow,
 ) -> None:
-    """Put an unfinished job back in the queue with its checkpoint kept."""
+    """Put an unfinished job back in the queue with its checkpoint kept.
+
+    ``run_after`` is the earliest moment the job may be claimed again. A job
+    that is only waiting for something outside it (a live stream ending, a rate
+    limit lifting) says so here, so the runner does not spin on it (spec 8.2,
+    8.3). None means the job is claimable at once.
+    """
     _guarded(
         conn,
-        "UPDATE jobs SET state = ?, last_error = ?, claim_token = NULL, claimed_at = NULL, "
-        "heartbeat_at = NULL WHERE id = ? AND claim_token = ? AND state = 'running'",
-        (QUEUED, reason[:MAX_REASON]),
+        "UPDATE jobs SET state = ?, last_error = ?, run_after = ?, claim_token = NULL, "
+        "claimed_at = NULL, heartbeat_at = NULL "
+        "WHERE id = ? AND claim_token = ? AND state = 'running'",
+        (QUEUED, reason[:MAX_REASON], None if run_after is None else stamp(run_after)),
         job_id,
         token,
     )
@@ -417,6 +444,26 @@ class JobContext:
     def pause(self, reason: str) -> None:
         """Record that the job cannot run now. Raises JobPaused and never returns."""
         pause(self.conn, self.job_id, self.claim_token, reason, clock=self.clock)
+
+    def defer(self, reason: str, *, delay_s: float) -> None:
+        """Queue this job again, no earlier than `delay_s` from now.
+
+        The plain reason is kept in `last_error`, so the user can see why the
+        job is waiting. Raises JobDeferred and never returns.
+        """
+        text = " ".join(str(reason).split())[:MAX_REASON]
+        if not text:
+            raise ValueError("A deferred job needs a plain reason.")
+        run_after = self.clock() + timedelta(seconds=max(0.0, delay_s))
+        return_to_queue(
+            self.conn,
+            self.job_id,
+            self.claim_token,
+            reason=text,
+            run_after=run_after,
+            clock=self.clock,
+        )
+        raise JobDeferred(text)
 
     def interrupt(self, reason: str | None = None) -> None:
         """Stop this run and leave the job resumable. Raises JobInterrupted."""
