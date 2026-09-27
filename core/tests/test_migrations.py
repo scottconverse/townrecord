@@ -10,9 +10,11 @@ import pytest
 from townrecord.db import applied_versions, connect, discover, migrate, split_statements
 
 #: The migrations this worktree ships, in order. 0006 holds a job back until a
-#: moment (spec 8.2) and 0007 is the search index (spec 12.4); both lanes'
-#: migrations are here after the merge, so the list has no gap.
-SHIPPED_VERSIONS = [1, 2, 3, 4, 5, 6, 7]
+#: moment (spec 8.2), 0007 is the search index (spec 12.4) and 0008 is the
+#: index of overlapping windows of lines that finds a phrase split by a line
+#: break (spec 12.4); both lanes' migrations are here after the merge, so the
+#: list has no gap.
+SHIPPED_VERSIONS = [1, 2, 3, 4, 5, 6, 7, 8]
 
 
 def table_names(conn: sqlite3.Connection) -> set[str]:

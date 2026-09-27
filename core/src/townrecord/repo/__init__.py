@@ -71,6 +71,7 @@ from .search import (
     SearchCitation,
     SearchHit,
     match_expression,
+    phrase_expression,
     query_terms,
     search,
 )
@@ -155,6 +156,7 @@ __all__ = [
     "match_expression",
     "meetings_of_body",
     "overlaps_of",
+    "phrase_expression",
     "primary_video",
     "query_terms",
     "record_pages",
