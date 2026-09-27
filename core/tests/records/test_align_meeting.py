@@ -150,15 +150,24 @@ def test_a_meeting_with_no_video_pauses(area: Area, wired: FakePortal, sync: Syn
 def test_a_video_with_no_transcript_pauses_and_says_it_runs_again(
     area: Area, wired: FakePortal, sync: Sync
 ) -> None:
-    """The ordinary case: the captions have not been fetched yet (spec 10.2)."""
+    """The ordinary case: the captions have not been fetched yet (spec 10.2).
+
+    The sentence this job leaves is the promise spec 16.3 holds it to, and both
+    halves of it are things the code really does: a transcript of that video is
+    stored, or the meeting is listed again by a sync. Either one asks for the
+    alignment again and puts this same job back on the queue.
+    """
     meeting_id = a_meeting(sync, area)
-    a_video(sync, area, meeting_id, duration_s=VIDEO_3709_DURATION_S)
+    video_id = a_video(sync, area, meeting_id, duration_s=VIDEO_3709_DURATION_S)
     job_id = align(sync, meeting_id, area.portal_id)
 
     row = sync.job(job_id)
     assert row["state"] == PAUSED
-    assert "has no transcript yet" in row["last_error"]
-    assert "runs again when the transcript is there" in row["last_error"]
+    assert row["last_error"] == (
+        f"Video {video_id} of meeting {meeting_id} has no transcript yet, so its agenda items "
+        "cannot be aligned. This job runs again when a transcript of that video is stored, or "
+        f"when meeting {meeting_id} is synced again."
+    )
     assert wired.requests == [], "a paused job does not read the agenda it cannot use"
 
 

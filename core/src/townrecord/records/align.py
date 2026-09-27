@@ -12,7 +12,9 @@ offset and its anchors go in one row per meeting (migration 0009), so a reader
 can see what the boundaries rest on.
 
 The job is safe to re-run: the same agenda and the same transcript write the
-same rows, and the alignment row is updated in place rather than added to.
+same rows, and the alignment row is updated in place rather than added to. A run
+it pauses is not lost: it comes back to the queue when the transcript is stored
+or the meeting is synced again (spec 16.3).
 """
 
 from __future__ import annotations
@@ -40,9 +42,12 @@ def align_meeting(ctx: JobContext) -> None:
     """Align one meeting's agenda items with its video's transcript.
 
     A gap that another job fills later pauses this one with the reason rather
-    than failing it: a meeting whose video has no transcript yet is the
-    ordinary case, and the next sync of the same window queues the job again
-    (spec 7.1 step 7).
+    than failing it: a meeting whose video has no transcript yet is the ordinary
+    case. What makes it run afterwards is named in the reason it leaves, and it
+    is two things (spec 7.1 step 7): a transcript of that video is stored, or
+    the meeting is listed again by a later sync. Both go through
+    :func:`townrecord.records.request_alignment`, which puts this same job back
+    on the queue.
     """
     request = portal.align_request(ctx.payload)
     meeting = get_meeting(ctx.conn, request.meeting_id)
@@ -76,7 +81,8 @@ def align_meeting(ctx: JobContext) -> None:
     if transcript is None:
         ctx.pause(
             f"Video {video.id} of meeting {meeting.id} has no transcript yet, so its agenda "
-            "items cannot be aligned. This job runs again when the transcript is there."
+            "items cannot be aligned. This job runs again when a transcript of that video is "
+            f"stored, or when meeting {meeting.id} is synced again."
         )
         return
     segments = segments_of(ctx.conn, transcript.id)

@@ -341,16 +341,19 @@ def _queue_alignment(ctx: JobContext, meeting_id: int, source: Source, tally: _T
     """Queue the alignment of a meeting that has items and a video.
 
     The job is queued whether or not the video has a transcript yet. The
-    transcript arrives from its own work, and the align job says plainly when
-    it is not there yet; a later sync of the same window queues it again,
-    because a job that could not run is not a job that is waiting.
+    transcript arrives from its own work, and the align job says plainly when it
+    is not there yet. This sync is one of the two things that make the job run
+    after it paused, so the ask goes through the same function the transcript
+    writer calls: a paused job is put back on the queue rather than left beside
+    a second job that would align the same meeting twice.
     """
     from ..repo import agenda_items, primary_video
+    from .requests import SYNCED_AGAIN, request_alignment
 
     if not agenda_items(ctx.conn, meeting_id):
         return
     if primary_video(ctx.conn, meeting_id) is None:
         return
-    request = portal.AlignRequest(meeting_id=meeting_id, source_id=source.id)
-    if portal.enqueue_once(ctx, portal.ALIGN_MEETING, request.as_payload()) is not None:
+    reason = SYNCED_AGAIN.format(meeting_id=meeting_id)
+    if request_alignment(ctx.conn, meeting_id, reason=reason) is not None:
         tally.alignments_queued += 1

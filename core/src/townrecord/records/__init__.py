@@ -21,18 +21,23 @@ from ..jobs import Registry, default_registry
 from .align import align_meeting
 from .download import download_record
 from .portal import ALIGN_MEETING, DOWNLOAD_RECORD, HEAVY, NORMAL, SYNC_PRIMEGOV
+from .requests import ASKED_FOR, SYNCED_AGAIN, TRANSCRIPT_STORED, request_alignment
 from .sync import sync_primegov
 
 __all__ = [
     "ALIGN_MEETING",
+    "ASKED_FOR",
     "DOWNLOAD_RECORD",
     "HEAVY",
     "NORMAL",
+    "SYNCED_AGAIN",
     "SYNC_PRIMEGOV",
+    "TRANSCRIPT_STORED",
     "align_meeting",
     "download_record",
     "jobs",
     "register_jobs",
+    "request_alignment",
     "sync_primegov",
 ]
 

@@ -55,8 +55,10 @@ RECORDED_TITLES = (
     # The sitting word comes out and what it sat with stays: who a joint
     # sitting sits with is not part of the name of the body, but no reading
     # here takes it off either. The title is reported as it reads.
-    ("City Council Joint Meeting with Boulder County Commissioners",
-     "City Council with Boulder County Commissioners"),
+    (
+        "City Council Joint Meeting with Boulder County Commissioners",
+        "City Council with Boulder County Commissioners",
+    ),
     ("City Council Meeting CANCELLED", "City Council"),
     ("City Council Open Forum", "City Council Open Forum"),
     ("Board of Adjustment and Appeals - CANCELLED", "Board of Adjustment and Appeals"),
@@ -65,8 +67,10 @@ RECORDED_TITLES = (
     ("CANCELLED MASTER BOARD OF APPEALS - 02/04/2026", "MASTER BOARD OF APPEALS"),
     ("Cancelled - Parks and Recreation Advisory Board", "Parks and Recreation Advisory Board"),
     ("Golf Course Advisory Board", "Golf Course Advisory Board"),
-    ("Special Meeting - Longmont Housing Authority Board of Commissioners",
-     "Longmont Housing Authority Board of Commissioners"),
+    (
+        "Special Meeting - Longmont Housing Authority Board of Commissioners",
+        "Longmont Housing Authority Board of Commissioners",
+    ),
     ("Special Meeting - Longmont Urban Renewal Authority", "Longmont Urban Renewal Authority"),
     ("Water Board Special Meeting - Applicant Interviews", "Water Board"),
     ("Library Board", "Library Board"),
