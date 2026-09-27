@@ -12,6 +12,11 @@ import sqlite3
 from .rows import Meeting, Record, RecordPage, Video
 from .store import get, insert
 
+#: How far the capture of a video has got (spec 8.2 to 8.5). 'skipped' is the
+#: upcoming or live video that is left for a later pass; 'captions' means the
+#: transcript came from captions, which is the case spec 8.3 puts first.
+CAPTURE_STATES: tuple[str, ...] = ("pending", "skipped", "captions", "audio", "failed")
+
 
 def insert_meeting(
     conn: sqlite3.Connection,
@@ -177,6 +182,17 @@ def get_video(conn: sqlite3.Connection, video_id: int) -> Video | None:
     """Return the video, or None when there is no such row."""
     row = get(conn, "videos", video_id)
     return None if row is None else Video.from_row(row)
+
+
+def set_capture_state(conn: sqlite3.Connection, video_id: int, state: str) -> None:
+    """Say how far the capture of a video has got (spec 8.2 to 8.5).
+
+    The states are the ones the table accepts, and the table refuses anything
+    else, so a caller cannot write a word no read knows.
+    """
+    if state not in CAPTURE_STATES:
+        raise ValueError(f"{state!r} is not a capture state.")
+    conn.execute("UPDATE videos SET capture_state = ? WHERE id = ?", (state, video_id))
 
 
 def videos_of_platform(conn: sqlite3.Connection, platform_video_id: str) -> list[Video]:

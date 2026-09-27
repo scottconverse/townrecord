@@ -26,6 +26,7 @@ from townrecord.repo import (
     insert_video_citation,
     insert_vote,
     item_for_segment,
+    items_for_segments,
     record_pages,
     record_source_failure,
 )
@@ -318,3 +319,151 @@ def test_the_item_of_a_citation_is_the_item_of_its_range(
     assert stored.kind == "record"
     assert stored.page_number == 1
     assert stored.start_ms is None, "a document citation has no seconds"
+
+
+def test_item_for_segment_picks_the_most_specific_of_nested_ranges(
+    conn: sqlite3.Connection, area: Area, transcript: int
+) -> None:
+    """Spec 10.2 over 10.A: the council sits as a whole, and as a redevelopment
+    authority inside the same meeting, so two items cover the same second.
+
+    The most specific one is the item that starts last: the range that opens
+    later is the range that took over at that moment. The item that starts
+    first is the umbrella, and it is the slower one to reach.
+    """
+    council = insert_agenda_item(
+        conn,
+        meeting_id=area.meeting,
+        number="10",
+        title="Council business",
+        start_ms=1_800_000,
+        end_ms=7_200_000,
+        alignment_method="html_video_times",
+    )
+    authority = insert_agenda_item(
+        conn,
+        meeting_id=area.meeting,
+        number="10.A",
+        title="Redevelopment authority",
+        start_ms=3_600_000,
+        end_ms=5_400_000,
+        alignment_method="html_video_times",
+    )
+    assert council != authority
+
+    def item_at(start_ms: int) -> int | None:
+        segment = insert_segment(
+            conn,
+            transcript_id=transcript,
+            start_ms=start_ms,
+            end_ms=start_ms + 1000,
+            text="A line of the meeting.",
+        )
+        item = item_for_segment(conn, segment)
+        return None if item is None else int(item.id)
+
+    assert item_at(1_800_000) == council, "before 10.A opens, item 10 holds the floor"
+    assert item_at(3_599_999) == council, "the millisecond before 10.A opens"
+    assert item_at(3_600_000) == authority, "10.A took over at its own start"
+    assert item_at(5_000_000) == authority, "inside the nested range"
+    assert item_at(5_399_999) == authority, "the last millisecond of 10.A"
+    assert item_at(5_400_000) == council, "10.A closed, so 10 holds the floor again"
+    assert item_at(7_200_000) is None, "the range is half open at the end too"
+
+
+def test_the_item_of_every_segment_is_the_same_whether_read_one_at_a_time_or_all_at_once(
+    conn: sqlite3.Connection, area: Area, transcript: int
+) -> None:
+    """Spec 10.2: the item of a segment is resolved one way, whichever read is used.
+
+    ``item_for_segment`` answers for one line and ``items_for_segments``
+    answers for a whole transcript in one statement. A meeting page reads the
+    whole transcript, and a citation reads one line, so the two must agree on
+    every line or the same second would cite two different items.
+
+    The ranges nest three deep here: section 10 holds the floor for the whole
+    hour, item 10.A inside it, and item 10.A.1 inside that. The most specific
+    range wins, which for each line is the one that starts last.
+    """
+    section = insert_agenda_item(
+        conn,
+        meeting_id=area.meeting,
+        number="10",
+        title="Council business",
+        start_ms=1_800_000,
+        end_ms=7_200_000,
+        alignment_method="html_video_times",
+    )
+    item_10a = insert_agenda_item(
+        conn,
+        meeting_id=area.meeting,
+        number="10.A",
+        title="Redevelopment authority",
+        start_ms=3_600_000,
+        end_ms=5_400_000,
+        alignment_method="html_video_times",
+    )
+    item_10a1 = insert_agenda_item(
+        conn,
+        meeting_id=area.meeting,
+        number="10.A.1",
+        title="Redevelopment authority, consent agenda",
+        start_ms=4_200_000,
+        end_ms=4_800_000,
+        alignment_method="html_video_times",
+    )
+    assert len({section, item_10a, item_10a1}) == 3
+
+    # One line inside each layer, one on each boundary, and one outside all of
+    # them, so the walk crosses every change of item.
+    starts = [
+        1_800_000,
+        3_599_999,
+        3_600_000,
+        4_199_999,
+        4_200_000,
+        4_799_999,
+        4_800_000,
+        5_399_999,
+        5_400_000,
+        7_199_999,
+        7_200_000,
+    ]
+    segments = [
+        insert_segment(
+            conn,
+            transcript_id=transcript,
+            start_ms=start_ms,
+            end_ms=start_ms + 1000,
+            text=f"A line that begins at {start_ms}.",
+        )
+        for start_ms in starts
+    ]
+
+    every = items_for_segments(conn, transcript)
+    expected = {
+        1_800_000: section,
+        3_599_999: section,
+        3_600_000: item_10a,
+        4_199_999: item_10a,
+        4_200_000: item_10a1,
+        4_799_999: item_10a1,
+        4_800_000: item_10a,
+        5_399_999: item_10a,
+        5_400_000: section,
+        7_199_999: section,
+        7_200_000: None,
+    }
+    for segment, start_ms in zip(segments, starts, strict=True):
+        one = item_for_segment(conn, segment)
+        once = every.get(segment)
+        wanted = expected[start_ms]
+        assert (None if one is None else int(one.id)) == wanted, (
+            f"the one-line read at {start_ms} disagrees with the item it should name"
+        )
+        assert (None if once is None else int(once.id)) == wanted, (
+            f"the whole-transcript read at {start_ms} disagrees with the item it should name"
+        )
+        assert (None if one is None else int(one.id)) == (None if once is None else int(once.id)), (
+            f"the two reads disagree at {start_ms}"
+        )

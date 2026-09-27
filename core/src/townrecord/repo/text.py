@@ -226,6 +226,55 @@ def agenda_items(conn: sqlite3.Connection, meeting_id: int) -> list[AgendaItem]:
     return [AgendaItem.from_row(row) for row in rows]
 
 
+def transcript_for_artifact(
+    conn: sqlite3.Connection, video_id: int, artifact_id: int
+) -> Transcript | None:
+    """Return the transcript of a video made from these exact bytes, or None.
+
+    The same captions stored twice are the same artifact (spec 8.6), and the
+    unique index on ``(video_id, artifact_id)`` makes them the same transcript.
+    This read is how a caller finds that out before it writes anything
+    (spec 8.7).
+    """
+    row = conn.execute(
+        "SELECT * FROM transcripts WHERE video_id = ? AND artifact_id = ?",
+        (video_id, artifact_id),
+    ).fetchone()
+    return None if row is None else Transcript.from_row(row)
+
+
+def sister_transcript(conn: sqlite3.Connection, video_id: int) -> Transcript | None:
+    """Return a transcript of another video of the same meeting, or None.
+
+    Spec 8.4.1 is the first fallback when a video has no usable captions: "The
+    sister channel. The same meeting on another watched channel." A meeting is
+    one row in ``meetings`` and the videos of that meeting are the rows in
+    ``videos`` that point at it, whichever channel published them, so the
+    sister is a transcript of an *other* video of the same meeting that we
+    already hold.
+
+    A settled transcript is preferred to a provisional one, and among equals
+    the earliest row wins. The order is fixed so that the same meeting answers
+    the same way twice; a transcript that is still inside the 24 hour window of
+    spec 8.7 may yet be replaced, and one outside it may not.
+
+    A video that is not matched to a meeting has no sister, and neither has the
+    only captured video of its meeting: None.
+    """
+    row = conn.execute(
+        "SELECT transcripts.* FROM transcripts "
+        "JOIN videos ON videos.id = transcripts.video_id "
+        "JOIN videos AS ours ON ours.id = ? "
+        "WHERE videos.meeting_id = ours.meeting_id "
+        "AND transcripts.video_id <> ours.id "
+        "AND ours.meeting_id IS NOT NULL "
+        "ORDER BY transcripts.is_provisional, transcripts.id "
+        "LIMIT 1",
+        (video_id,),
+    ).fetchone()
+    return None if row is None else Transcript.from_row(row)
+
+
 def latest_transcript(conn: sqlite3.Connection, video_id: int) -> Transcript | None:
     """Return the transcript of a video that should be read, or None.
 
@@ -243,7 +292,7 @@ def latest_transcript(conn: sqlite3.Connection, video_id: int) -> Transcript | N
 
 
 def segments_of(conn: sqlite3.Connection, transcript_id: int) -> list[Segment]:
-    """Return the lines of a transcript, in time order."""
+    """Return the timed lines of a transcript, in time order."""
     rows = conn.execute(
         "SELECT * FROM segments WHERE transcript_id = ? ORDER BY start_ms, id",
         (transcript_id,),
@@ -260,7 +309,9 @@ def items_for_segments(conn: sqlite3.Connection, transcript_id: int) -> dict[int
 
     The range is half open here exactly as it is there, from ``start_ms``
     inclusive to ``end_ms`` exclusive, and when two ranges both hold a line the
-    earlier item wins, which is the order that function picks too.
+    most specific one wins: the item that starts last, because the range that
+    opens later is the one that took over at that moment. That is the answer
+    :func:`item_for_segment` gives for the same line, so the two agree.
     """
     rows = conn.execute(
         "SELECT segments.id AS segment_id, agenda_items.* FROM segments "
@@ -272,7 +323,7 @@ def items_for_segments(conn: sqlite3.Connection, transcript_id: int) -> dict[int
         "AND agenda_items.end_ms IS NOT NULL "
         "AND agenda_items.start_ms <= segments.start_ms "
         "AND segments.start_ms < agenda_items.end_ms "
-        "ORDER BY segments.id, agenda_items.start_ms",
+        "ORDER BY segments.id, agenda_items.start_ms DESC",
         (transcript_id,),
     ).fetchall()
     found: dict[int, AgendaItem] = {}
@@ -290,6 +341,13 @@ def item_for_segment(conn: sqlite3.Connection, segment_id: int) -> AgendaItem | 
     not both claim the same line. The test is on the start of the segment,
     which is the moment the line begins.
 
+    Ranges may nest: a council sits as a whole for the consent agenda and also
+    as a redevelopment authority inside the same meeting, so two items of one
+    meeting can each cover the same second. The most specific one is the item
+    that starts last, because the range that opens later is the one that took
+    over at that moment. So the answer is the item with the greatest start that
+    still contains the segment.
+
     None is the honest answer when the segment is unknown, when its video is
     not matched to a meeting, when no item has a time range (method 3 of
     spec 10.2), or when the start of the segment is outside every range.
@@ -304,7 +362,7 @@ def item_for_segment(conn: sqlite3.Connection, segment_id: int) -> AgendaItem | 
         "AND agenda_items.end_ms IS NOT NULL "
         "AND agenda_items.start_ms <= segments.start_ms "
         "AND segments.start_ms < agenda_items.end_ms "
-        "ORDER BY agenda_items.start_ms "
+        "ORDER BY agenda_items.start_ms DESC "
         "LIMIT 1",
         (segment_id,),
     ).fetchone()

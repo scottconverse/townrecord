@@ -40,6 +40,7 @@ from .evidence import (
     votes_of_item,
 )
 from .meetings import (
+    CAPTURE_STATES,
     attach_video,
     delete_record_pages,
     get_meeting,
@@ -56,6 +57,7 @@ from .meetings import (
     record_for_portal_document,
     record_pages,
     records_of_meeting,
+    set_capture_state,
     set_record_page_count,
     upsert_meeting,
     videos_of_platform,
@@ -83,6 +85,7 @@ from .search import (
     SearchCitation,
     SearchHit,
     match_expression,
+    phrase_expression,
     query_terms,
     search,
 )
@@ -100,6 +103,8 @@ from .text import (
     items_for_segments,
     latest_transcript,
     segments_of,
+    sister_transcript,
+    transcript_for_artifact,
     update_agenda_item_alignment,
     upsert_agenda_item,
 )
@@ -107,6 +112,7 @@ from .text import (
 __all__ = [
     "ALIGNMENT_METHODS",
     "BROKEN_AFTER_FAILURES",
+    "CAPTURE_STATES",
     "RECORD_PAGE",
     "SEGMENT",
     "VOTE_SOURCE_KINDS",
@@ -173,6 +179,7 @@ __all__ = [
     "meeting_by_portal_id",
     "meetings_of_body",
     "overlaps_of",
+    "phrase_expression",
     "primary_video",
     "query_terms",
     "record_for_portal_document",
@@ -183,6 +190,9 @@ __all__ = [
     "save_meeting_alignment",
     "search",
     "segments_of",
+    "set_capture_state",
+    "sister_transcript",
+    "transcript_for_artifact",
     "set_record_page_count",
     "update_agenda_item_alignment",
     "upsert_agenda_item",
