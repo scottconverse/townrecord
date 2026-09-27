@@ -18,6 +18,10 @@ BROKEN_AFTER_FAILURES = 3
 #: A status a failure may move to broken. A rejected source is not checked.
 _CHECKED_STATUSES = ("suggested", "accepted")
 
+#: A status a success moves back to accepted. A source that answers is not
+#: broken, and one that could never leave broken could never be checked again.
+_RECOVERED_STATUS = "broken"
+
 
 def insert_jurisdiction(
     conn: sqlite3.Connection,
@@ -221,3 +225,26 @@ def record_source_failure(conn: sqlite3.Connection, source_id: int, error: str) 
     if row is None:
         raise KeyError(f"There is no source {source_id}.")
     return int(row["consecutive_failures"])
+
+
+def record_source_success(conn: sqlite3.Connection, source_id: int) -> None:
+    """Record one successful check of a source (spec 7.3).
+
+    The count goes back to zero and the last error is cleared: the source
+    answered, so the error that was last is no longer the last thing that
+    happened. A source that had gone broken is accepted again, because a
+    source that answers is not broken, and one that could never leave broken
+    could never be checked again. A suggested or rejected source keeps its
+    status: neither is checked, so a success on one would be a bug elsewhere.
+    """
+    conn.execute(
+        "UPDATE sources SET "
+        "consecutive_failures = 0, "
+        "last_error = NULL, "
+        "last_checked_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), "
+        "status = CASE WHEN status = ? THEN 'accepted' ELSE status END "
+        "WHERE id = ?",
+        (_RECOVERED_STATUS, source_id),
+    )
+    if conn.execute("SELECT 1 FROM sources WHERE id = ?", (source_id,)).fetchone() is None:
+        raise KeyError(f"There is no source {source_id}.")

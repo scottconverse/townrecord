@@ -10,9 +10,11 @@ import pytest
 from townrecord.db import applied_versions, connect, discover, migrate, split_statements
 
 #: The migrations this worktree ships, in order. 0007 is the search index (spec
-#: 12.4). 0006 is another lane's migration and is not here yet, so the list has
-#: a gap at 6 until that lane merges.
-SHIPPED_VERSIONS = [1, 2, 3, 4, 5, 7]
+#: 12.4), 0009 is the portal sync columns (spec 7.2, 9.2) and 0010 is the OCR
+#: reason of a page with no text layer (spec 9.6). 0006 and 0008 are another
+#: lane's migrations and are not here yet, so the list has gaps at 6 and 8
+#: until that lane merges.
+SHIPPED_VERSIONS = [1, 2, 3, 4, 5, 7, 9, 10]
 
 
 def table_names(conn: sqlite3.Connection) -> set[str]:
