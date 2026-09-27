@@ -11,6 +11,13 @@ not get a writer of its own:
 So both callers reach the database through the one function below, and a change
 to how a transcript is written lands on both at once.
 
+One more thing happens there, and it is the reason this module knows anything
+about alignments. The align job of a meeting pauses when the meeting's video has
+no transcript yet, and the sentence it leaves promises two things will make it
+run again: the meeting is synced again, or a transcript of that video is stored
+(spec 16.3). The second half of that promise is kept here, because a transcript
+is only ever stored through this one function.
+
 A local transcription also carries a :class:`~townrecord.stt.provenance.Provenance`
 (spec 8.5, 8.6): the tool, its version, the model, the device and the SHA-256 of
 the audio the model heard. The ``transcripts`` table of migration 0005 has no
@@ -28,6 +35,7 @@ from typing import Any
 
 from .. import artifacts, repo
 from ..captions.parse import Segment
+from ..records.requests import TRANSCRIPT_STORED, request_alignment
 from ..stt.provenance import Provenance
 
 __all__ = ["insert_transcript_with_segments", "provenance_meta"]
@@ -123,9 +131,42 @@ def insert_transcript_with_segments(
             )
         if provenance is not None:
             artifacts.merge_meta(conn, artifact_id, {"provenance": provenance_meta(provenance)})
+        _ask_for_alignment(conn, video_id)
         conn.execute("COMMIT")
     except BaseException:
         with suppress(sqlite3.Error):  # nothing to roll back
             conn.execute("ROLLBACK")
         raise
     return transcript_id
+
+
+def _ask_for_alignment(conn: sqlite3.Connection, video_id: int) -> None:
+    """Ask for the alignment of a meeting whose video just got a transcript.
+
+    The align job pauses when its video has no transcript yet, and the sentence
+    it leaves says a transcript of that video makes it run again (spec 16.3).
+    This is where that sentence is kept: a transcript is stored, and the
+    alignment of the meeting it belongs to is put back on the queue.
+
+    It is asked inside the transaction for one reason. Every caller finds out
+    whether the transcript is already stored *before* it writes anything and
+    returns early when it is (spec 8.7), so a job that asked after the commit
+    would be asked for by no run at all: the retry would find the transcript
+    already there and do nothing. Inside the transaction, the write and the ask
+    land together or neither does.
+
+    Only the primary video of a meeting asks. A meeting is aligned against one
+    video, so a transcript of another video of the same meeting changes nothing
+    about the alignment. A video that belongs to no meeting asks for nothing.
+    """
+    video = repo.get_video(conn, video_id)
+    if video is None or video.meeting_id is None:
+        return
+    primary = repo.primary_video(conn, video.meeting_id)
+    if primary is None or primary.id != video_id:
+        return
+    request_alignment(
+        conn,
+        video.meeting_id,
+        reason=TRANSCRIPT_STORED.format(video_id=video_id, meeting_id=video.meeting_id),
+    )
