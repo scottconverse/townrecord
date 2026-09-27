@@ -9,6 +9,11 @@ import pytest
 
 from townrecord.db import applied_versions, connect, discover, migrate, split_statements
 
+#: The migrations this worktree ships, in order. 0007 is the search index (spec
+#: 12.4). 0006 is another lane's migration and is not here yet, so the list has
+#: a gap at 6 until that lane merges.
+SHIPPED_VERSIONS = [1, 2, 3, 4, 5, 7]
+
 
 def table_names(conn: sqlite3.Connection) -> set[str]:
     rows = conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
@@ -23,15 +28,15 @@ def column_names(conn: sqlite3.Connection, table: str) -> set[str]:
 def test_the_shipped_migrations_are_numbered_in_order() -> None:
     found = discover()
     assert [version for version, _, _ in found] == sorted(version for version, _, _ in found)
-    assert [version for version, _, _ in found] == [1, 2, 3, 4, 5]
+    assert [version for version, _, _ in found] == SHIPPED_VERSIONS
 
 
 def test_migrate_applies_every_migration(db_path: Path) -> None:
     conn = connect(db_path)
     try:
         applied = migrate(conn)
-        assert applied == [1, 2, 3, 4, 5]
-        assert applied_versions(conn) == {1, 2, 3, 4, 5}
+        assert applied == SHIPPED_VERSIONS
+        assert applied_versions(conn) == set(SHIPPED_VERSIONS)
     finally:
         conn.close()
 

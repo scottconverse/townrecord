@@ -139,6 +139,61 @@ def agenda_items(conn: sqlite3.Connection, meeting_id: int) -> list[AgendaItem]:
     return [AgendaItem.from_row(row) for row in rows]
 
 
+def latest_transcript(conn: sqlite3.Connection, video_id: int) -> Transcript | None:
+    """Return the transcript of a video that should be read, or None.
+
+    A revision is new bytes, so it is a new row (spec 8.7). A settled
+    transcript is preferred over a provisional one, because a settled one has
+    stopped changing (spec 10.6); among transcripts of the same standing the
+    newest row wins. None means the video has no transcript at all, which is
+    an honest gap rather than an empty transcript.
+    """
+    row = conn.execute(
+        "SELECT * FROM transcripts WHERE video_id = ? ORDER BY is_provisional, id DESC LIMIT 1",
+        (video_id,),
+    ).fetchone()
+    return None if row is None else Transcript.from_row(row)
+
+
+def segments_of(conn: sqlite3.Connection, transcript_id: int) -> list[Segment]:
+    """Return the lines of a transcript, in time order."""
+    rows = conn.execute(
+        "SELECT * FROM segments WHERE transcript_id = ? ORDER BY start_ms, id",
+        (transcript_id,),
+    ).fetchall()
+    return [Segment.from_row(row) for row in rows]
+
+
+def items_for_segments(conn: sqlite3.Connection, transcript_id: int) -> dict[int, AgendaItem]:
+    """Return the agenda item each line of a transcript falls in (spec 10.2).
+
+    One statement for the whole transcript. Asking :func:`item_for_segment`
+    once per line would run one query per line, and a full meeting is
+    thousands of lines.
+
+    The range is half open here exactly as it is there, from ``start_ms``
+    inclusive to ``end_ms`` exclusive, and when two ranges both hold a line the
+    earlier item wins, which is the order that function picks too.
+    """
+    rows = conn.execute(
+        "SELECT segments.id AS segment_id, agenda_items.* FROM segments "
+        "JOIN transcripts ON transcripts.id = segments.transcript_id "
+        "JOIN videos ON videos.id = transcripts.video_id "
+        "JOIN agenda_items ON agenda_items.meeting_id = videos.meeting_id "
+        "WHERE segments.transcript_id = ? "
+        "AND agenda_items.start_ms IS NOT NULL "
+        "AND agenda_items.end_ms IS NOT NULL "
+        "AND agenda_items.start_ms <= segments.start_ms "
+        "AND segments.start_ms < agenda_items.end_ms "
+        "ORDER BY segments.id, agenda_items.start_ms",
+        (transcript_id,),
+    ).fetchall()
+    found: dict[int, AgendaItem] = {}
+    for row in rows:
+        found.setdefault(int(row["segment_id"]), AgendaItem.from_row(row))
+    return found
+
+
 def item_for_segment(conn: sqlite3.Connection, segment_id: int) -> AgendaItem | None:
     """Return the agenda item a segment falls in, or None (spec 10.2).
 

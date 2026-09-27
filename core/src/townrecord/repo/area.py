@@ -42,6 +42,38 @@ def insert_jurisdiction(
     )
 
 
+def jurisdictions(conn: sqlite3.Connection) -> list[Jurisdiction]:
+    """Return every jurisdiction, grouped by level and then by name."""
+    rows = conn.execute("SELECT * FROM jurisdictions ORDER BY type, name, id").fetchall()
+    return [Jurisdiction.from_row(row) for row in rows]
+
+
+def bodies(conn: sqlite3.Connection, jurisdiction_id: int | None = None) -> list[Body]:
+    """Return every body, or the bodies of one jurisdiction, by name."""
+    if jurisdiction_id is None:
+        rows = conn.execute("SELECT * FROM bodies ORDER BY name, id").fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM bodies WHERE jurisdiction_id = ? ORDER BY name, id", (jurisdiction_id,)
+        ).fetchall()
+    return [Body.from_row(row) for row in rows]
+
+
+def all_sources(conn: sqlite3.Connection, jurisdiction_id: int | None = None) -> list[Source]:
+    """Return every source, or the sources of one jurisdiction, in id order.
+
+    The status is a column, so a caller sees which sources are still only
+    suggested and which are broken, rather than a filtered list (spec 7.3).
+    """
+    if jurisdiction_id is None:
+        rows = conn.execute("SELECT * FROM sources ORDER BY id").fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM sources WHERE jurisdiction_id = ? ORDER BY id", (jurisdiction_id,)
+        ).fetchall()
+    return [Source.from_row(row) for row in rows]
+
+
 def get_jurisdiction(conn: sqlite3.Connection, jurisdiction_id: int) -> Jurisdiction | None:
     """Return the jurisdiction, or None when there is no such row."""
     row = get(conn, "jurisdictions", jurisdiction_id)

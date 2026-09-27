@@ -8,6 +8,8 @@ column names of its table, and a query is written as SQL.
 from .area import (
     BROKEN_AFTER_FAILURES,
     add_overlap,
+    all_sources,
+    bodies,
     get_body,
     get_jurisdiction,
     get_person,
@@ -18,6 +20,7 @@ from .area import (
     insert_person,
     insert_seat,
     insert_source,
+    jurisdictions,
     overlaps_of,
     record_source_failure,
 )
@@ -29,6 +32,7 @@ from .evidence import (
     insert_record_citation,
     insert_video_citation,
     insert_vote,
+    votes_of_item,
 )
 from .meetings import (
     get_meeting,
@@ -39,6 +43,7 @@ from .meetings import (
     insert_record,
     insert_record_page,
     insert_video,
+    meetings_of_body,
     primary_video,
     record_pages,
 )
@@ -58,6 +63,15 @@ from .rows import (
     Video,
     Vote,
 )
+from .search import (
+    RECORD_PAGE,
+    SEGMENT,
+    SearchCitation,
+    SearchHit,
+    match_expression,
+    query_terms,
+    search,
+)
 from .text import (
     ALIGNMENT_METHODS,
     agenda_items,
@@ -68,11 +82,16 @@ from .text import (
     insert_segment,
     insert_transcript,
     item_for_segment,
+    items_for_segments,
+    latest_transcript,
+    segments_of,
 )
 
 __all__ = [
     "ALIGNMENT_METHODS",
     "BROKEN_AFTER_FAILURES",
+    "RECORD_PAGE",
+    "SEGMENT",
     "VOTE_SOURCE_KINDS",
     "AgendaItem",
     "Body",
@@ -82,6 +101,8 @@ __all__ = [
     "Person",
     "Record",
     "RecordPage",
+    "SearchCitation",
+    "SearchHit",
     "Seat",
     "Segment",
     "Source",
@@ -90,6 +111,8 @@ __all__ = [
     "Vote",
     "add_overlap",
     "agenda_items",
+    "all_sources",
+    "bodies",
     "citation_sha256",
     "get_agenda_item",
     "get_body",
@@ -121,8 +144,17 @@ __all__ = [
     "insert_video_citation",
     "insert_vote",
     "item_for_segment",
+    "items_for_segments",
+    "jurisdictions",
+    "latest_transcript",
+    "match_expression",
+    "meetings_of_body",
     "overlaps_of",
     "primary_video",
+    "query_terms",
     "record_pages",
     "record_source_failure",
+    "search",
+    "segments_of",
+    "votes_of_item",
 ]
