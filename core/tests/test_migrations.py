@@ -1,4 +1,4 @@
-"""The migration system (spec 14.3) and the jobs table (spec 16.1)."""
+"""The migration system (spec 14.3), the jobs table (spec 16.1) and artifacts (spec 8.6)."""
 
 from __future__ import annotations
 
@@ -23,15 +23,15 @@ def column_names(conn: sqlite3.Connection, table: str) -> set[str]:
 def test_the_shipped_migrations_are_numbered_in_order() -> None:
     found = discover()
     assert [version for version, _, _ in found] == sorted(version for version, _, _ in found)
-    assert [version for version, _, _ in found] == [1, 2]
+    assert [version for version, _, _ in found] == [1, 2, 3, 4, 5]
 
 
 def test_migrate_applies_every_migration(db_path: Path) -> None:
     conn = connect(db_path)
     try:
         applied = migrate(conn)
-        assert applied == [1, 2]
-        assert applied_versions(conn) == {1, 2}
+        assert applied == [1, 2, 3, 4, 5]
+        assert applied_versions(conn) == {1, 2, 3, 4, 5}
     finally:
         conn.close()
 
@@ -64,6 +64,16 @@ def test_a_job_accepts_the_two_lanes_and_rejects_others(conn: sqlite3.Connection
         conn.execute("INSERT INTO jobs (kind, lane) VALUES ('scan', 'editorial')")
 
 
+def test_a_job_accepts_every_state_of_spec_16_1(conn: sqlite3.Connection) -> None:
+    for state in ("queued", "running", "done", "failed", "paused"):
+        conn.execute("INSERT INTO jobs (kind, state) VALUES ('scan', ?)", (state,))
+
+
+def test_a_job_state_outside_the_list_is_refused(conn: sqlite3.Connection) -> None:
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("INSERT INTO jobs (kind, state) VALUES ('scan', 'stalled')")
+
+
 def test_a_job_starts_queued_with_no_claim(conn: sqlite3.Connection) -> None:
     conn.execute("INSERT INTO jobs (kind) VALUES ('scan')")
     row = conn.execute("SELECT * FROM jobs").fetchone()
@@ -79,6 +89,47 @@ def test_the_tokens_table_accepts_only_the_two_scopes(conn: sqlite3.Connection) 
     conn.execute("INSERT INTO api_tokens (name, token_hash, scope) VALUES ('b', 'y', 'read_write')")
     with pytest.raises(sqlite3.IntegrityError):
         conn.execute("INSERT INTO api_tokens (name, token_hash, scope) VALUES ('c', 'z', 'admin')")
+
+
+def test_the_artifacts_table_has_the_columns_of_spec_8_6(conn: sqlite3.Connection) -> None:
+    columns = column_names(conn, "artifacts")
+    for expected in ("kind", "sha256", "rel_path", "size", "meta", "created_at"):
+        assert expected in columns, f"artifacts is missing {expected}"
+
+
+def test_one_kind_and_hash_pair_is_stored_once(conn: sqlite3.Connection) -> None:
+    sha = "a" * 64
+    conn.execute(
+        "INSERT INTO artifacts (kind, sha256, rel_path, size) VALUES ('transcript', ?, ?, 5)",
+        (sha, f"transcript-{sha}.vtt"),
+    )
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            "INSERT INTO artifacts (kind, sha256, rel_path, size) VALUES ('transcript', ?, ?, 5)",
+            (sha, f"transcript-{sha}.vtt"),
+        )
+    # The same hash under another kind is a different artifact.
+    conn.execute(
+        "INSERT INTO artifacts (kind, sha256, rel_path, size) VALUES ('info', ?, ?, 5)",
+        (sha, f"info-{sha}.json"),
+    )
+
+
+def test_an_absolute_artifact_path_is_refused(conn: sqlite3.Connection) -> None:
+    insert = "INSERT INTO artifacts (kind, sha256, rel_path, size) VALUES ('transcript', ?, ?, 5)"
+    for rel_path in ("/home/user/storage/transcript-abc.vtt", "C:/storage/transcript-abc.vtt"):
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(insert, ("b" * 64, rel_path))
+
+
+def test_a_missing_sidecar_needs_a_video_and_a_reason(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        "INSERT INTO missing_sidecars (video_id, reason) VALUES ('abc', 'not on the channel')"
+    )
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("INSERT INTO missing_sidecars (video_id, reason) VALUES ('abc', '')")
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("INSERT INTO missing_sidecars (video_id, reason) VALUES ('', 'why')")
 
 
 def test_a_failed_migration_leaves_the_database_unchanged(tmp_path: Path) -> None:
