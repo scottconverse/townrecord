@@ -176,6 +176,54 @@ def test_a_title_that_says_cancelled_marks_the_meeting(
     assert found.body_id == area.body_id, "the body is still read out of the title"
 
 
+def test_a_title_that_says_postponed_marks_the_meeting_continued(
+    area: Area, wired: FakePortal, sync: Sync
+) -> None:
+    """The third signal a portal marks in the title: the sitting did not happen.
+
+    "POSTPONED to March 23" says the Parks Board did not sit on the day it was
+    listed for, and that is what ``meetings.is_continued`` records. The status
+    tail is not part of the body's name, so the body is still read out of the
+    title, and the row is not a cancellation.
+    """
+    wired.meetings = [
+        meeting(A_MEETING, "2026-09-08T19:00:00", "Parks Board POSTPONED to March 23")
+    ]
+    job_id = sync.queue_sync(area.portal_id)
+    sync.lane("normal")
+
+    found = meeting_by_portal_id(sync.conn, area.portal_id, A_MEETING)
+    assert found is not None
+    assert found.is_continued is True
+    assert found.is_cancelled is False, "a postponed sitting is not a cancelled one"
+    assert found.body_id == area.other_body_id, "the body is still read out of the title"
+    assert read_checkpoint(sync.conn, job_id)["meetings_continued"] == 1
+
+
+def test_a_continuation_is_never_cleared_by_a_later_listing(
+    area: Area, wired: FakePortal, sync: Sync
+) -> None:
+    """Like a cancellation, a continuation is a fact about the meeting (spec 9.5).
+
+    The portal writes the status on the listing that carried it, and the next
+    window's listing of the same meeting carries it too or does not. Either way
+    the row keeps what was read.
+    """
+    wired.meetings = [
+        meeting(A_MEETING, "2026-09-08T19:00:00", "Parks Board POSTPONED to March 23")
+    ]
+    sync.queue_sync(area.portal_id)
+    sync.lane("normal")
+
+    wired.meetings = [meeting(A_MEETING, "2026-09-08T19:00:00", "Parks Board")]
+    sync.queue_sync(area.portal_id)
+    sync.lane("normal")
+
+    found = meeting_by_portal_id(sync.conn, area.portal_id, A_MEETING)
+    assert found is not None
+    assert found.is_continued is True
+
+
 def test_a_meeting_that_names_no_known_body_is_reported(
     area: Area, wired: FakePortal, sync: Sync
 ) -> None:

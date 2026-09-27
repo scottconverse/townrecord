@@ -17,7 +17,9 @@ import io
 import json
 from pathlib import Path
 
+import pytest
 from pypdf import PdfWriter
+from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
 from townrecord.jobs import DONE, FAILED, PAUSED, QUEUED, read_checkpoint
 from townrecord.repo import (
@@ -89,6 +91,95 @@ def a_pdf_with_a_blank_page() -> bytes:
     buffer = io.BytesIO()
     writer.write(buffer)
     return buffer.getvalue()
+
+
+def a_pdf_of_pages(pages: list[list[str]]) -> bytes:
+    """A PDF whose every page has those lines written on it, in that order.
+
+    Real bytes are needed rather than a stub: what is read is the text of a
+    page, and only a real page has a text layer to read. pypdf has no public
+    way to write text on a page, so the page's content stream is built here and
+    added through the writer's own object helper.
+    """
+    writer = PdfWriter()
+    font = writer._add_object(
+        DictionaryObject(
+            {
+                NameObject("/Type"): NameObject("/Font"),
+                NameObject("/Subtype"): NameObject("/Type1"),
+                NameObject("/BaseFont"): NameObject("/Helvetica"),
+            }
+        )
+    )
+    for lines in pages:
+        page = writer.add_blank_page(width=612, height=792)
+        page[NameObject("/Resources")] = DictionaryObject(
+            {NameObject("/Font"): DictionaryObject({NameObject("/F1"): font})}
+        )
+        stream = ["BT", "/F1 12 Tf", "72 720 Td", "16 TL"]
+        for line in lines:
+            stream.extend([f"({line}) Tj", "T*"])
+        stream.append("ET")
+        content = DecodedStreamObject()
+        content.set_data("\n".join(stream).encode("ascii"))
+        page[NameObject("/Contents")] = writer._add_object(content)
+    buffer = io.BytesIO()
+    writer.write(buffer)
+    return buffer.getvalue()
+
+
+#: The page of a packet that carries the draft minutes of an earlier sitting.
+#: Its own document printed "Page 3" on it, and it is page 2 of the packet that
+#: carries it, so it prints two footers and only one of them is the packet's.
+DRAFT_MINUTES_PAGE = [
+    "DRAFT MINUTES OF THE REGULAR SESSION",
+    "of September 8, 2026",
+    "Page 3",
+    "Page 2",
+]
+
+#: A packet of three pages: its own first page, that draft minutes page, and a
+#: page after it. Every page prints the number of the page it is (spec 9.4).
+A_PACKET_WITH_A_DRAFT_IN_IT = [
+    ["AGENDA", "City Council Regular Session", "September 22, 2026", "Page 1"],
+    DRAFT_MINUTES_PAGE,
+    ["ORDINANCE 2026-58", "Page 3"],
+]
+
+
+@pytest.mark.parametrize("draft_footer_last", [True, False], ids=["draft-last", "packet-last"])
+def test_a_page_that_prints_two_footers_keeps_the_packet_s_own(
+    area: Area, wired: FakePortal, sync: Sync, draft_footer_last: bool
+) -> None:
+    """The footer stored is the packet's own, wherever the two of them sit.
+
+    A packet that carries the draft minutes of an earlier session prints two
+    footers on those pages: the packet's own, which is the page's number in
+    this file, and the one the draft printed, which belongs to the old
+    meeting's file. What a citation of the page needs is the packet's own
+    (spec 9.4), and which of the two the extractor finds last is not something
+    the reading can rely on.
+    """
+    footers = ["Page 2", "Page 3"] if draft_footer_last else ["Page 3", "Page 2"]
+    page = ["DRAFT MINUTES OF THE REGULAR SESSION", "of September 8, 2026", *footers]
+    wired.document_bytes = a_pdf_of_pages(
+        [A_PACKET_WITH_A_DRAFT_IN_IT[0], page, A_PACKET_WITH_A_DRAFT_IN_IT[2]]
+    )
+    meeting_id = an_agenda_meeting(sync, wired, area)
+    sync.lane("heavy")
+
+    record = its_record(sync, meeting_id)
+    job_id = int(sync.jobs_of_kind("extract_pages")[0]["id"])
+    assert sync.job(job_id)["state"] == DONE
+
+    pages = record_pages(sync.conn, record.id)
+    assert [page_row.page_number for page_row in pages] == [1, 2, 3]
+    assert [page_row.footer_page_number for page_row in pages] == [1, 2, 3], (
+        "the page with two footers stores the packet's own, which is its place in this file"
+    )
+    checkpoint = read_checkpoint(sync.conn, job_id)
+    assert checkpoint["pages_with_several_footers"] == 1
+    assert checkpoint["footers_matching"] == 3
 
 
 def page_rows(sync: Sync, record_id: int) -> list[tuple[int, int | None, str]]:
