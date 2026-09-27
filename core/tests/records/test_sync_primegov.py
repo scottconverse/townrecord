@@ -26,6 +26,7 @@ from townrecord.repo import (
 )
 
 from .conftest import (
+    ARCHIVED_2026,
     BASE_URL,
     SIGNED_MARKER,
     Area,
@@ -33,6 +34,7 @@ from .conftest import (
     Sync,
     document,
     meeting,
+    needs,
     trimmed_2026,
 )
 
@@ -191,6 +193,7 @@ def test_a_meeting_that_names_no_known_body_is_reported(
     assert "no body of jurisdiction" in checkpoint["skipped"][0]
 
 
+@needs(ARCHIVED_2026)
 def test_the_day_the_live_sync_stored_one_of_three_meetings_stores_two(
     area: Area, wired: FakePortal, sync: Sync
 ) -> None:

@@ -207,6 +207,7 @@ def test_the_paused_message_says_what_will_make_it_run(
     assert f"or when meeting {meeting_id} is synced again" in reason
 
 
+@needs(CAPTIONS_16805)
 def test_the_transcript_writer_is_what_makes_it_run(
     area: Area, wired: FakePortal, sync: Sync, storage_root: Path
 ) -> None:

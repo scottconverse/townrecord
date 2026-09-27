@@ -185,6 +185,7 @@ def test_a_transcript_with_no_lines_pauses(
     assert "has no lines" in row["last_error"]
 
 
+@needs(CAPTIONS_16805)
 def test_an_agenda_page_that_cannot_be_read_pauses_with_the_reason(
     area: Area, wired: FakePortal, sync: Sync, storage_root: Path
 ) -> None:
