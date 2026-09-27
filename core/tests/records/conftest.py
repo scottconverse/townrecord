@@ -69,6 +69,9 @@ CAPTIONS_16805 = EVIDENCE_FOLDER / "youtube" / "captions" / "3qfQAkAAC9U.en.srv3
 #: The meeting list of 2026, recorded from the portal.
 ARCHIVED_2026 = EVIDENCE_FOLDER / "primegov" / "longmont-ListArchivedMeetings-2026.json"
 
+#: The compiled PDF agenda of that meeting, recorded from the portal.
+AGENDA_16805_PDF = EVIDENCE_FOLDER / "primegov" / "longmont-agenda-16805.pdf"
+
 #: The meeting the end-to-end test syncs: the September 8, 2026 regular session.
 MEETING_3709 = 3709
 
@@ -376,6 +379,7 @@ def sync(db_path: Path, conn: sqlite3.Connection) -> Sync:
 
 __all__ = [
     "AGENDA_16805",
+    "AGENDA_16805_PDF",
     "ARCHIVED_2026",
     "BASE_URL",
     "CAPTIONS_16805",

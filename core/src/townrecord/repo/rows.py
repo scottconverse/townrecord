@@ -165,13 +165,19 @@ class Record(Row):
 
 @dataclass(frozen=True)
 class RecordPage(Row):
-    """One page of a record, with its text and its printed footer number."""
+    """One page of a record, with its text and its printed footer number.
+
+    ``ocr_reason`` is filled when the page has no text layer and reading it
+    needs OCR (spec 9.6), which is the one thing that tells a scan apart from a
+    page a reader extracted nothing from.
+    """
 
     id: int
     record_id: int
     page_number: int
     footer_page_number: int | None
     text: str
+    ocr_reason: str | None
 
 
 @dataclass(frozen=True)

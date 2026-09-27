@@ -295,8 +295,14 @@ def insert_record_page(
     page_number: int,
     text: str = "",
     footer_page_number: int | None = None,
+    ocr_reason: str | None = None,
 ) -> int:
-    """Store one page of a record and return its id (spec 9.6)."""
+    """Store one page of a record and return its id (spec 9.6).
+
+    ``ocr_reason`` is the plain sentence a page with no text layer is stored
+    with: it is a page that needs OCR, which is a later unit, and the reason is
+    what says so rather than the empty text.
+    """
     return insert(
         conn,
         "record_pages",
@@ -305,8 +311,28 @@ def insert_record_page(
             "page_number": page_number,
             "footer_page_number": footer_page_number,
             "text": text,
+            "ocr_reason": ocr_reason,
         },
     )
+
+
+def delete_record_pages(conn: sqlite3.Connection, record_id: int) -> int:
+    """Remove every page of one record and return how many there were.
+
+    Reading a record again writes its pages fresh rather than editing them in
+    place: a second reading of the same bytes writes the same rows, and a
+    reading of bytes that changed does not leave a page of the old one behind.
+    """
+    before = conn.execute(
+        "SELECT COUNT(*) FROM record_pages WHERE record_id = ?", (record_id,)
+    ).fetchone()[0]
+    conn.execute("DELETE FROM record_pages WHERE record_id = ?", (record_id,))
+    return int(before)
+
+
+def set_record_page_count(conn: sqlite3.Connection, record_id: int, page_count: int) -> None:
+    """Record how many pages a record's file has (spec 9.6)."""
+    conn.execute("UPDATE records SET page_count = ? WHERE id = ?", (page_count, record_id))
 
 
 def get_record_page(conn: sqlite3.Connection, record_page_id: int) -> RecordPage | None:

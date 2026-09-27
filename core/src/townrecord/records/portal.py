@@ -37,9 +37,11 @@ from ..jobs import JobContext, enqueue
 from ..repo import Body, Source, bodies, get_body, get_source
 
 #: The job kinds this package registers (spec 16.1). Their lanes are the ones
-#: the brief gives them: a packet is 60 to 170 MB, so fetching one is heavy.
+#: the brief gives them: a packet is 60 to 170 MB, so fetching one is heavy, and
+#: opening one is slower still.
 SYNC_PRIMEGOV = "sync_primegov"
 DOWNLOAD_RECORD = "download_record"
+EXTRACT_PAGES = "extract_pages"
 ALIGN_MEETING = "align_meeting"
 
 #: The lanes, as spec 16.1 spells them.
@@ -165,6 +167,10 @@ _CONTENT_EXTENSIONS = {
 #: they came and the type is not invented.
 UNKNOWN_EXTENSION = "bin"
 
+#: The one extension the reading job opens. A stored document with any other
+#: one has no pages to read, and the job says so rather than guessing.
+PDF_EXTENSION = "pdf"
+
 
 class SyncRefused(Exception):
     """A job cannot do its work, with a plain reason a person can act on."""
@@ -200,6 +206,17 @@ class DocumentJob:
             "compile_output_type": self.compile_output_type,
             "template_name": self.template_name,
         }
+
+
+@dataclass(frozen=True)
+class PageJob:
+    """One stored record to read page by page (spec 9.6)."""
+
+    record_id: int
+
+    def as_payload(self) -> dict[str, Any]:
+        """The JSON payload a reading job carries."""
+        return {"record_id": self.record_id}
 
 
 @dataclass(frozen=True)
@@ -323,6 +340,15 @@ def document_job(payload: Any) -> DocumentJob:
             allow_zero=True,
         ),
         template_name=str(payload.get("template_name") or "").strip(),
+    )
+
+
+def page_job(payload: Any) -> PageJob:
+    """Read the payload of a reading job (spec 9.6)."""
+    if not isinstance(payload, Mapping):
+        raise SyncRefused("A reading job carries the record to read.")
+    return PageJob(
+        record_id=_as_int(payload.get("record_id"), "A reading job names the record to read.")
     )
 
 

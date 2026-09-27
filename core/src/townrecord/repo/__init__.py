@@ -41,6 +41,7 @@ from .evidence import (
 )
 from .meetings import (
     attach_video,
+    delete_record_pages,
     get_meeting,
     get_record,
     get_record_page,
@@ -55,6 +56,7 @@ from .meetings import (
     record_for_portal_document,
     record_pages,
     records_of_meeting,
+    set_record_page_count,
     upsert_meeting,
     videos_of_platform,
 )
@@ -132,6 +134,7 @@ __all__ = [
     "attach_video",
     "bodies",
     "citation_sha256",
+    "delete_record_pages",
     "get_agenda_item",
     "get_body",
     "get_citation",
@@ -180,6 +183,7 @@ __all__ = [
     "save_meeting_alignment",
     "search",
     "segments_of",
+    "set_record_page_count",
     "update_agenda_item_alignment",
     "upsert_agenda_item",
     "upsert_meeting",

@@ -89,7 +89,10 @@ def test_a_fetched_document_becomes_an_artifact_and_a_record(
     assert stored.source_id == area.portal_id
     assert stored.portal_document_id == AGENDA_ID
     assert stored.portal_template_id == AGENDA_TEMPLATE_ID
-    assert stored.page_count is None, "reading the PDF's pages is a later unit"
+    assert stored.page_count is None, "reading the PDF's pages belongs to the reading job"
+    read = sync.jobs_of_kind("extract_pages")
+    assert len(read) == 1, "which is queued for the record this job just stored"
+    assert json.loads(read[0]["payload"]) == {"record_id": stored.id}
 
     artifact = get_artifact(sync.conn, stored.artifact_id, storage_root)
     assert artifact is not None

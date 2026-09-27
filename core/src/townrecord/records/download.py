@@ -5,12 +5,14 @@ limit that applies to it is the packet limit.
 
 The row this writes points at an artifact and at the portal ids the document
 was published under, never at a path and never at the signed storage link the
-download passes through (spec 9.2). Reading the PDF's text is a later unit;
-nothing here opens the bytes.
+download passes through (spec 9.2). Nothing here opens the bytes: what a stored
+PDF says is read by the ``extract_pages`` job, which this one queues when the
+bytes it stored are a PDF (spec 9.6).
 """
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from ..adapters.base import Document
@@ -99,6 +101,7 @@ def download_record(ctx: JobContext) -> None:
         portal_document_id=job.document_id,
         portal_template_id=job.template_id,
     )
+    read = _ask_for_reading(ctx, record_id, artifact.rel_path)
     ctx.save_checkpoint(
         {
             "record_id": record_id,
@@ -108,8 +111,21 @@ def download_record(ctx: JobContext) -> None:
             "sha256": content.sha256,
             "content_type": content.content_type,
             "already_stored": False,
+            "pages_queued": read is not None,
         }
     )
+
+
+def _ask_for_reading(ctx: JobContext, record_id: int, rel_path: str) -> int | None:
+    """Queue the reading of a stored PDF, and of nothing else.
+
+    Only a PDF has pages to read, so only a PDF is queued: a document of any
+    other kind would be a job that could only pause. The queueing is asked for
+    once, so a second download of the same bytes adds no second reading.
+    """
+    if Path(rel_path).suffix.casefold().lstrip(".") != portal.PDF_EXTENSION:
+        return None
+    return portal.enqueue_once(ctx, portal.EXTRACT_PAGES, portal.PageJob(record_id).as_payload())
 
 
 def _citation(
