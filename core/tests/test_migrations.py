@@ -23,15 +23,15 @@ def column_names(conn: sqlite3.Connection, table: str) -> set[str]:
 def test_the_shipped_migrations_are_numbered_in_order() -> None:
     found = discover()
     assert [version for version, _, _ in found] == sorted(version for version, _, _ in found)
-    assert [version for version, _, _ in found] == [1, 2, 3, 4]
+    assert [version for version, _, _ in found] == [1, 2, 3, 4, 5]
 
 
 def test_migrate_applies_every_migration(db_path: Path) -> None:
     conn = connect(db_path)
     try:
         applied = migrate(conn)
-        assert applied == [1, 2, 3, 4]
-        assert applied_versions(conn) == {1, 2, 3, 4}
+        assert applied == [1, 2, 3, 4, 5]
+        assert applied_versions(conn) == {1, 2, 3, 4, 5}
     finally:
         conn.close()
 
