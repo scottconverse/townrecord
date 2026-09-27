@@ -19,6 +19,19 @@ One job, one video, and the order the spec gives:
    spec 8.4 -- the sister channel, then the audio -- and is never a silent
    success (the "Show transcript" panel of 8.4.2 is not implemented yet).
 
+A bot check is the one thing that is answered inside a single run: when YouTube
+says "Sign in to confirm you're not a bot", the command runs again once with
+each player client YouTube serves a signed-out reader
+(:data:`~townrecord.capture.command.PLAYER_CLIENTS`), and the first client that
+answers is the one the capture records. A run every client refused is deferred
+with a sentence, the way a rate limit is: nothing here signs in and nothing uses
+browser cookies (spec 8.10), and audio is not the answer.
+
+The JavaScript runtime yt-dlp is told to use comes from the private runtime of
+spec 8.9, which installs it beside yt-dlp (spec 8.3): the value is resolved from
+the injected interpreter, so the argument list does not depend on what is on the
+user's PATH, and the runtime that ran is named in the artifact's own record.
+
 The storage root is a setting the user chooses (spec 8.6), and the settings
 screen that saves it is a later unit, so the job takes the root as an argument
 and is wired with it. Nothing here reads a root from a default.
@@ -28,7 +41,7 @@ from __future__ import annotations
 
 import logging
 import sys
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -37,6 +50,8 @@ from .. import artifacts, proc, repo
 from ..captions import CaptionParseError
 from ..captions.parse import Segment, parse_srv3, parse_vtt
 from ..jobs import JobContext
+from ..runtime.javascript import JavaScriptRuntime
+from ..runtime.javascript import resolve as resolve_javascript
 from ..stt.audio import AudioTrigger
 from . import archive, command, fallback, gate, limits, sidecar, work
 from .command import CaptureFailed
@@ -70,6 +85,31 @@ CAPTIONS_STATE = "captions"
 LOCAL_TRANSCRIPTION_ONLY_REASON = (
     "Local transcription only is on for this machine, so no caption track was fetched."
 )
+
+#: The sentence a capture defers with when YouTube asked the machine to prove it
+#: is not a robot and every player client of spec 8.3's ladder refused too. It is
+#: a wait, like a rate limit, and never a failure: nothing here signs in, and
+#: spec 8.10 is why.
+BOT_CHECK_DEFERRAL = (
+    "YouTube asked this machine to prove it is not a robot. The clients it serves a "
+    "signed-out reader ({tried}) all refused, and TownRecord neither signs in nor uses "
+    "browser cookies, so the capture waits and tries again later."
+)
+
+
+@dataclass(frozen=True)
+class Attempt:
+    """One run of the caption command, and the player client it named.
+
+    Spec 8.3's ladder makes several runs of nearly the same command, and what
+    is stored has to say which one answered, so the result is never separated
+    from the client that produced it.
+    """
+
+    result: proc.ProcessResult
+    #: The YouTube player client this run named, or "" for the plain command
+    #: that named none and got whatever YouTube serves by default.
+    player_client: str = ""
 
 
 def video_id_from(payload: Any) -> int:
@@ -115,6 +155,11 @@ class CaptionCapture:
     #: own runtime; the path is a later unit's concern, so it is injected).
     #: None means this process's interpreter.
     interpreter: str | None = None
+    #: The JavaScript runtime yt-dlp is told to use (spec 8.3, 8.9). None means
+    #: it is resolved from the interpreter above: the deno the private runtime
+    #: installed beside yt-dlp when it is there, and the bare fallback name when
+    #: it is not.
+    javascript: JavaScriptRuntime | None = None
 
     def __post_init__(self) -> None:
         self.storage_root = Path(self.storage_root)
@@ -122,6 +167,8 @@ class CaptionCapture:
             self.runner = proc.run
         if self.interpreter is None:
             self.interpreter = sys.executable
+        if self.javascript is None:
+            self.javascript = resolve_javascript(self.interpreter)
 
     def __call__(self, ctx: JobContext) -> None:
         video = self._video(ctx)
@@ -131,10 +178,10 @@ class CaptionCapture:
             self._transcribe_instead(ctx, video)
             return
         folder = work.work_dir(self.storage_root, video.platform_video_id)
-        result = self._run(ctx, video, folder)
-        if not result.ok:
-            self._handle_failure(ctx, result)
-        state = self._store(ctx, video, folder)
+        attempt = self._run(ctx, video, folder)
+        if not attempt.result.ok:
+            self._handle_failure(ctx, attempt)
+        state = self._store(ctx, video, folder, attempt)
         if state is not None:
             repo.set_capture_state(ctx.conn, video.id, state)
         logger.info(
@@ -184,8 +231,8 @@ class CaptionCapture:
         ctx.defer(reason, delay_s=self.settings.not_ready_retry_s)
         return True  # not reached: defer raises
 
-    def _run(self, ctx: JobContext, video: repo.Video, folder: Path):
-        """Write the archive and run the spec 8.3 command."""
+    def _run(self, ctx: JobContext, video: repo.Video, folder: Path) -> Attempt:
+        """Write the archive and run the spec 8.3 command, ladder included."""
         # Spec 8.7: the archive is regenerated from the database before every
         # capture, so a stale file on disk cannot keep a meeting out of it.
         archive_file, written = archive.write(ctx.conn, self.storage_root)
@@ -197,19 +244,55 @@ class CaptionCapture:
             archive=archive_file,
             url=command.watch_url(video.url, video.platform_video_id),
             resume=resume,
+            js_runtime=self.javascript.argument,
         )
         logger.info(
-            "Capturing video %s into %s (archive holds %s lines, resume=%s).",
+            "Capturing video %s into %s (archive holds %s lines, resume=%s, js=%s).",
             video.id,
             folder,
             written,
             resume,
+            self.javascript.argument,
         )
-        ctx.heartbeat()
-        return command.run_capture(self.runner, argv, timeout_s=self.settings.process_timeout_s)
+        return self._with_player_clients(ctx, video, argv)
 
-    def _handle_failure(self, ctx: JobContext, result: proc.ProcessResult) -> None:
+    def _with_player_clients(
+        self, ctx: JobContext, video: repo.Video, argv: Sequence[str]
+    ) -> Attempt:
+        """Run the command, then one retry per player client after a bot check.
+
+        Only a bot check goes round the ladder. A rate limit, any other failure
+        and a run that worked all end it, because spec 8.3 asks for one retry
+        per client and no more: the first client that answers is the answer.
+        """
+        attempt = self._attempt(ctx, argv)
+        if not self._needs_another_client(attempt.result):
+            return attempt
+        for client in command.PLAYER_CLIENTS:
+            logger.warning(
+                "Video %s: YouTube asked for a bot check; retrying with the %s client.",
+                video.id,
+                client,
+            )
+            attempt = self._attempt(ctx, command.with_player_client(argv, client), client)
+            if not self._needs_another_client(attempt.result):
+                return attempt
+        return attempt
+
+    def _attempt(self, ctx: JobContext, argv: Sequence[str], client: str = "") -> Attempt:
+        """Run one command and keep it together with the client it named."""
+        ctx.heartbeat()
+        result = command.run_capture(self.runner, argv, timeout_s=self.settings.process_timeout_s)
+        return Attempt(result=result, player_client=client)
+
+    @staticmethod
+    def _needs_another_client(result: proc.ProcessResult) -> bool:
+        """True when this run failed on a bot check and nothing else."""
+        return not result.ok and command.bot_check_marker(result.stderr) is not None
+
+    def _handle_failure(self, ctx: JobContext, attempt: Attempt) -> None:
         """Decide what a non-zero exit means. Never returns normally."""
+        result = attempt.result
         marker = command.rate_limit_marker(result.stderr)
         if marker is not None:
             # Spec 8.3: "HTTP 429 means 'rate limited.' It is a paced retry on a
@@ -220,13 +303,27 @@ class CaptionCapture:
                 f"rate limited by YouTube ({marker}), will retry later",
                 delay_s=self.settings.rate_limit_retry_s,
             )
+        if command.bot_check_marker(result.stderr) is not None:
+            # Spec 8.10: no login and no browser cookies, so a bot check is not
+            # solved and not a failure either. Every client was tried, the run
+            # waits, and the audio fallback of spec 8.4 is not started by it.
+            logger.warning(
+                "Video capture was refused by every player client (%s).",
+                ", ".join(command.PLAYER_CLIENTS),
+            )
+            ctx.defer(
+                BOT_CHECK_DEFERRAL.format(tried=", ".join(command.PLAYER_CLIENTS)),
+                delay_s=self.settings.rate_limit_retry_s,
+            )
         last = result.last_stderr_line()
         raise CaptureFailed(
             f"yt-dlp exited with {result.returncode}"
             + (f": {last}" if last else " and said nothing.")
         )
 
-    def _store(self, ctx: JobContext, video: repo.Video, folder: Path) -> str | None:
+    def _store(
+        self, ctx: JobContext, video: repo.Video, folder: Path, attempt: Attempt
+    ) -> str | None:
         """Store the artifacts, the transcript and the lines (spec 8.6, 8.7).
 
         Returns:
@@ -294,7 +391,15 @@ class CaptionCapture:
             artifacts.TRANSCRIPT,
             caption_path.read_bytes(),
             caption_path.suffix.lstrip("."),
-            meta={"video_id": video.platform_video_id, "origin": origin},
+            meta={
+                "video_id": video.platform_video_id,
+                "origin": origin,
+                # Spec 8.3, 8.9: which JavaScript runtime ran, and which player
+                # client answered, so a transcript that later downloads fine on
+                # another machine can be compared against what this one used.
+                "js_runtime": self.javascript.argument,
+                "player_client": attempt.player_client or command.DEFAULT_CLIENT,
+            },
         )
         info_artifact = artifacts.store(
             ctx.conn,

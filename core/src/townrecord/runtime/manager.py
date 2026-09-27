@@ -44,6 +44,7 @@ from pathlib import Path
 import httpx
 
 from .. import proc, storage
+from . import javascript as javascript_runtime
 from . import pypi, tools, versions
 from .lock import UpdateLock
 from .pointer import Installed, Pointer, read_pointer, write_pointer
@@ -92,6 +93,9 @@ class InstallResult:
     venv: str
     #: The interpreter in that venv, as a full path.
     python: str
+    #: The value of ``--js-runtimes`` for that venv (spec 8.3, 8.9): the
+    #: JavaScript runtime installed beside the interpreter, by full path.
+    javascript: str = ""
 
     @property
     def matches_request(self) -> bool:
@@ -260,6 +264,19 @@ class RuntimeManager:
             raise self._not_where_the_pointer_says(installed)
         return str(python)
 
+    def javascript(self) -> str:
+        """Return the value of ``--js-runtimes`` for the active runtime.
+
+        YouTube's pages need a JavaScript runtime, and a user's computer may
+        have no Node (spec 8.3, 8.9). So the runtime is the one installed
+        beside this tool, in the folder of the venv this manager built: the
+        interpreter of the active runtime has its runtime next to it, and the
+        value names that program by its full path. When the program is not
+        there, the bare fallback name is returned, which is a name yt-dlp
+        searches for itself rather than a path that may not exist.
+        """
+        return javascript_runtime.resolve(self.interpreter()).argument
+
     def program(self) -> str:
         """Return the tool's own program in the active runtime.
 
@@ -316,6 +333,8 @@ class RuntimeManager:
             raise RuntimeInstallFailed(
                 f"uv could not install {self.tool} {requested}: {_tail(installed)}"
             )
+        for companion in self.spec.companions:
+            self._install_companion(companion, uv, python, target, requested)
         reported = self._ask_version(python, target)
         if not versions.same_version(requested, reported):
             logger.warning(
@@ -329,9 +348,39 @@ class RuntimeManager:
             version=reported,
             venv=target.relative_to(self.root).as_posix(),
             python=str(python),
+            javascript=javascript_runtime.resolve(str(python)).argument,
         )
         logger.info("Installed %s %s in %s.", self.tool, result.version, result.venv)
         return result
+
+    def _install_companion(
+        self, companion: tools.Companion, uv: str, python: Path, target: Path, requested: str
+    ) -> None:
+        """Install one companion package into the venv and probe its program.
+
+        A venv that holds yt-dlp but no JavaScript runtime is not the runtime
+        of spec 8.9: on a machine with no Node the captures would fail with
+        "No supported JavaScript runtime could be found" and YouTube would
+        answer a bot check. So a companion that does not answer with its own
+        program is a failed install and not a runtime, and the sentence says
+        which program is missing.
+        """
+        installed = self._run(
+            [uv, "pip", "install", "--python", str(python), companion.pin],
+            self.settings.install_timeout_s,
+        )
+        if not installed.ok:
+            raise RuntimeInstallFailed(
+                f"uv could not install {companion.package} into the {self.tool} runtime "
+                f"{requested}: {_tail(installed)}"
+            )
+        program = tools.program_in(target, companion.program)
+        if not program.is_file():
+            raise RuntimeInstallFailed(
+                f"uv reported success but the {self.tool} runtime {requested} holds no "
+                f"{companion.program} program, so a capture would find no JavaScript runtime. "
+                f"Node is not needed: {companion.package} is installed beside {self.tool}."
+            )
 
     def _ask_version(self, python: Path, venv: Path) -> str:
         """Ask the venv which version it holds. This is the version recorded."""

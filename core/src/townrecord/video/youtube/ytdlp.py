@@ -22,6 +22,7 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 from townrecord import proc
+from townrecord.runtime.javascript import FALLBACK_RUNTIME, resolve
 from townrecord.video.youtube.listing import (
     SOURCE_YTDLP,
     ListingFailed,
@@ -35,9 +36,6 @@ YTDLP_MODULE = "yt_dlp"
 #: Spec 8.1: the newest fifty items.
 YTDLP_PLAYLIST_END = 50
 
-#: YouTube's pages need a JavaScript runtime. Node is what the tool is told to use.
-JS_RUNTIME = "node"
-
 #: The two channel tabs, in the order they are tried.
 YTDLP_TABS: tuple[str, ...] = ("/streams", "/videos")
 
@@ -48,8 +46,16 @@ YTDLP_TIMEOUT_S = 60
 Runner = Callable[..., proc.ProcessResult]
 
 
-def ytdlp_argv(interpreter: str, channel_url: str, tab: str) -> list[str]:
-    """The exact command, as an argument list for :mod:`subprocess`."""
+def ytdlp_argv(
+    interpreter: str, channel_url: str, tab: str, *, js_runtime: str | None = None
+) -> list[str]:
+    """The exact command, as an argument list for :mod:`subprocess`.
+
+    ``js_runtime`` is the value for ``--js-runtimes``: YouTube's pages need a
+    JavaScript runtime, and the one the private runtime of spec 8.9 installs
+    beside this interpreter is passed in. None means the bare fallback name,
+    which yt-dlp searches for itself.
+    """
     base = channel_url.rstrip("/")
     return [
         interpreter,
@@ -60,7 +66,7 @@ def ytdlp_argv(interpreter: str, channel_url: str, tab: str) -> list[str]:
         "--playlist-end",
         str(YTDLP_PLAYLIST_END),
         "--js-runtimes",
-        JS_RUNTIME,
+        js_runtime or FALLBACK_RUNTIME,
         f"{base}{tab}",
     ]
 
@@ -89,11 +95,16 @@ class YtdlpFlatLister:
         runner: Runner = proc.run_allowlisted,
         interpreter: str | None = None,
         timeout_s: float = YTDLP_TIMEOUT_S,
+        js_runtime: str | None = None,
     ) -> None:
         self.runner = runner
         #: Spec 8.9: the Python that runs TownRecord is the Python that runs yt-dlp.
         self.interpreter = interpreter or sys.executable
         self.timeout_s = timeout_s
+        #: The JavaScript runtime yt-dlp is told to use (spec 8.3, 8.9): the
+        #: one the private runtime installed beside that interpreter, and the
+        #: bare fallback name when there is none.
+        self.js_runtime = js_runtime or resolve(self.interpreter).argument
 
     def list_videos(self, channel_url: str) -> list[VideoListing]:
         """The channel's newest streams or videos, in one of the two tabs.
@@ -103,7 +114,7 @@ class YtdlpFlatLister:
         """
         reasons: list[str] = []
         for tab in YTDLP_TABS:
-            argv = ytdlp_argv(self.interpreter, channel_url, tab)
+            argv = ytdlp_argv(self.interpreter, channel_url, tab, js_runtime=self.js_runtime)
             try:
                 result = self.runner(argv, timeout_s=self.timeout_s, env=proc.allowed_environment())
             except proc.ProcessTimedOut as exc:

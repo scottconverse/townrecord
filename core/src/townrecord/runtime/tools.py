@@ -34,15 +34,51 @@ def scripts_folder(venv: str | Path) -> Path:
     return Path(venv) / ("Scripts" if os.name == "nt" else "bin")
 
 
+def program_name(program: str) -> str:
+    """Return the file name of a console script, on this system."""
+    return f"{program}.exe" if os.name == "nt" else program
+
+
 def program_in(venv: str | Path, program: str) -> Path:
     """Return the path of a console script inside a venv, on this system."""
-    folder = scripts_folder(venv)
-    return folder / f"{program}.exe" if os.name == "nt" else folder / program
+    return scripts_folder(venv) / program_name(program)
 
 
 def python_in(venv: str | Path) -> Path:
     """Return the path of a venv's own interpreter, on this system."""
     return scripts_folder(venv) / ("python.exe" if os.name == "nt" else "python")
+
+
+@dataclass(frozen=True)
+class Companion:
+    """A second package installed into the same venv as the tool.
+
+    Spec 8.9 names a JavaScript runtime for yt-dlp's ``--js-runtimes`` option,
+    and a user's computer may have no Node. The runtime is a package of its
+    own, so it is installed into the venv of the tool that needs it: one
+    folder holds the tool and everything the tool cannot run without.
+    """
+
+    #: The PyPI project name, which is also the pin handed to ``uv pip
+    #: install``.
+    package: str
+    #: The console script the package installs into the venv. A companion that
+    #: does not answer with this program did not install.
+    program: str
+    #: The version to pin it to, or "" to let PyPI answer. A pinned copy is
+    #: what spec 14.4 records, so this is set.
+    version: str = ""
+
+    @property
+    def pin(self) -> str:
+        """The ``package==version`` argument for ``uv pip install``."""
+        return f"{self.package}=={self.version}" if self.version else self.package
+
+
+#: The JavaScript runtime yt-dlp needs, installed beside it (spec 8.3, 8.9).
+#: `deno` is a project on PyPI, and the version is the one that was tested
+#: against YouTube on 2026-09-27.
+JAVASCRIPT_COMPANION = Companion(package="deno", program="deno", version="2.9.7")
 
 
 @dataclass(frozen=True)
@@ -58,6 +94,9 @@ class ToolSpec:
     #: The console script the tool installs into its venv. This is what a job
     #: runs when it runs the tool directly rather than through a module.
     program: str
+    #: The packages installed into the same venv as the tool, because the tool
+    #: cannot do its work without them.
+    companions: tuple[Companion, ...] = ()
 
     def version_argv(self, *, python: Path, venv: Path) -> list[str]:
         """Return the argument list that asks the venv which version it holds.
@@ -72,15 +111,23 @@ class ToolSpec:
 
 #: Every tool TownRecord manages, by the name it is known by.
 TOOL_SPECS: dict[str, ToolSpec] = {
-    TOOL_NAME: ToolSpec(tool=TOOL_NAME, module=TOOL_MODULE, program="yt-dlp"),
+    TOOL_NAME: ToolSpec(
+        tool=TOOL_NAME,
+        module=TOOL_MODULE,
+        program="yt-dlp",
+        companions=(JAVASCRIPT_COMPANION,),
+    ),
     TEXTFLOWKIT_TOOL: ToolSpec(tool=TEXTFLOWKIT_TOOL, module=None, program=TEXTFLOWKIT_PROGRAM),
 }
 
 __all__ = [
+    "JAVASCRIPT_COMPANION",
     "TOOL_SPECS",
+    "Companion",
     "ToolSpec",
     "UnknownTool",
     "program_in",
+    "program_name",
     "python_in",
     "scripts_folder",
     "tool_spec",

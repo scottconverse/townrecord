@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from townrecord.runtime.javascript import FALLBACK_RUNTIME
 from townrecord.stt import (
     AUDIO_OUTPUT_TEMPLATE,
     AUDIO_TRIGGER_REASONS,
@@ -52,6 +53,27 @@ def test_the_audio_download_command_is_the_spec_command() -> None:
         WATCH_URL,
     ]
     assert all(isinstance(part, str) for part in argv)
+
+
+def test_the_audio_download_is_given_the_runtime_the_job_resolved() -> None:
+    """Spec 8.3, 8.9: the runtime of the private venv reaches this command too.
+
+    The fallback of the plain command above is the bare word ``node``, which is
+    what a machine that has never installed a private runtime gets.
+    """
+    argv = audio_download_argv(
+        WATCH_URL, WORK_DIR, ARCHIVE_FILE, js_runtime="deno:/opt/venv/bin/deno"
+    )
+    assert argv[argv.index("--js-runtimes") + 1] == "deno:/opt/venv/bin/deno"
+
+    request = AudioRequest(watch_url=WATCH_URL, trigger=AudioTrigger.NO_CAPTIONS)
+    assert request.argv(WORK_DIR, ARCHIVE_FILE, js_runtime="deno:/opt/venv/bin/deno") == argv
+
+
+def test_an_audio_download_with_no_runtime_named_gets_the_bare_fallback() -> None:
+    """A machine with no private runtime yet still gets a command built."""
+    argv = audio_download_argv(WATCH_URL, WORK_DIR, ARCHIVE_FILE)
+    assert argv[argv.index("--js-runtimes") + 1] == FALLBACK_RUNTIME
 
 
 def test_a_reason_is_one_of_the_three_the_spec_names() -> None:

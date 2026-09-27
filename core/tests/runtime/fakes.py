@@ -23,7 +23,7 @@ from townrecord.jobs import JobContext, claim, enqueue
 from townrecord.runtime import RuntimeManager, RuntimeSettings
 from townrecord.runtime.pointer import Installed, Pointer, write_pointer
 from townrecord.runtime.settings import PYPI_JSON_URL, RUNTIMES_FOLDER, TOOL_NAME
-from townrecord.runtime.tools import program_in
+from townrecord.runtime.tools import program_in, program_name
 
 #: A clock the tests move by hand, so no test sleeps for real seconds.
 START = datetime(2026, 9, 27, 12, 0, 0, tzinfo=UTC)
@@ -32,6 +32,11 @@ START = datetime(2026, 9, 27, 12, 0, 0, tzinfo=UTC)
 #: `python -m yt_dlp --version` said `2026.08.19` while PyPI said `2026.8.19`.
 VENV_SPELLING = "2026.08.19"
 PYPI_SPELLING = "2026.8.19"
+
+#: The packages whose install leaves a console script in the venv, so the fake
+#: uv can write the file a companion probe looks for. A package that is not
+#: here is a pin the fake records and writes nothing for.
+PACKAGE_PROGRAMS = {"deno": "deno"}
 
 
 class FakeClock:
@@ -77,6 +82,7 @@ class FakeUV:
         version_stderr: str = "",
         build_python: bool = True,
         program: str | None = None,
+        companion: bool = True,
     ) -> None:
         self.reported = reported
         self.venv_rc = venv_rc
@@ -87,6 +93,10 @@ class FakeUV:
         #: The console script this tool's venv holds, when it has one. None
         #: means the tool is asked through ``python -m <module>`` instead.
         self.program = program
+        #: False stands for a `uv pip install` that reports success and leaves
+        #: the companion out of the venv, which is the failure the install has
+        #: to catch for itself rather than trust uv's exit code.
+        self.companion = companion
         self.calls: list[dict[str, Any]] = []
         #: Every `<tool>==<version>` pin uv was asked for.
         self.pins: list[str] = []
@@ -119,11 +129,31 @@ class FakeUV:
                 script.write_text("#!/fake program\n", encoding="utf-8")
             return result(command, self.venv_rc, stderr="" if self.venv_rc == 0 else "boom")
         if subcommand == "pip":
-            self.pins.append(command[-1])
+            pin = command[-1]
+            self.pins.append(pin)
+            if self.install_rc == 0:
+                self._install_program(pin, command)
             return result(
                 command, self.install_rc, stderr="" if self.install_rc == 0 else "no such version"
             )
         raise AssertionError(f"the fake uv was asked for something else: {command}")
+
+    def _install_program(self, pin: str, command: list[str]) -> None:
+        """Write the console script a companion package installs, when uv would.
+
+        A package that installs no program of its own (yt-dlp is asked through
+        ``python -m``) leaves nothing behind, the same way it does for real.
+        """
+        program = PACKAGE_PROGRAMS.get(pin.split("==")[0].strip())
+        if program is None or not self.companion:
+            return
+        try:
+            interpreter = Path(command[command.index("--python") + 1])
+        except (ValueError, IndexError):  # pragma: no cover - the manager always names one
+            return
+        script = interpreter.parent / program_name(program)
+        script.parent.mkdir(parents=True, exist_ok=True)
+        script.write_text("#!/fake program\n", encoding="utf-8")
 
     @property
     def pins_requested(self) -> list[str]:

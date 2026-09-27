@@ -60,6 +60,7 @@ from townrecord.jobs import (
     finish,
     get,
 )
+from townrecord.runtime.javascript import FALLBACK_RUNTIME, JavaScriptRuntime
 from townrecord.runtime.settings import (
     TEXTFLOWKIT_PROGRAM,
     TEXTFLOWKIT_TOOL,
@@ -267,6 +268,42 @@ def test_the_audio_is_transcribed_and_stored_as_a_transcript(
     assert repo.get_video(conn, video).capture_state == "audio"
     assert recorded["transcript_id"] == rows[0]["id"]
     assert recorded["segments"] == 2
+
+
+def test_the_audio_download_is_told_which_javascript_runtime_to_use(
+    conn: sqlite3.Connection, storage_root: Path, video: int
+) -> None:
+    """Spec 8.3, 8.9: the runtime is resolved from the yt-dlp interpreter.
+
+    The interpreter of this file sits under a made-up runtime root and is not an
+    absolute path, so nothing is probed beside it and the bare fallback is what
+    is named. That is the same answer on every machine (rule 11b).
+    """
+    clock = FakeClock()
+    runner = tools()
+    ctx = transcribe_job(conn, video, clock)
+
+    handler_for(storage_root, runner)(ctx)
+
+    download = runner.download_argv
+    assert download[download.index("--js-runtimes") + 1] == FALLBACK_RUNTIME
+    assert checkpoint(conn, ctx.job_id)["js_runtime"] == FALLBACK_RUNTIME
+
+
+def test_a_resolved_runtime_is_passed_on_and_written_down(
+    conn: sqlite3.Connection, storage_root: Path, video: int
+) -> None:
+    """The deno of the private venv reaches the download, and the run records it."""
+    clock = FakeClock()
+    runner = tools()
+    ctx = transcribe_job(conn, video, clock)
+    runtime = JavaScriptRuntime(name="deno", path="/opt/venv/bin/deno")
+
+    handler_for(storage_root, runner, javascript=runtime)(ctx)
+
+    download = runner.download_argv
+    assert download[download.index("--js-runtimes") + 1] == "deno:/opt/venv/bin/deno"
+    assert checkpoint(conn, ctx.job_id)["js_runtime"] == "deno:/opt/venv/bin/deno"
 
 
 def test_the_provenance_of_the_transcript_is_recorded_beside_it(

@@ -12,6 +12,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from .. import proc
+from ..runtime.javascript import FALLBACK_RUNTIME
 
 #: The job kind this module builds the command for.
 JOB_KIND = "capture_captions"
@@ -37,6 +38,29 @@ RATE_LIMIT_MARKERS: tuple[str, ...] = (
     "429 too many requests",
     "too many requests",
 )
+
+#: What YouTube answers when it wants the machine to prove it is not a robot.
+#: Tested 2026-09-27 from a machine with no JavaScript runtime: this sentence
+#: is what arrives, together with "No supported JavaScript runtime could be
+#: found" from yt-dlp. It is a deferral and never a reason to fetch audio
+#: (spec 8.3, 8.10), because nothing here solves a check the way a person
+#: would: no login and no browser cookies are used.
+BOT_CHECK_MARKERS: tuple[str, ...] = (
+    "sign in to confirm you're not a bot",
+    "sign in to confirm you are not a bot",
+)
+
+#: The player clients to try, in order, after a bot check (spec 8.3). Tested
+#: 2026-09-27: these three answered, and web_embedded, ios and mweb refused.
+PLAYER_CLIENTS: tuple[str, ...] = ("android_vr", "visionos", "tv_embedded")
+
+#: What one player client is named with. It is an extractor argument, not a
+#: flag of its own.
+PLAYER_CLIENT_OPTION = "youtube:player_client={client}"
+
+#: What a capture records when the command named no client, which is the run
+#: that asks YouTube for whatever it serves a signed-out reader by default.
+DEFAULT_CLIENT = "default"
 
 #: A callable that runs the command. Tests pass a fake that writes files into
 #: the --paths folder instead of talking to YouTube.
@@ -66,6 +90,38 @@ def rate_limit_marker(stderr: str | None) -> str | None:
     return None
 
 
+def bot_check_marker(stderr: str | None) -> str | None:
+    """Return the text that says YouTube asked us to prove we are not a robot.
+
+    Same shape as :func:`rate_limit_marker`, and for the same reason: the
+    wording is not fixed by anything, so the check is a case-insensitive search
+    and the needle that matched is kept for the user.
+    """
+    text = (stderr or "").lower()
+    for marker in BOT_CHECK_MARKERS:
+        if marker in text:
+            return marker
+    return None
+
+
+def with_player_client(argv: Sequence[str], client: str) -> list[str]:
+    """Return the same command with one player client named (spec 8.3).
+
+    The option goes right after the ``--js-runtimes`` pair, so a retry is the
+    command that failed with one more argument in it, and a reader comparing
+    the two sees one difference. A command with no ``--js-runtimes`` in it
+    (nothing builds one, but a caller may hand anything over) gets the option
+    before its last argument, which is the address being fetched.
+    """
+    parts = [str(part) for part in argv]
+    try:
+        at = parts.index("--js-runtimes") + 2
+    except ValueError:
+        at = len(parts) - 1
+    option = ["--extractor-args", PLAYER_CLIENT_OPTION.format(client=client)]
+    return parts[:at] + option + parts[at:]
+
+
 def capture_argv(
     *,
     interpreter: str,
@@ -73,6 +129,8 @@ def capture_argv(
     archive: str | Path,
     url: str,
     resume: bool = False,
+    js_runtime: str | None = None,
+    player_client: str | None = None,
 ) -> list[str]:
     """Build the spec 8.3 command as an argument list.
 
@@ -81,6 +139,12 @@ def capture_argv(
     reads that text itself, a Windows backslash is an escape in the ``-o``
     template, and one spelling for both means the argument list does not change
     with the operating system.
+
+    ``js_runtime`` is the value for ``--js-runtimes``: the JavaScript runtime
+    of spec 8.3, which the private runtime of spec 8.9 installs beside yt-dlp.
+    None means the bare fallback name, which yt-dlp looks for itself.
+    ``player_client`` names one YouTube player client, and it is only ever set
+    on a retry after a bot check.
     """
     folder = Path(work_dir).as_posix()
     argv = [
@@ -96,7 +160,7 @@ def capture_argv(
         "--sub-format",
         "srv3/vtt/best",
         "--js-runtimes",
-        "node",
+        js_runtime or FALLBACK_RUNTIME,
         "--sleep-subtitles",
         "2",
         "--sleep-requests",
@@ -109,7 +173,7 @@ def capture_argv(
     if resume:
         argv.append("--continue")
     argv += ["-o", f"{folder}/%(id)s.%(ext)s", url]
-    return argv
+    return with_player_client(argv, player_client) if player_client else argv
 
 
 def run_capture(runner: Runner, argv: Sequence[str], *, timeout_s: float) -> proc.ProcessResult:
