@@ -2,9 +2,10 @@
 
 Date: September 27, 2026
 
-This file records the nine decisions in Section 20.1 of the [specification](SPEC.md).
-Each choice is copied from the specification.
-Each reason comes from the section of the specification that is named.
+Decisions 1 to 9 are the nine decisions in Section 20.1 of the [specification](SPEC.md).
+Each of those choices is copied from the specification.
+Each of those reasons comes from the section of the specification that is named.
+Decision 10 was made later on September 27, 2026.
 
 ## 1. Name and repository
 
@@ -59,3 +60,19 @@ Each reason comes from the section of the specification that is named.
 **Choice:** Windows first; macOS tested from the first build; signed macOS installer at M6 (Section 14.1).
 
 **Reason:** The code is built and tested on macOS from the first build, in continuous integration, so that nothing Windows-only gets into it (Section 14.1).
+
+## 10. Local API framework
+
+**Date:** September 27, 2026
+
+**Choice:** The local API of Section 13 uses FastAPI. Two rules go with it:
+
+1. Long work (yt-dlp captures, TextFlowKit transcription, big AI calls) runs in the jobs system of Section 16.1, not inside an API request. A request starts a job and returns at once.
+2. The API binds to 127.0.0.1 by default. It requires the bearer token of Section 13.1 on every request, including the docs page.
+
+**Reasons:**
+
+- The core is Python (decision 2). FastAPI is a Python web framework, so the API runs inside the core.
+- FastAPI makes an OpenAPI description of the API from the code. Milestone M5 needs published API documentation (Section 19).
+- Rule 1: the jobs system has claim tokens, heartbeats and checkpoints, so a long job can resume (Section 16.1). A request that waited on a capture or a transcription would have none of these.
+- Rule 2: the local API listens on the loopback address by default and needs a token (Sections 13.1 and 17). The docs page is part of the API, so the same rule covers it.
