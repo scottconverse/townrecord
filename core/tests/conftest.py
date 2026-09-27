@@ -47,8 +47,20 @@ def read_write_token(conn: sqlite3.Connection) -> str:
 
 
 @pytest.fixture
-def client(db_path: Path) -> Iterator[TestClient]:
-    """A test client for the API, using a temporary database."""
-    app = create_app(Settings(db_path=db_path, version=TEST_VERSION))
+def api_storage_root(tmp_path: Path) -> Path:
+    """The storage root the API under test reads artifacts from.
+
+    It is a temporary folder and never the user's own ``~/.townrecord/storage``,
+    so a test cannot read or write a real capture (spec 8.6).
+    """
+    root = tmp_path / "api-storage"
+    root.mkdir()
+    return root
+
+
+@pytest.fixture
+def client(db_path: Path, api_storage_root: Path) -> Iterator[TestClient]:
+    """A test client for the API, using a temporary database and storage root."""
+    app = create_app(Settings(db_path=db_path, version=TEST_VERSION, storage_root=api_storage_root))
     with TestClient(app) as test_client:
         yield test_client

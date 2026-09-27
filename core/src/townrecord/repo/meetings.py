@@ -161,6 +161,31 @@ def get_record_page(conn: sqlite3.Connection, record_page_id: int) -> RecordPage
     return None if row is None else RecordPage.from_row(row)
 
 
+def meetings_of_body(
+    conn: sqlite3.Connection,
+    body_id: int,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> list[Meeting]:
+    """Return the meetings of a body, earliest first.
+
+    ``date_from`` and ``date_to`` are local dates as YYYY-MM-DD and are
+    inclusive. The date a meeting falls on is the local date it was published
+    with, which is the first ten characters of ``starts_at``, so nothing is
+    converted to UTC (spec 16.2).
+    """
+    sql = ["SELECT * FROM meetings WHERE body_id = ?"]
+    params: list[object] = [body_id]
+    if date_from is not None:
+        sql.append("AND substr(starts_at, 1, 10) >= ?")
+        params.append(date_from)
+    if date_to is not None:
+        sql.append("AND substr(starts_at, 1, 10) <= ?")
+        params.append(date_to)
+    sql.append("ORDER BY starts_at, id")
+    return [Meeting.from_row(row) for row in conn.execute("\n".join(sql), tuple(params))]
+
+
 def record_pages(conn: sqlite3.Connection, record_id: int) -> list[RecordPage]:
     """Return the pages of a record, in page order."""
     rows = conn.execute(
