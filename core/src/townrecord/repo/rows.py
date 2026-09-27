@@ -230,7 +230,13 @@ class AgendaItem(Row):
 
 @dataclass(frozen=True)
 class Vote(Row):
-    """The result on an item, with its evidence and its source."""
+    """The result on an item, with its evidence and its source.
+
+    ``motion_id`` names the motion of a minutes document this outcome came out
+    of, and is None for a vote read from a structured record, a packet or a
+    transcript. ``citation_id`` is the citation the vote rests on: the packet
+    page for a minutes vote, the moment in the video for a transcript one.
+    """
 
     id: int
     agenda_item_id: int
@@ -238,6 +244,8 @@ class Vote(Row):
     source_kind: str
     evidence: str
     tally: dict[str, Any] | None
+    motion_id: int | None
+    citation_id: int | None
     created_at: str
 
     @classmethod
@@ -304,6 +312,90 @@ class MeetingAlignment(Row):
         values["offset_accepted"] = bool(row["offset_accepted"])
         values["anchors"] = _json_list(row["anchors"])
         return cls(**values)
+
+
+@dataclass(frozen=True)
+class MinutesDocument(Row):
+    """Where the minutes of one meeting were read from (spec 9.4).
+
+    The pages are in another meeting's record, because the draft of one
+    session's minutes sits in the next regular session's packet until it is
+    approved. A meeting with no row here has no minutes read yet, which is a
+    different fact from minutes that were searched for and not found: the job
+    that searched leaves its reason on its own row.
+    """
+
+    id: int
+    meeting_id: int
+    record_id: int
+    start_page: int
+    end_page: int
+    page_count: int
+    head: str
+    created_at: str
+
+
+@dataclass(frozen=True)
+class Motion(Row):
+    """One motion as a minutes document records it (spec 10.4).
+
+    An item can carry several motions, which is why a motion is a row of its
+    own rather than a vote: the September 8, 2026 minutes moved seven times on
+    item 9.B, and the amendments are how the item reached the outcome the
+    ``votes`` row holds.
+    """
+
+    id: int
+    meeting_id: int
+    record_id: int
+    page_number: int
+    ordinal: int
+    mover: str
+    seconder: str
+    text: str
+    result: str
+    outcome: str
+    approved: list[str]
+    dissented: list[str]
+    abstained: list[str]
+    tally: dict[str, Any] | None
+    evidence: str
+    citation_id: int | None
+    created_at: str
+
+    @classmethod
+    def from_row(cls, row: sqlite3.Row) -> Self:
+        values: dict[str, Any] = {field.name: row[field.name] for field in fields(cls)}
+        for name in ("approved", "dissented", "abstained"):
+            values[name] = _json_strings(row[name])
+        tally = row["tally"]
+        values["tally"] = None if tally is None else _json_object(tally)
+        return cls(**values)
+
+
+@dataclass(frozen=True)
+class MotionItem(Row):
+    """One agenda item a motion was a motion on, and what the link rests on."""
+
+    id: int
+    motion_id: int
+    agenda_item_id: int
+    link_kind: str
+    evidence: str
+    created_at: str
+
+
+def _json_strings(text: Any) -> list[str]:
+    """Read a JSON list of strings from a text column. Anything else is empty."""
+    if not text:
+        return []
+    try:
+        loaded = json.loads(text)
+    except (TypeError, ValueError):
+        return []
+    if not isinstance(loaded, list):
+        return []
+    return [entry for entry in loaded if isinstance(entry, str)]
 
 
 def _json_object(text: Any) -> dict[str, Any]:
