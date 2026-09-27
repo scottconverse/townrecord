@@ -8,6 +8,7 @@ from townrecord.captions.parse import (
     CaptionParseError,
     Segment,
     Word,
+    normalize_text,
     parse_srv3,
     parse_vtt,
 )
@@ -16,6 +17,7 @@ __all__ = [
     "CaptionParseError",
     "Segment",
     "Word",
+    "normalize_text",
     "parse_srv3",
     "parse_vtt",
 ]
