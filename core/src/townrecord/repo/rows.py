@@ -1,8 +1,11 @@
 """The core data model (spec 6.2) as frozen rows.
 
-One dataclass per table of migration ``0005_core_model.sql``, with the column
-names of the table. A row is data, not an object graph: it holds the foreign
-keys the table holds, and a reader joins what it needs.
+One dataclass per table, with the column names of the table. A row is data,
+not an object graph: it holds the foreign keys the table holds, and a reader
+joins what it needs.
+
+The tables are the ones of migration ``0005_core_model.sql``, and, for
+:class:`ScheduledRun`, of migration ``0012_schedule.sql``.
 """
 
 from __future__ import annotations
@@ -304,6 +307,26 @@ class MeetingAlignment(Row):
         values["offset_accepted"] = bool(row["offset_accepted"])
         values["anchors"] = _json_list(row["anchors"])
         return cls(**values)
+
+
+@dataclass(frozen=True)
+class ScheduledRun(Row):
+    """One run the daily schedule made, or could not make (spec 16.2).
+
+    ``local_date`` is the day the run belongs to in ``time_zone``, which is
+    what "once per local day" is counted in. ``state`` is ``enqueued`` with the
+    job it started, or ``paused`` with the plain reason it could not run.
+    """
+
+    id: int
+    task: str
+    subject: str
+    local_date: str
+    time_zone: str
+    state: str
+    job_id: int | None
+    reason: str | None
+    created_at: str
 
 
 def _json_object(text: Any) -> dict[str, Any]:

@@ -19,6 +19,12 @@ dev = [
     "ruff>=0.6",
 ]
 
+[project.scripts]
+# The one command that runs TownRecord (spec 14.2): the desktop shell starts and
+# stops this, and `townrecord serve` starts the API, the job workers and the
+# daily schedule together.
+townrecord = "townrecord.cli:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
