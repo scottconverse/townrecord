@@ -218,6 +218,11 @@ def officials_of(conn: sqlite3.Connection, *, body_id: int, on: date) -> list[Pe
     end or an end on or after it. A seat with no start date counts as held:
     the record that named the person did not say since when, and a seat whose
     dates are unknown is still a seat that was seen.
+
+    One person is one row however many seats they hold: a council member who is
+    also the mayor pro tem has two seats on one body and is still one person,
+    and a reading of a name that counted them twice would find a tie with
+    itself. The first seat a person holds is the row that is kept.
     """
     rows = conn.execute(
         "SELECT people.* FROM seats JOIN people ON people.id = seats.person_id "
@@ -227,7 +232,53 @@ def officials_of(conn: sqlite3.Connection, *, body_id: int, on: date) -> list[Pe
         "ORDER BY people.name, seats.id",
         (body_id, on.isoformat(), on.isoformat()),
     ).fetchall()
-    return [Person.from_row(row) for row in rows]
+    seen: set[int] = set()
+    people: list[Person] = []
+    for row in rows:
+        person = Person.from_row(row)
+        if person.id in seen:
+            continue
+        seen.add(person.id)
+        people.append(person)
+    return people
+
+
+def seat_holders_of(conn: sqlite3.Connection, *, body_id: int, on: date) -> dict[str, Person]:
+    """The one person each titled seat of a body holds on one date, by title.
+
+    A title that names an office rather than a rank, "Mayor" or "Mayor Pro
+    Tem", is a seat with one holder, and a reading of that title stands on
+    knowing who the minutes put in it on the meeting's date. The key is the
+    title as the record wrote it, folded and with its whitespace collapsed, so
+    a reader looks a title up the way a minutes document prints it.
+
+    A title held by more than one person at once names nobody here. Two holders
+    are not one answer, and a reading that picked between them would be choosing
+    a person the record does not choose. "Council Member" is held by every
+    member of a body and is left out for the same reason: the seat does not name
+    one person, so the name read against it has to stand on its own sound.
+    """
+    rows = conn.execute(
+        "SELECT seats.title, people.* FROM seats JOIN people ON people.id = seats.person_id "
+        "WHERE seats.body_id = ? "
+        "AND (seats.start_date IS NULL OR seats.start_date <= ?) "
+        "AND (seats.end_date IS NULL OR seats.end_date >= ?) "
+        "ORDER BY people.name, seats.id",
+        (body_id, on.isoformat(), on.isoformat()),
+    ).fetchall()
+    held: dict[str, Person] = {}
+    shared: set[str] = set()
+    for row in rows:
+        title = " ".join(str(row["title"]).casefold().split())
+        person = Person.from_row(row)
+        first = held.get(title)
+        if first is None:
+            held[title] = person
+        elif first.id != person.id:
+            shared.add(title)
+    for title in shared:
+        del held[title]
+    return held
 
 
 def insert_source(

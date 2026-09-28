@@ -5,7 +5,7 @@ speaker, with ``>>``, and what the person said. Spec 10.6 asks for the names
 anyway, and the names are in the room: the chair says who she is turning to
 before the person speaks. This module reads those words.
 
-The reading has four steps, and each one is a function here.
+The reading has five steps, and each one is a function here.
 
 * :func:`runs_of` splits a transcript where the captioner marked a change of
   speaker. A run is the lines from one change through the line before the next.
@@ -18,6 +18,11 @@ The reading has four steps, and each one is a function here.
   spell-checker does not see: "Marcen" for Jake Marsing, "Poppin" for Popkin,
   "Chris" for Crist. The method, the cutoff and the margin are stated as
   constants below, with the reason each was chosen.
+* :func:`read_naming` reads one naming as a person. A rank whose words are
+  shared by a whole body, "Council member", is read by the sound of the name. A
+  title that names one seat, "Mayor" or "Mayor Pro Tem", is read as that seat:
+  the person is the one the minutes put in it on the meeting's date, and a
+  title word is never compared against a surname.
 * :func:`read_labels` puts the two together: a recognition in one run names the
   speaker of the *next* run.
 
@@ -38,7 +43,7 @@ from __future__ import annotations
 
 import re
 import sqlite3
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from ..jobs import JobContext
@@ -58,6 +63,7 @@ from ..repo import (
     motions_of_meeting,
     officials_of,
     primary_video,
+    seat_holders_of,
     segments_of,
     set_segment_speaker,
 )
@@ -68,6 +74,12 @@ CHANGE_MARKER = ">>"
 #: The name of the way a spoken name is scored. A score with no method is not a
 #: fact a later reader can check, so the method travels with it into the row.
 METHOD = "jaro_winkler_phonetic"
+
+#: The name of the other way a person is reached: a title that names one seat,
+#: where the person is the one the minutes put in that seat. No name is scored
+#: on this path, so the score it writes is 1.0 and the method is what says why
+#: that is not a near miss.
+METHOD_TITLE = "seat_title"
 
 #: How close a spoken name has to be to an official to be written as that
 #: person's name. Measured over the spellings of the real Longmont captions
@@ -91,20 +103,49 @@ CUTOFF = 0.72
 #: it keeps.
 MARGIN = 0.05
 
-#: Which title the chair used, as the row records it. The mayor pro tem is not
-#: the mayor, and a label that did not say which one was said would be a claim
-#: about the office that the chair did not make.
-_TITLE_KINDS = {
-    "mayor": "mayor",
-    "mayor pro tem": "mayor_pro_tem",
+#: Which seat a title names, and the title the minutes print for that seat.
+#: The mayor pro tem is not the mayor, and a label that did not say which one
+#: was said would be a claim about the office that the chair did not make. The
+#: member's seat has no title of its own, because "Council member" is every
+#: member of the body and names no one seat.
+_SEAT_TITLES = {
+    "mayor": "Mayor",
+    "mayor_pro_tem": "Mayor Pro Tem",
 }
+
+#: The ways the captioner writes the title "Mayor Pro Tem" in the recorded
+#: September 8, 2026 captions, measured there: "Prom" eight times and "Port"
+#: once, every one of them after the word "Mayor". The spelled-out forms are
+#: here as well, because a caption file that spells the title out is a caption
+#: file that wrote the same title. The boundary at the end keeps a surname that
+#: begins with one of these letters ("Porter", "Prometheus") out of it. The one
+#: at the front of :data:`_TITLE` keeps the same letters out of the middle of a
+#: longer word: "Airport Lease assignment for" is a phrase about a hangar, not a
+#: pro tem named Lease assignment.
+_PRO_TEM = r"(?:pro[\s\-]*(?:tem|team|tim)|prom|port)\b"
 
 #: The words a chair uses to hand the floor over, and the words she uses to say
 #: who moved and who seconded a motion. Both name a person by their title, and
 #: only the first is a recognition of the next speaker: the second is a summary
 #: of a motion that the minutes also hold, which is why it is read separately
 #: (part D of the skill, and :func:`cross_check`).
-_TITLE = r"(?:council\s*member|councilman|councilwoman|mayor\s+pro\s+tem|mayor)"
+#:
+#: "Mayor" is the last alternative before the pro tem forms so that "Mayor Port
+#: McCoy" is a mayor's title with the captioner's "Port McCoy" after it: the
+#: pro tem words are then read where the captioner wrote them, in the row's
+#: spoken name, and the seat they name is decided from both halves of the
+#: naming. A bare "Prom" with no "Mayor" in front of it is a title too, which is
+#: what the last alternative is for.
+_TITLE = (
+    rf"\b(?:council\s*member|councilman|councilwoman|mayor\s+pro\s+tem|"
+    rf"pro\s+tem|pro\s+team|pro\s+tim|mayor|{_PRO_TEM})"
+)
+
+#: A pro tem form at the start of the words after a title, with a sentence end
+#: right after it. "Mayor Prom. Do I have a second?" is a chair naming the seat
+#: and then starting her next sentence, and the words up to the full stop are
+#: the whole of the naming.
+_PRO_TEM_SENTENCE = re.compile(rf"^(?:{_PRO_TEM})\s*[.!?]", re.IGNORECASE)
 
 #: A name as a captioner writes one: one to three words, either case.
 _NAME = r"[A-Za-z][\w'’.\-]*(?:\s+[A-Za-z][\w'’.\-]*){0,2}"
@@ -200,11 +241,14 @@ class Summary:
     """One place a run said who moved or who seconded a motion.
 
     ``role`` is 'mover' or 'seconder', which is what the minutes of the meeting
-    hold for the same motion (spec 10.4).
+    hold for the same motion (spec 10.4). ``title_kind`` is the same title the
+    recognitions carry, because a chair who says "seconded by Mayor Pro Tem
+    McCoy" has named a seat there too.
     """
 
     run: int
     role: str
+    title_kind: str
     spoken: str
     evidence: str
 
@@ -224,6 +268,7 @@ class Match:
     score: float
     runner_up: float
     method: str = METHOD
+    refused: bool = False
 
     @property
     def passed(self) -> bool:
@@ -232,7 +277,15 @@ class Match:
         Both tests have to hold: the score has to reach the cutoff, and it has
         to be clear of the runner-up by the margin. A name that is close to two
         officials of one body is not a reading of either of them.
+
+        ``refused`` is the third way to fail and the only one the score does not
+        show. A title names a seat, and the person in it comes from the minutes:
+        when the minutes put somebody else there, or put nobody there, the words
+        name nobody however close the sounds of a surname come, and the near
+        miss is kept as the guess.
         """
+        if self.refused:
+            return False
         return self.score >= CUTOFF and self.score - self.runner_up >= MARGIN
 
     @property
@@ -326,7 +379,13 @@ def summaries_of(run: Run) -> list[Summary]:
     thing is a fact one record cannot carry alone.
     """
     return [
-        Summary(run=run.index, role=naming.role, spoken=naming.spoken, evidence=naming.evidence)
+        Summary(
+            run=run.index,
+            role=naming.role,
+            title_kind=naming.title_kind,
+            spoken=naming.spoken,
+            evidence=naming.evidence,
+        )
         for naming in _namings_of(run)
         if naming.role is not None
     ]
@@ -401,7 +460,86 @@ def match_name(spoken: str, officials: Sequence[Person]) -> Match:
     )
 
 
-def read_labels(segments: Sequence[Segment], officials: Sequence[Person]) -> list[ReadLabel]:
+def read_naming(
+    title_kind: str,
+    spoken: str,
+    *,
+    officials: Sequence[Person],
+    holders: Mapping[str, Person],
+) -> Match:
+    """Read one naming as the official it names: by its seat, or by its sound.
+
+    A rank shared by the whole body -- "Council member" -- names no one seat, so
+    the name after it is read against the officials by its sound, which is all a
+    score can say. A title that names one seat is read differently. "Mayor" and
+    "Mayor Pro Tem" are seats with one holder each on the meeting's date, the
+    minutes say who holds them, and the person a title names is the holder. No
+    surname is compared on that path, which is why the score it writes is 1.0
+    and the method is :data:`METHOD_TITLE` rather than the matcher's own: the
+    title word itself must never be matched against a surname. The captioner
+    writes "Prom" for "Mayor Pro Tem", and a reading of surnames wrote a
+    council member for it while the seat belonged to somebody else.
+
+    The two readings are held together where the words could be either. What
+    follows a title can be a surname of its own ("Mayor Port McCoy"), so the
+    seat decides: the words name the seat's holder when there is nothing after
+    the title but the title, or when the name after it reads as the holder
+    anyway. When the two readings name different people, or when the minutes
+    seat nobody there, there is no name to write and the near miss is kept
+    (spec 10.6's "an unidentified speaker").
+    """
+    if title_kind == "member":
+        return match_name(spoken, officials)
+    holder = holders.get(_SEAT_TITLES[title_kind].casefold())
+    after = _without_the_title(spoken)
+    if holder is None:
+        return _refused(spoken, officials, after)
+    if not after:
+        return Match(spoken=spoken, candidate=holder, score=1.0, runner_up=0.0, method=METHOD_TITLE)
+    read = match_name(after, officials)
+    if read.person is not None and read.person.id == holder.id:
+        return Match(spoken=spoken, candidate=holder, score=1.0, runner_up=0.0, method=METHOD_TITLE)
+    return _refused(spoken, officials, after)
+
+
+def _refused(spoken: str, officials: Sequence[Person], after: str) -> Match:
+    """The near miss of a spoken name that the seat it names refused.
+
+    Nothing is written as a name, and the guess the sound of the words reached
+    is kept with it, so the row says what was nearly read. The words after the
+    title are what was compared when there are any, because they are the name
+    the chair said; the whole of the words are compared when the naming was the
+    title alone.
+    """
+    near = match_name(after or spoken, officials)
+    return Match(
+        spoken=spoken,
+        candidate=near.candidate,
+        score=near.score,
+        runner_up=near.runner_up,
+        refused=True,
+    )
+
+
+def _without_the_title(spoken: str) -> str:
+    """The words of a spoken name once a pro tem form at the front is taken off.
+
+    The row keeps the words the captioner wrote, "Port McCoy" and all, and the
+    name the seat is held to is the rest of them. A spoken name with no pro tem
+    form at its front is its own answer.
+    """
+    found = re.match(_PRO_TEM, spoken, re.IGNORECASE)
+    if found is None:
+        return spoken
+    return _name_words(spoken[found.end() :])
+
+
+def read_labels(
+    segments: Sequence[Segment],
+    officials: Sequence[Person],
+    *,
+    holders: Mapping[str, Person],
+) -> list[ReadLabel]:
     """Read who is speaking, run by run (spec 10.6).
 
     The words that name the next speaker are the last words of the run before
@@ -425,7 +563,12 @@ def read_labels(segments: Sequence[Segment], officials: Sequence[Person]) -> lis
             ReadLabel(
                 run=runs[run.index + 1],
                 recognition=recognition,
-                match=match_name(recognition.spoken, officials),
+                match=read_naming(
+                    recognition.title_kind,
+                    recognition.spoken,
+                    officials=officials,
+                    holders=holders,
+                ),
             )
         )
     return labels
@@ -482,12 +625,14 @@ def read_speakers(ctx: JobContext) -> None:
         return
 
     clear_speaker_labels(ctx.conn, meeting.id)
-    labels = read_labels(segments, officials)
+    holders = seat_holders_of(ctx.conn, body_id=meeting.body_id, on=on)
+    labels = read_labels(segments, officials, holders=holders)
     stored = _store(ctx, meeting_id=meeting.id, transcript_id=transcript.id, labels=labels)
     checked = cross_check(
         ctx,
         meeting_id=meeting.id,
         officials=officials,
+        holders=holders,
         segments=segments,
         stored=stored,
     )
@@ -511,6 +656,7 @@ def cross_check(
     *,
     meeting_id: int,
     officials: Sequence[Person],
+    holders: Mapping[str, Person],
     segments: Sequence[Segment],
     stored: Sequence[tuple[ReadLabel, int]],
 ) -> CrossCheck:
@@ -565,7 +711,9 @@ def cross_check(
                 expected = motion.mover if said.role == "mover" else motion.seconder
                 if not expected:
                     continue
-                person = match_name(said.spoken, officials).person
+                person = read_naming(
+                    said.title_kind, said.spoken, officials=officials, holders=holders
+                ).person
                 holder = None if person is None else _nearest_label(by_person.get(person.id), run)
                 if person is None or holder is None:
                     continue
@@ -762,12 +910,14 @@ def _namings_of(run: Run) -> list[_Naming]:
     for match in _NAMED.finditer(text):
         if _said_thanks(_words_before(text, match.start(), _BEFORE_WORDS)):
             continue
-        spoken = _name_words(match.group("name"))
+        written = match.group("name")
+        end = _PRO_TEM_SENTENCE.match(written)
+        spoken = _name_words(written if end is None else end.group(0))
         if not _written_as_a_name(text, spoken):
             continue
         found.append(
             _Naming(
-                title_kind=_title_kind(match.group("title")),
+                title_kind=_seat_kind(match.group("title"), spoken),
                 spoken=spoken,
                 role=_summary_role(_words_before(text, match.start(), _ROLE_WORDS)),
                 evidence=_sentence_at(text, match.start()),
@@ -781,12 +931,21 @@ def _starts_change(text: str) -> bool:
     return text.lstrip().startswith(CHANGE_MARKER)
 
 
-def _title_kind(title: str) -> str:
-    """Which title was used, as the row records it."""
+def _seat_kind(title: str, spoken: str) -> str:
+    """Which seat a naming named, as the row records it.
+
+    The pro tem words are read in either half of the naming, because the
+    captioner writes them in either half: "Mayor Port McCoy" is a title the
+    captioner wrote and "Port" is part of what she wrote after it. A seat that
+    is not named either way and holds the word "mayor" is the mayor's, and
+    anything else is the rank every member of the body holds, which names no one
+    seat.
+    """
     said = " ".join(title.casefold().split())
-    for printed, kind in _TITLE_KINDS.items():
-        if printed in said:
-            return kind
+    if re.search(_PRO_TEM, said) or re.match(_PRO_TEM, spoken.casefold()):
+        return "mayor_pro_tem"
+    if "mayor" in said:
+        return "mayor"
     return "member"
 
 
@@ -1028,6 +1187,7 @@ __all__ = [
     "CUTOFF",
     "MARGIN",
     "METHOD",
+    "METHOD_TITLE",
     "CrossCheck",
     "Match",
     "ReadLabel",
@@ -1039,6 +1199,7 @@ __all__ = [
     "match_name",
     "phonetic_key",
     "read_labels",
+    "read_naming",
     "read_speakers",
     "recognition_of",
     "recognitions_of",

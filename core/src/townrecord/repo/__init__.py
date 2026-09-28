@@ -29,6 +29,7 @@ from .area import (
     overlaps_of,
     record_source_failure,
     record_source_success,
+    seat_holders_of,
     upsert_person,
     upsert_seat,
 )
@@ -280,6 +281,7 @@ __all__ = [
     "runs_on",
     "save_meeting_alignment",
     "search",
+    "seat_holders_of",
     "segments_of",
     "set_capture_state",
     "set_record_page_count",

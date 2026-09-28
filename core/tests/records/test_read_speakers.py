@@ -19,6 +19,15 @@ The five things the checks were asked for, in the order they were asked for:
 * a motion whose mover or seconder the captions and the minutes agree on is
   marked as confirmed by two records, and a disagreement keeps both.
 
+One rule the reading is held to here is not one of the five, because it was
+found in the recorded meeting and not in the briefing: a title names a seat, and
+the person in it comes from the minutes. The captioner writes "Prom." for the
+title "Mayor Pro Tem", and a reading that compared that word against the
+officials' surnames wrote a council member's name where the words were a title
+and the seat belonged to somebody else. A title word is read as a title, the
+seat's holder is the person the minutes put in it, and when the words could be
+either the seat or a surname the reading writes a name only if the seat agrees.
+
 Two of the tests read the recorded September 8, 2026 caption track and packet
 of the oversight repository in place and are skipped when the recordings are not
 on this machine. Everything else is built here, so the five checks hold on a
@@ -95,6 +104,12 @@ METHOD = "jaro_winkler_phonetic"
 CUTOFF = 0.72
 MARGIN = 0.05
 
+#: The name of the second way a label is reached, pinned for the same reason as
+#: the first: a title names a seat, and the person in it comes from the minutes
+#: rather than from a score. No surname is compared, so the score of such a
+#: reading is 1.0 and the method is what says why it is not a match.
+TITLE_METHOD = "seat_title"
+
 #: The words the chair puts in front of a name when she hands the floor over.
 CHAIR = "Council member"
 
@@ -119,6 +134,22 @@ def a_seated_body(
         upsert_seat(sync.conn, person_id=person_id, body_id=area.body_id, title=title, on=since)
         seated[name] = person_id
     return seated
+
+
+def a_titled_seat(
+    sync: Sync, area: Area, *, name: str, title: str, since: str = "2026-01-01"
+) -> int:
+    """Put one official in a titled seat, the way the minutes print the title.
+
+    A council's minutes title the seats a vote list names rather than only
+    seating a row of members: "Mayor" and "Mayor Pro Tem" are seats with one
+    holder each, and a reading that says a title has to know who held it on the
+    meeting's date. This seats one such person beside whatever the body's other
+    seats are, and returns their id.
+    """
+    person_id = upsert_person(sync.conn, name=name)
+    upsert_seat(sync.conn, person_id=person_id, body_id=area.body_id, title=title, on=since)
+    return person_id
 
 
 def a_transcript_of(
@@ -228,6 +259,163 @@ def test_a_name_near_two_officials_is_not_written_as_either(
     speaking = line_of(sync, transcript_id, ">> I have a question about the budget.")
     assert speaking.speaker_label is None
     assert speaker_label_of_segment(sync.conn, speaking.id) is not None, "the reading is kept"
+
+
+# -- The title words: a seat, and never a surname -----------------------------
+
+
+def test_a_title_word_names_the_seat_and_the_minutes_name_its_holder(
+    area: Area, sync: Sync, storage_root: Path
+) -> None:
+    """The captioner writes "Prom" for "Pro Tem", and it is read as that seat.
+
+    A caption file spells a title the way it spells a name, and the September 8
+    captioner writes "Prom" where the minutes write "Mayor Pro Tem". The word is
+    the title and not a surname, so the person it names is whoever the minutes
+    seat in the mayor pro tem's chair on the meeting's date. A reading that
+    compared "Prom" against the officials' names wrote Crystal Prieto, a member
+    of the body and not the seat's holder.
+    """
+    seated = a_seated_body(sync, area)
+    pro_tem = a_titled_seat(sync, area, name="Sean McCoy", title="Mayor Pro Tem")
+    meeting_id, transcript_id = a_transcript_of(
+        sync,
+        storage_root,
+        area,
+        (
+            "Mayor Prom, you have the floor.",
+            ">> Thank you. The fee is fifty dollars.",
+        ),
+    )
+
+    speak(sync, meeting_id)
+
+    labels = speaker_labels_of_meeting(sync.conn, meeting_id)
+    assert len(labels) == 1, "the chair named one person, and the last run labels nobody"
+    label = labels[0]
+    assert label.spoken_name == "Prom", "the words the captioner wrote are kept"
+    assert label.title_kind == "mayor_pro_tem", "the words named the seat she meant"
+    assert pro_tem == seated["Sean McCoy"], "the minutes seat one person, not two"
+    assert label.person_id == pro_tem, "the seat's holder is the person the minutes name"
+    assert label.person_id != seated["Crystal Prieto"], "the word is a title, not her surname"
+    assert label.candidate_person_id == pro_tem, "the seat's holder is also the guess"
+    assert label.method == TITLE_METHOD, "no surname was scored: the seat decided this reading"
+    assert label.score == 1.0, "a reading that scored no name is not a near miss"
+
+    speaking = line_of(sync, transcript_id, ">> Thank you. The fee is fifty dollars.")
+    assert speaking.speaker_label == "Sean McCoy", "the run's lines carry the holder's name"
+    chair = line_of(sync, transcript_id, "Mayor Prom, you have the floor.")
+    assert chair.speaker_label is None, "the chair's own lines were not named"
+
+
+def test_a_title_the_minutes_seat_nobody_in_names_nobody(
+    area: Area, sync: Sync, storage_root: Path
+) -> None:
+    """A title names a seat, and a seat with no holder in the minutes names nobody.
+
+    The reading of a title stands on the minutes for the person the seat belongs
+    to. When the record seats nobody there on that date the words name nobody,
+    and the line stays "an unidentified speaker" rather than taking the nearest
+    official the sounds happen to reach (spec 10.6).
+    """
+    a_seated_body(sync, area)  # every seat is a council member's: nobody is Mayor Pro Tem
+    meeting_id, transcript_id = a_transcript_of(
+        sync,
+        storage_root,
+        area,
+        (
+            "Mayor Prom, you have the floor.",
+            ">> Thank you. The fee is fifty dollars.",
+        ),
+    )
+
+    speak(sync, meeting_id)
+
+    labels = speaker_labels_of_meeting(sync.conn, meeting_id)
+    assert len(labels) == 1
+    label = labels[0]
+    assert label.spoken_name == "Prom", "the words the captioner wrote are kept"
+    assert label.title_kind == "mayor_pro_tem", "the words named a seat"
+    assert label.person_id is None, "the minutes seat nobody there, so nobody is named"
+
+    speaking = line_of(sync, transcript_id, ">> Thank you. The fee is fifty dollars.")
+    assert speaking.speaker_label is None, "spec 10.6 shows this as an unidentified speaker"
+    assert speaker_label_of_segment(sync.conn, speaking.id) is not None, "the reading is kept"
+
+
+def test_words_that_could_be_a_title_or_a_name_are_unidentified_when_the_seat_disagrees(
+    area: Area, sync: Sync, storage_root: Path
+) -> None:
+    """The words name a seat and a surname, and the surname is not the seat's holder.
+
+    "Prom" is the captioner's "Pro Tem", and the words after it can be read as a
+    surname. The title reading is the one that stands, and it stands only when
+    the name agrees with the person the minutes seat there: when the two
+    readings name different people there is no answer to write, and the line
+    stays unidentified with the near miss kept beside it.
+    """
+    a_seated_body(sync, area)
+    a_titled_seat(sync, area, name="Diane Crist", title="Mayor Pro Tem")
+    meeting_id, transcript_id = a_transcript_of(
+        sync,
+        storage_root,
+        area,
+        (
+            "Mayor Prom Prieto, you have the floor.",
+            ">> Thank you. The fee is fifty dollars.",
+        ),
+    )
+
+    speak(sync, meeting_id)
+
+    labels = speaker_labels_of_meeting(sync.conn, meeting_id)
+    assert len(labels) == 1
+    label = labels[0]
+    assert label.spoken_name == "Prom Prieto", "the words the captioner wrote are kept"
+    assert label.title_kind == "mayor_pro_tem", "the words opened with a title"
+    assert label.person_id is None, "the seat is not Prieto's, and the words are not the seat's"
+    assert label.candidate_person_id is not None, "what was nearly read is kept"
+
+    speaking = line_of(sync, transcript_id, ">> Thank you. The fee is fifty dollars.")
+    assert speaking.speaker_label is None
+
+
+def test_the_mayor_title_names_the_seat_the_minutes_fill(
+    area: Area, sync: Sync, storage_root: Path
+) -> None:
+    """The title "Mayor" names the mayor's seat, and the minutes name who is in it.
+
+    The mayor is a seat like any other, and the reading of the title is the same
+    one: the words are the title, and the person is the one the minutes seat in
+    it. The mayor here has a surname of her own, so an agreement between the
+    title's seat and the name after it is what the reading is held to.
+    """
+    seated = a_seated_body(sync, area)
+    mayor = a_titled_seat(sync, area, name="Susie Hidalgo-Fahring", title="Mayor")
+    meeting_id, transcript_id = a_transcript_of(
+        sync,
+        storage_root,
+        area,
+        (
+            f"{CHAIR} Popkin, go ahead.",
+            ">> Mayor Hidalgo-Fahring, do you have a report?",
+            ">> I do. The fee was collected.",
+        ),
+    )
+
+    speak(sync, meeting_id)
+
+    labels = speaker_labels_of_meeting(sync.conn, meeting_id)
+    assert len(labels) == 2
+    assert labels[0].person_id == seated["Matthew Popkin"]
+    named = labels[1]
+    assert named.spoken_name == "Hidalgo-Fahring"
+    assert named.title_kind == "mayor", "the words named the mayor's seat"
+    assert named.person_id == mayor, "the minutes seat her in it"
+    assert named.method == TITLE_METHOD
+
+    speaking = line_of(sync, transcript_id, ">> I do. The fee was collected.")
+    assert speaking.speaker_label == "Susie Hidalgo-Fahring"
 
 
 # -- Check 2: an unidentified speaker ----------------------------------------
@@ -580,36 +768,37 @@ def test_a_motion_the_two_records_disagree_on_keeps_both_names(
 #: before it was measured.
 MEASURED_SEGMENTS = 5787
 MEASURED_LABELS = 58
-MEASURED_IDENTIFIED = 52
-MEASURED_UNIDENTIFIED = 6
+MEASURED_IDENTIFIED = 53
+MEASURED_UNIDENTIFIED = 5
 MEASURED_PLACED_ITEMS = 28
 MEASURED_MOTIONS_CHECKED = 14
-MEASURED_CONFIRMED = 7
-MEASURED_CONFLICTS = 8
+MEASURED_CONFIRMED = 9
+MEASURED_CONFLICTS = 6
 
 #: How many labels the disagreements landed on. One label can be claimed twice,
 #: as the mover's run of one motion and the seconder's run of another, so the
-#: eight disagreements of this meeting are kept on seven labels: the second one
+#: six disagreements of this meeting are kept on five labels: the second one
 #: is written beside the first rather than over it.
-MEASURED_CONFLICT_LABELS = 7
+MEASURED_CONFLICT_LABELS = 5
 
 #: How many lines the reading wrote each official's name on. The Mayor is not
 #: here: the chair is the one who names the others, and she names herself
 #: nowhere, so her own lines keep the NULL label spec 10.6 shows.
 MEASURED_PER_PERSON = {
     "Matthew Popkin": 18,
-    "Crystal Prieto": 10,
     "Diane Crist": 10,
+    "Crystal Prieto": 8,
     "Alex Kalkhofer": 7,
     "Jake Marsing": 6,
-    "Sean McCoy": 1,
+    "Sean McCoy": 4,
 }
 
 #: Every way the captioner wrote a name that the reading of this meeting kept,
 #: and the official it was read as, or None for the lines it refused to name.
-#: It is a table of what the reading did rather than of what it should do: the
-#: reading marked wrong below is wrong, and it is kept in the table so that the
-#: test says so out loud instead of hiding it.
+#: It is a table of what the reading did rather than of what it should do: two
+#: of the spellings below were read as the wrong official before the titles
+#: were read as titles, and they are pinned here so that a reading that drifts
+#: back to a surname's sound on a title word says so out loud.
 MEASURED_SPELLINGS = {
     "Brietto": "Crystal Prieto",
     "Brito": "Crystal Prieto",
@@ -633,12 +822,12 @@ MEASURED_SPELLINGS = {
     "Popkin I think": "Matthew Popkin",
     "Popkin Yes Go": "Matthew Popkin",
     "Popkins still has": "Matthew Popkin",
-    "Port McCoy": None,
+    "Port McCoy": "Sean McCoy",  # the same title, with the surname the captioner kept
     "Prito": "Crystal Prieto",
     "Prito All right": "Crystal Prieto",
     "Prito in opposition": "Crystal Prieto",
     "Prito would uh": "Crystal Prieto",
-    "Prom": "Crystal Prieto",  # wrong: this is the captioner's "Pro Tem"
+    "Prom": "Sean McCoy",  # the captioner's "Pro Tem", read as the seat the minutes fill
     "Prom McCoy in": "Sean McCoy",  # a surname inside a garbled title, read right
     "Sandy Cedar": None,
 }
@@ -656,19 +845,22 @@ MEASURED_SCORES = {
     "Brietto": 0.7222,
     "Koffer": 0.805,
     "Prom McCoy in": 1.0,
-    "Port McCoy": 1.0,  # cleared the cutoff, held back by the margin
-    "Calcoffer": 0.8222,  # the same, against a closer runner-up
-    "Prom": 0.8222,  # cleared both bars and is wrong
+    "Port McCoy": 1.0,  # the seat was read, not the surname beside it
+    "Calcoffer": 0.8222,  # cleared the cutoff, held back by the margin
+    "Prom": 1.0,  # no name was scored: the score is the seat's, and the method says so
 }
 
-#: The reading of the recorded meeting that is wrong, named here so the report
-#: and the test agree about it. The captioner writes "Prom." for "Mayor Pro
-#: Tem", and the reading of the chair's summary takes the words after the title
-#: "Mayor" as a name, so one run of Crystal Prieto's lines carries the name of
-#: the Mayor Pro Tem. It clears both bars, which is why the score and not just
-#: the cutoff is what tells a reader to look: 0.8222, the same score "Calcoffer"
-#: got and was refused for, held back there by a closer runner-up.
-MEASURED_WRONG = ("Prom",)
+#: The spellings the captioner wrote for the title "Pro Tem" in this meeting,
+#: and the one person the minutes seat in that seat on its date. A title word is
+#: never matched against a surname: before the titles were read as titles, a
+#: reading of surnames scored "Prom" at 0.8222 and wrote Crystal Prieto, who was
+#: not in that seat, and these labels are named from the seat instead. The
+#: method column says which reading a row came from, and the seat's holder is
+#: both the person and the guess.
+MEASURED_TITLES = {
+    "Prom": "Sean McCoy",
+    "Port McCoy": "Sean McCoy",
+}
 
 
 @needs(AGENDA_16805, CAPTIONS_16805, PACKET_MINUTES_SEP08)
@@ -762,13 +954,32 @@ def test_the_real_september_8_speakers_read_the_way_the_captions_hold_them(
     assert len(confirmed) == MEASURED_CONFIRMED, "two records named these people"
     assert all(one.person_id is not None for one in confirmed)
 
-    # The reading of this meeting that is wrong is named here and is still
-    # written as a name. The test says so rather than leaving a reader to find
-    # it: the captioner writes "Prom." for "Mayor Pro Tem", and the reading of
-    # the chair's summary goes on to read the words after the title "Mayor" as
-    # if they were a name.
-    for spoken in MEASURED_WRONG:
-        assert labels[spoken].person_id is not None, f"{spoken} was written as a name"
+    # A title names a seat, and the person is the one the minutes put in it.
+    # The captioner writes "Prom." and "Port" for "Mayor Pro Tem", and this is
+    # the check that a title word is never read as a surname: the seat's holder
+    # is the person named, and the row says so with its method rather than with
+    # a name score.
+    holders = {
+        str(row[0]): int(row[1])
+        for row in sync.conn.execute(
+            "SELECT seats.title, seats.person_id FROM seats WHERE seats.body_id = "
+            "(SELECT body_id FROM meetings WHERE id = ?)",
+            (meeting_id,),
+        )
+    }
+    assert set(holders) == {"Mayor", "Mayor Pro Tem", "Council Member"}, "the seats it read"
+    holder_id = holders["Mayor Pro Tem"]
+    holder = sync.conn.execute("SELECT name FROM people WHERE id = ?", (holder_id,)).fetchone()
+    assert holder is not None, "a seat is held by a person"
+    for spoken, name in MEASURED_TITLES.items():
+        assert str(holder[0]) == name, "the minutes seat one person, and it is the one named here"
+        assert spoken in labels, f"{spoken} is one of the spellings the reading kept"
+        label = labels[spoken]
+        assert label.title_kind == "mayor_pro_tem", f"{spoken} is the captioner's pro tem title"
+        assert label.person_id == holder_id, f"{spoken} is read as the holder of that seat"
+        assert label.candidate_person_id == holder_id, "the seat's holder is the guess too"
+        assert label.method == TITLE_METHOD, "no surname was scored for this label"
+        assert label.score == 1.0, "a label the seat decided is not a near miss"
 
     conflicts = [
         one.conflict
