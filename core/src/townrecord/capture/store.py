@@ -35,6 +35,7 @@ from typing import Any
 
 from .. import artifacts, repo
 from ..captions.parse import Segment
+from ..jobs import ORIGIN_MANUAL
 from ..records.requests import (
     SPEAKERS_TRANSCRIPT_STORED,
     TRANSCRIPT_STORED,
@@ -75,6 +76,7 @@ def insert_transcript_with_segments(
     is_provisional: bool = True,
     settled_under_churn: bool = False,
     settled_at: str | None = None,
+    job_origin: str = ORIGIN_MANUAL,
 ) -> int:
     """Store a transcript and its lines in one transaction, and return its id.
 
@@ -103,6 +105,11 @@ def insert_transcript_with_segments(
             still changing.
         settled_at: When the capture settled, or None while it is provisional.
             The schema allows one of the two, never both and never neither.
+        job_origin: How the job that stored this transcript was asked for
+            (spec 16.2), which the two jobs queued below take after. A caller
+            with a job in hand passes ``ctx.origin``; a caller with no job
+            behind it leaves the default, because ``manual`` is what a job
+            nothing preceded is.
 
     Raises:
         ValueError: A provenance was given whose origin is not the origin the
@@ -136,8 +143,8 @@ def insert_transcript_with_segments(
             )
         if provenance is not None:
             artifacts.merge_meta(conn, artifact_id, {"provenance": provenance_meta(provenance)})
-        _ask_for_alignment(conn, video_id)
-        _ask_for_speakers(conn, video_id)
+        _ask_for_alignment(conn, video_id, job_origin)
+        _ask_for_speakers(conn, video_id, job_origin)
         conn.execute("COMMIT")
     except BaseException:
         with suppress(sqlite3.Error):  # nothing to roll back
@@ -146,7 +153,7 @@ def insert_transcript_with_segments(
     return transcript_id
 
 
-def _ask_for_alignment(conn: sqlite3.Connection, video_id: int) -> None:
+def _ask_for_alignment(conn: sqlite3.Connection, video_id: int, job_origin: str) -> None:
     """Ask for the alignment of a meeting whose video just got a transcript.
 
     The align job pauses when its video has no transcript yet, and the sentence
@@ -164,6 +171,12 @@ def _ask_for_alignment(conn: sqlite3.Connection, video_id: int) -> None:
     Only the primary video of a meeting asks. A meeting is aligned against one
     video, so a transcript of another video of the same meeting changes nothing
     about the alignment. A video that belongs to no meeting asks for nothing.
+
+    ``job_origin`` is how the job that stored the transcript was asked for
+    (spec 16.2), and the alignment it queues takes after it: the child of a
+    scheduled capture is a scheduled alignment. The caller that has a job in
+    hand passes ``ctx.origin``, and a caller with no job behind it leaves the
+    default, which is the origin a job nothing preceded has.
     """
     video = repo.get_video(conn, video_id)
     if video is None or video.meeting_id is None:
@@ -175,10 +188,11 @@ def _ask_for_alignment(conn: sqlite3.Connection, video_id: int) -> None:
         conn,
         video.meeting_id,
         reason=TRANSCRIPT_STORED.format(video_id=video_id, meeting_id=video.meeting_id),
+        origin=job_origin,
     )
 
 
-def _ask_for_speakers(conn: sqlite3.Connection, video_id: int) -> None:
+def _ask_for_speakers(conn: sqlite3.Connection, video_id: int, job_origin: str) -> None:
     """Ask for the speaker reading of a meeting whose video just got a transcript.
 
     Spec 10.6 labels the lines of a meeting's transcript, and the reading pauses
@@ -204,4 +218,5 @@ def _ask_for_speakers(conn: sqlite3.Connection, video_id: int) -> None:
         conn,
         video.meeting_id,
         reason=SPEAKERS_TRANSCRIPT_STORED.format(video_id=video_id, meeting_id=video.meeting_id),
+        origin=job_origin,
     )

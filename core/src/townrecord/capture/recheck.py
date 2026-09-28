@@ -425,6 +425,9 @@ class CaptionRecheck:
             artifact_id=caption_artifact.id,
             origin=origin,
             segments=segments,
+            # A revision is this recheck's own write, so the asks it leaves
+            # behind take after this job (spec 16.2).
+            job_origin=ctx.origin,
         )
         when = f"{now.strftime('%Y-%m-%d %H:%M')} UTC"
         sentence = (
@@ -489,7 +492,9 @@ class CaptionRecheck:
                 meeting_id=meeting_id,
                 reason=reason,
             )
-        request_alignment(ctx.conn, meeting_id, reason=reason)
+        # The alignment runs again because this recheck found a revision, so it
+        # was asked for the way this recheck was (spec 16.2).
+        request_alignment(ctx.conn, meeting_id, reason=reason, origin=ctx.origin)
 
     def _settle(
         self, ctx: JobContext, video: repo.Video, under_churn: bool, now: datetime, reason: str

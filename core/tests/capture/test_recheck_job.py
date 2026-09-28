@@ -48,8 +48,19 @@ from townrecord.capture.settle import (
     unchanged_pair,
 )
 from townrecord.config import Settings
-from townrecord.jobs import DONE, QUEUED, JobContext, JobDeferred, claim, finish, get
+from townrecord.jobs import (
+    DONE,
+    ORIGIN_MANUAL,
+    ORIGIN_SCHEDULED,
+    QUEUED,
+    JobContext,
+    JobDeferred,
+    claim,
+    finish,
+    get,
+)
 from townrecord.jobs.queue import stamp
+from townrecord.records.portal import ALIGN_MEETING
 from townrecord.status import collect, render
 
 from .fakes import FIXTURE_SRV3, PLATFORM_VIDEO_ID, FakeClock, FakeYtDlp, claimed_job, fake_429
@@ -87,6 +98,7 @@ def capture_video(
     clock: FakeClock,
     *,
     caption: bytes | None = None,
+    origin: str = ORIGIN_MANUAL,
 ) -> FakeYtDlp:
     """Capture the video once, for real, and close the job.
 
@@ -94,11 +106,14 @@ def capture_video(
     hand: the capture is what dates the transcript (the 48 hour backstop and the
     24 hour window are both counted from it), what stores the caption version
     the checks are compared against, and what queues the first recheck.
+
+    ``origin`` is how the capture was asked for, so that the tests about what a
+    capture hands down can start from a scheduled one (spec 16.2).
     """
     fake = FakeYtDlp()
     if caption is not None:
         fake.caption = caption
-    ctx = claimed_job(conn, video, clock)
+    ctx = claimed_job(conn, video, clock, origin=origin)
     CaptionCapture(
         storage_root=storage_root, settings=CaptureSettings(), runner=fake, interpreter="python"
     )(ctx)
@@ -114,6 +129,10 @@ def claim_until(
     A capture queues an alignment job (spec 16.3) and its own first recheck into
     this same lane, so a plain claim would reach the wrong row. The helper the
     capture tests use closes what is not asked for, for the same reason.
+
+    The context carries the claimed row's own origin (spec 16.2), which is what
+    a handler reads: a helper that left it at the default would hand every job a
+    ``manual`` context and hide whether an origin was passed on.
     """
     taken = claim(conn, lane, "worker-1", clock=clock)
     while taken is not None and taken.kind != kind:
@@ -128,6 +147,7 @@ def claim_until(
         lane=taken.lane,
         claim_token=taken.token,
         clock=clock,
+        origin=taken.origin,
     )
 
 
@@ -210,6 +230,13 @@ def transcripts(conn: sqlite3.Connection, video: int) -> list[sqlite3.Row]:
     )
 
 
+def align_jobs(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """Every align job, oldest first (spec 16.3)."""
+    return list(
+        conn.execute("SELECT * FROM jobs WHERE kind = ? ORDER BY id", (ALIGN_MEETING,)).fetchall()
+    )
+
+
 def version_in_hand(conn: sqlite3.Connection, video: int) -> sqlite3.Row:
     """The transcript version the rest of the system reads (spec 8.7)."""
     row = conn.execute(
@@ -221,11 +248,16 @@ def version_in_hand(conn: sqlite3.Connection, video: int) -> sqlite3.Row:
 
 
 def ready_for_recheck(
-    conn: sqlite3.Connection, storage_root: Path, video: int, meeting: int
+    conn: sqlite3.Connection,
+    storage_root: Path,
+    video: int,
+    meeting: int,
+    *,
+    origin: str = ORIGIN_MANUAL,
 ) -> FakeClock:
     """Capture the fixture video, date it, and say when its meeting ended."""
     clock = FakeClock(start=CAPTURED)
-    capture_video(conn, storage_root, video, clock)
+    capture_video(conn, storage_root, video, clock, origin=origin)
     say_captured_at(conn, video, CAPTURED)
     say_meeting_ended(conn, meeting, MEETING_ENDED)
     return clock
@@ -567,6 +599,28 @@ def test_a_changed_hash_raises_one_review_item_and_keeps_the_old_version(
     assert len(repo.review_items(conn, video_id=video)) == 1
     assert len(transcripts(conn, video)) == 2
     assert checks(conn, video)[-1].changed is False
+
+
+def test_the_alignment_a_revision_asks_for_takes_after_the_recheck(
+    conn: sqlite3.Connection, storage_root: Path, video: int, meeting: int
+) -> None:
+    """A revision's alignment is the child of the recheck that found it.
+
+    The recheck of a scheduled capture is itself scheduled, so the alignment it
+    asks for runs again for the same reason the recheck did (spec 16.2). The
+    capture's own alignment job is closed by the first claim below, so the row
+    that is read here is the one the revision writes.
+    """
+    clock = ready_for_recheck(conn, storage_root, video, meeting, origin=ORIGIN_SCHEDULED)
+
+    recheck_at(conn, storage_root, clock, CAPTURED + timedelta(hours=1))
+    assert [row["state"] for row in align_jobs(conn)] == [DONE]
+
+    recheck_at(conn, storage_root, clock, CAPTURED + timedelta(hours=4), caption=REVISED_SRV3)
+
+    rows = align_jobs(conn)
+    assert len(rows) == 2, "the revision asked for the alignment of its meeting again"
+    assert rows[-1]["origin"] == ORIGIN_SCHEDULED, "the alignment took after the recheck"
 
 
 def test_a_rate_limited_recheck_defers_the_job_and_never_sleeps(

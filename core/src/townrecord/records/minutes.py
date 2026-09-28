@@ -599,7 +599,8 @@ def read_minutes(ctx: JobContext) -> None:
     # is a meeting whose speakers can be read. Asking is safe to repeat, and a
     # meeting whose video has no transcript yet is not asked for: the ask is
     # what the capture lane repeats once a transcript of that video is stored.
-    request_speakers(ctx.conn, meeting.id)
+    # The reading is this reading's child, so it takes after it (spec 16.2).
+    request_speakers(ctx.conn, meeting.id, origin=ctx.origin)
 
 
 #: The office a seat is read as when the minutes print no title in front of the

@@ -52,7 +52,7 @@ from typing import Any
 from .. import artifacts, pacing, proc, repo
 from ..captions import CaptionParseError
 from ..captions.parse import Segment, parse_srv3, parse_vtt
-from ..jobs import ORIGIN_SCHEDULED, JobContext
+from ..jobs import JobContext
 from ..runtime.javascript import JavaScriptRuntime
 from ..runtime.javascript import resolve as resolve_javascript
 from ..stt.audio import AudioTrigger
@@ -514,6 +514,7 @@ class CaptionCapture:
             artifact_id=caption_artifact.id,
             origin=origin,
             segments=segments,
+            job_origin=ctx.origin,
         )
         logger.info(
             "Stored transcript %s of video %s: %s lines, origin %s, sidecar artifact %s.",
@@ -536,13 +537,17 @@ class CaptionCapture:
 
         A settled transcript is not asked for again: it stopped changing, and a
         capture that stored the same bytes it already had has nothing to watch.
+
+        The recheck takes after the capture that asked for it (spec 16.2): the
+        daily schedule's capture queues a scheduled recheck, and a capture the
+        user started queues a manual one.
         """
         if is_provisional:
             job_id = request_recheck(
                 ctx.conn,
                 video.id,
                 reason=first_recheck_reason(video.id),
-                origin=ORIGIN_SCHEDULED,
+                origin=ctx.origin,
             )
             logger.info("Video %s: the captions are rechecked by job %s.", video.id, job_id)
         return CAPTIONS_STATE
