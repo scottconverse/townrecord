@@ -28,12 +28,18 @@ def insert_vote(
     source_kind: str,
     evidence: str,
     tally: Mapping[str, Any] | None = None,
+    motion_id: int | None = None,
+    citation_id: int | None = None,
 ) -> int:
     """Store one vote on an item and return its id (spec 10.4).
 
     A transcript-only mention is never a tally, so a tally is refused with
     ``source_kind='transcript'`` by the schema. When sources disagree, one row
     per source kind is stored and none of them is picked.
+
+    ``motion_id`` names the motion of a minutes document the outcome came out
+    of, and ``citation_id`` the citation the vote rests on. Both are None for a
+    vote whose evidence is its own source row.
     """
     return insert(
         conn,
@@ -44,6 +50,8 @@ def insert_vote(
             "source_kind": source_kind,
             "evidence": evidence,
             "tally": None if tally is None else json.dumps(dict(tally), sort_keys=True),
+            "motion_id": motion_id,
+            "citation_id": citation_id,
         },
     )
 

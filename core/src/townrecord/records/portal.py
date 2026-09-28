@@ -43,6 +43,7 @@ SYNC_PRIMEGOV = "sync_primegov"
 DOWNLOAD_RECORD = "download_record"
 EXTRACT_PAGES = "extract_pages"
 ALIGN_MEETING = "align_meeting"
+READ_MINUTES = "read_minutes"
 
 #: The lanes, as spec 16.1 spells them.
 NORMAL = "normal"
@@ -199,6 +200,11 @@ _MEETING_TYPES = (
     ("regular", "regular"),
 )
 
+#: The kind of the record a meeting's documents are published in. Spec 9.4: the
+#: draft minutes of a session sit in the next session's packet, so this is the
+#: kind of record a meeting's minutes are looked for in.
+PACKET_KIND = "packet"
+
 #: The record kinds migration ``0005_core_model.sql`` allows, with the words a
 #: portal template name uses for them. Longest first: "Agenda Packet" is a
 #: packet, and the adapter's own size rule reads "packet" the same way.
@@ -206,7 +212,7 @@ _TEMPLATE_KINDS = (
     ("minutes", "minutes"),
     ("ordinance", "ordinance"),
     ("resolution", "resolution"),
-    ("packet", "packet"),
+    ("packet", PACKET_KIND),
     ("budget", "budget"),
     ("report", "report"),
     ("agenda", "agenda"),
@@ -291,6 +297,17 @@ class PageJob:
     def as_payload(self) -> dict[str, Any]:
         """The JSON payload a reading job carries."""
         return {"record_id": self.record_id}
+
+
+@dataclass(frozen=True)
+class MinutesRequest:
+    """One meeting whose minutes are to be read (spec 9.4, 10.4)."""
+
+    meeting_id: int
+
+    def as_payload(self) -> dict[str, Any]:
+        """The JSON payload a minutes reading job carries."""
+        return {"meeting_id": self.meeting_id}
 
 
 @dataclass(frozen=True)
@@ -438,6 +455,18 @@ def align_request(payload: Any) -> AlignRequest:
             if raw_source is None
             else _as_int(raw_source, "An align job names the source it came from.")
         ),
+    )
+
+
+def minutes_request(payload: Any) -> MinutesRequest:
+    """Read the payload of a minutes reading job (spec 10.4)."""
+    if not isinstance(payload, Mapping):
+        raise SyncRefused("A minutes reading job carries the meeting whose minutes to read.")
+    return MinutesRequest(
+        meeting_id=_as_int(
+            payload.get("meeting_id"),
+            "A minutes reading job names the meeting whose minutes to read.",
+        )
     )
 
 

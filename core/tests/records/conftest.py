@@ -72,6 +72,14 @@ ARCHIVED_2026 = EVIDENCE_FOLDER / "primegov" / "longmont-ListArchivedMeetings-20
 #: The compiled PDF agenda of that meeting, recorded from the portal.
 AGENDA_16805_PDF = EVIDENCE_FOLDER / "primegov" / "longmont-agenda-16805.pdf"
 
+#: The run of the September 22, 2026 packet that carries the draft minutes of
+#: the September 8, 2026 session (spec 9.4). Its first page is packet page 17,
+#: and each of its 22 pages prints the number the packet gave it and the number
+#: the draft gave it.
+PACKET_MINUTES_SEP08 = (
+    EVIDENCE_FOLDER / "primegov" / "longmont-packet-16823-minutes-sep08-p17-38.pdf"
+)
+
 #: The meeting the end-to-end test syncs: the September 8, 2026 regular session.
 MEETING_3709 = 3709
 
@@ -395,6 +403,7 @@ __all__ = [
     "MEASURED_OFFSET_S",
     "MEETING_3709",
     "OTHER_URL",
+    "PACKET_MINUTES_SEP08",
     "SIGNED_MARKER",
     "VIDEO_3709",
     "VIDEO_3709_DURATION_S",
