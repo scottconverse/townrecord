@@ -13,9 +13,11 @@ jobs read a page the adapter tests never ask for: the HTML agenda at
 
 from __future__ import annotations
 
+import calendar
 import json
 import os
 import sqlite3
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -150,6 +152,21 @@ def meeting(
     }
 
 
+def days_from_today(days: int, *, hour: int = 19) -> str:
+    """An ISO date-time that many days from the day the test runs.
+
+    The default sync window is measured from the day of the run, so a test
+    about it has to be too: a fixed date would lie in the past on a machine
+    whose clock is late and in the future on one whose clock is early.
+    """
+    return datetime.combine(date.today() + timedelta(days=days), time(hour=hour)).isoformat()
+
+
+def month_day(on: date) -> str:
+    """A date as a person says it in a sentence: "October 6" (spec 10.4)."""
+    return f"{calendar.month_name[on.month]} {on.day}"
+
+
 def trimmed_2026(meeting_ids: tuple[int, ...] = (MEETING_3709,)) -> list[dict[str, Any]]:
     """The recorded 2026 list, cut down to the meetings a test asks for.
 
@@ -171,6 +188,9 @@ class FakePortal:
     def __init__(self) -> None:
         self.requests: list[httpx.Request] = []
         self.meetings: list[dict[str, Any]] = []
+        #: The meetings the portal lists as upcoming (spec 9.2). A meeting that
+        #: has not been held yet appears here and in no archived year.
+        self.upcoming: list[dict[str, Any]] = []
         self.html_agenda: bytes = fixture_bytes("agenda-16805.html")
         self.archived_status = 200
         #: The status the portal answers the HTML agenda page with. A page that
@@ -227,7 +247,7 @@ class FakePortal:
                 return httpx.Response(self.archived_status, text="the portal is unwell")
             return httpx.Response(200, json=self.meetings)
         if url.path == UPCOMING_MEETINGS_PATH:
-            return httpx.Response(200, json=[])
+            return httpx.Response(200, json=self.upcoming)
         if url.path == PORTAL_MEETING_PATH:
             if self.portal_meeting_status != 200:
                 return httpx.Response(self.portal_meeting_status, text="the agenda page is unwell")
@@ -418,10 +438,12 @@ __all__ = [
     "VIDEO_3709_DURATION_S",
     "Area",
     "Sync",
+    "days_from_today",
     "document",
     "fixture_bytes",
     "fixture_json",
     "meeting",
+    "month_day",
     "needs",
     "trimmed_2026",
 ]

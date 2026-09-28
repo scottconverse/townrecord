@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import fields
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
@@ -81,6 +81,7 @@ from townrecord.repo import (
     insert_transcript,
     insert_video,
     insert_vote,
+    meeting_by_portal_id,
     minutes_document,
     motion_items_of,
     motions_of_item,
@@ -97,6 +98,9 @@ from .conftest import (
     Area,
     FakePortal,
     Sync,
+    days_from_today,
+    meeting,
+    month_day,
     needs,
 )
 from .test_extract_pages import a_pdf_of_pages
@@ -841,6 +845,36 @@ def test_the_next_session_s_packet_is_not_there_yet(
         meeting_id, f"{NOT_AVAILABLE}; {EXPECTED_IN.format(month_day='September 22')}."
     )
     assert minutes_document(sync.conn, meeting_id) is None
+
+
+def test_the_sentence_names_a_session_only_the_upcoming_list_carried(
+    area: Area, wired: FakePortal, sync: Sync
+) -> None:
+    """Spec 9.4 and 10.4: the next regular session can be one nobody has held.
+
+    Both meetings here come off the portal rather than out of the test. The
+    later one is on the upcoming list and in no archived year, three weeks
+    after the day of the run, and it is the session whose packet the sentence
+    names. The sentence can only name it because a default-window sync stored
+    it, which is the whole of this unit.
+    """
+    later = date.today() + timedelta(days=21)
+    wired.meetings = [meeting(5001, days_from_today(-1), "City Council Regular Session")]
+    wired.upcoming = [meeting(5002, days_from_today(21), "City Council Regular Session")]
+
+    sync.queue("sync_primegov", {"source_id": area.portal_id})
+    sync.lane("normal")
+
+    earlier = meeting_by_portal_id(sync.conn, area.portal_id, 5001)
+    assert earlier is not None, "the sync stored the meeting whose minutes are read"
+    assert minutes_document(sync.conn, earlier.id) is None
+
+    job_id = read(sync, earlier.id)
+
+    assert sync.job(job_id)["state"] == PAUSED
+    assert sync.job(job_id)["last_error"] == a_pause_reason(
+        earlier.id, f"{NOT_AVAILABLE}; {EXPECTED_IN.format(month_day=month_day(later))}."
+    ), "the expected packet is the packet of the session the upcoming list carried"
 
 
 def test_the_packet_is_there_and_holds_no_minutes_of_this_meeting(
