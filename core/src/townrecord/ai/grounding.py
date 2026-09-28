@@ -5,8 +5,8 @@ Spec 11.7 is four rules and one division of labour:
 * the model gets only the evidence this program hands it, and every piece of
   that evidence carries a citation handle;
 * every sentence the model writes must cite at least one handle, every quote
-  in it must appear verbatim in the evidence it cited, and every number in it
-  must appear in that evidence;
+  in it must appear verbatim in the evidence it cited, and every number and
+  name in it must appear in that evidence;
 * "Not found" is a valid answer and is better than a guess;
 * code measures first, the model rewrites second, code measures again. A model
   never decides what counts as a fault, so nothing in this module asks a model
@@ -47,6 +47,15 @@ That includes a spelled number, so an answer that says "one of the items" and
 cites evidence that never says one or 1 fails. The spec says every number
 appears in the cited evidence and this is that rule with no exceptions; a
 looser rule would be this program deciding which numbers count.
+
+And a name in a sentence must be a person the cited evidence names. The people
+are read from the database and never from the sentence: the roster is the
+people seated on the meeting's body on its date, and the titles that name one
+office (spec 10.6, :func:`townrecord.repo.seat_holders_of`). A sentence that
+prints a surname the roster holds must print it in its cited spans too, and a
+title printed with no surname ("the Mayor") stands on the holder of that seat.
+A name or a title the roster does not hold is not read as a person at all —
+see :func:`_names_not_in_evidence` for what that means and why.
 """
 
 from __future__ import annotations
@@ -55,15 +64,19 @@ import re
 import sqlite3
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field, replace
+from datetime import date
 from typing import Any
 
 from ..repo import (
     agenda_items,
     citation_sha256,
+    get_meeting,
     latest_transcript,
+    officials_of,
     primary_video,
     record_pages,
     records_of_meeting,
+    seat_holders_of,
     segments_of,
     votes_of_item,
 )
@@ -109,6 +122,7 @@ CODE_QUOTE = "quote-not-verbatim"
 CODE_TALLY = "tally-without-a-stored-vote"
 CODE_TALLY_MISMATCH = "tally-is-not-the-stored-vote"
 CODE_NUMBER = "number-not-in-evidence"
+CODE_NAME = "name-not-in-evidence"
 CODE_NO_REPAIR = "no-repair"
 CODE_REPAIR_CHANGED = "repair-changed-a-fact"
 CODE_REPAIR_FAILED = "repair-still-failed"
@@ -290,6 +304,39 @@ _SENTENCE_STARTERS = frozenset(
 def normalize(text: str) -> str:
     """Fold whitespace and straighten quote marks. Nothing else is changed."""
     return re.sub(r"\s+", " ", str(text).translate(_QUOTE_MARKS)).strip()
+
+
+def _whole_words(phrase: str) -> re.Pattern[str]:
+    """A pattern matching this phrase where a folded text prints it as a word.
+
+    Used for a name, and only for a name: both sides are casefolded first, so
+    the capitalization a page prints does not decide whether a person is named.
+    The guards around the phrase are letters and digits, so the surname ``Ann``
+    is not found inside ``Annual`` and ``McCoy`` is not found inside ``McCoys``.
+    """
+    return re.compile(rf"(?<![a-z0-9]){re.escape(phrase)}(?![a-z0-9])")
+
+
+def _says(text: str, phrase: str) -> bool:
+    """True when a folded text prints this phrase as whole words."""
+    return _whole_words(phrase).search(text) is not None
+
+
+def _spent(text: str, phrase: str) -> str:
+    """A folded text with every whole-word print of this phrase blanked out.
+
+    The words are replaced by spaces of the same length, so the text is the
+    same length and a match found in it before this call still points at the
+    same place afterwards.
+    """
+    return _whole_words(phrase).sub(lambda found: " " * len(found.group()), text)
+
+
+def _followed_by_a_surname(tail: str, surnames: set[str]) -> bool:
+    """True when one of these surnames is the first word after this point."""
+    return any(
+        re.match(rf"\s*{re.escape(surname)}(?![a-z0-9])", tail) for surname in surnames if surname
+    )
 
 
 def is_not_found(sentence: str) -> bool:
@@ -543,16 +590,54 @@ class Span:
 
 
 @dataclass(frozen=True)
+class Official:
+    """One person the database knows, as the name check reads them (spec 10.6).
+
+    ``surname`` is the last word of the name the database holds, which is the
+    part a record prints with a title ("Council Member McCoy", "Mayor Pro Tem
+    McCoy"). A one-word name is its own surname.
+    """
+
+    name: str
+    surname: str
+
+
+@dataclass(frozen=True)
+class Roster:
+    """Who the database knows at one meeting, and the seats that name one person.
+
+    ``officials`` is every person seated on the meeting's body on its date, and
+    ``holders`` is the titles that name one office, folded, with the person who
+    held each on that date. A title every member holds names nobody and is not
+    here: a reading of "Council Member" stands on no sound (spec 10.6,
+    :func:`townrecord.repo.seat_holders_of`).
+
+    An empty roster is the honest answer for a pack built by hand or from a
+    meeting whose people were never read: the check then says nothing about any
+    name, because there is nothing it knows.
+    """
+
+    officials: tuple[Official, ...] = ()
+    holders: Mapping[str, Official] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class EvidencePack:
     """The only evidence a model is given (spec 11.7).
 
     ``dropped`` is how many spans a limit left out. It is reported and never
     passed over: a model that cannot see a span cannot cite it, and a caller
     that cut the pack short should know that (spec 16.3).
+
+    ``roster`` is who the database knows at this meeting. It is not evidence —
+    no handle reaches it and a sentence may not cite it — it is the list the
+    check reads a name against, so a sentence that names somebody the cited
+    spans never name fails (spec 11.7 with spec 10.6).
     """
 
     spans: tuple[Span, ...] = ()
     dropped: int = 0
+    roster: Roster = Roster()
 
     def __len__(self) -> int:
         return len(self.spans)
@@ -675,7 +760,48 @@ def evidence_pack(
 
     kept = built if limit is None else built[: max(int(limit), 0)]
     spans = tuple(replace(span, handle=f"[E{index}]") for index, span in enumerate(kept, start=1))
-    return EvidencePack(spans=spans, dropped=len(built) - len(kept))
+    return EvidencePack(
+        spans=spans, dropped=len(built) - len(kept), roster=_roster_of(conn, meeting_id)
+    )
+
+
+def _surname(name: str) -> str:
+    """The last word of a name, folded. A one-word name is its own surname."""
+    words = normalize(name).split()
+    return words[-1] if words else ""
+
+
+def _day_of(starts_at: str) -> date | None:
+    """The local day a meeting started on, or None when the row says nothing."""
+    try:
+        return date.fromisoformat(str(starts_at)[:10])
+    except ValueError:
+        return None
+
+
+def _roster_of(conn: sqlite3.Connection, meeting_id: int) -> Roster:
+    """Who the database knows at one meeting (S2, spec 10.6).
+
+    The people are the ones seated on the meeting's body on the day it met, and
+    the titles are the ones that name a single office and so name one person.
+    A meeting with no row, or a row whose start no date can be read from, has
+    no roster: the check then knows nobody and reads no name as a person.
+    """
+    meeting = get_meeting(conn, meeting_id)
+    if meeting is None:
+        return Roster()
+    day = _day_of(meeting.starts_at)
+    if day is None:
+        return Roster()
+    officials = tuple(
+        Official(name=person.name, surname=_surname(person.name))
+        for person in officials_of(conn, body_id=meeting.body_id, on=day)
+    )
+    holders = {
+        normalize(title).casefold(): Official(name=person.name, surname=_surname(person.name))
+        for title, person in seat_holders_of(conn, body_id=meeting.body_id, on=day).items()
+    }
+    return Roster(officials=officials, holders=holders)
 
 
 def _vote_text(evidence: str, tally: Mapping[str, int] | None) -> str:
@@ -744,7 +870,10 @@ def check_sentence(sentence: str, pack: EvidencePack) -> Verdict:
        after folding whitespace and straightening quote marks;
     5. a counted vote must come from a stored vote, and must be that vote's
        count. A transcript mention is never a tally (spec 10.4);
-    6. every other number must appear in the evidence the sentence cited.
+    6. every other number must appear in the evidence the sentence cited;
+    7. every person the sentence names must appear in the evidence the sentence
+       cited, read from the roster the database holds (spec 10.6). A name the
+       roster does not hold is not read as a person at all.
     """
     text = str(sentence).strip()
     if not text:
@@ -843,7 +972,80 @@ def check_sentence(sentence: str, pack: EvidencePack) -> Verdict:
                 spans=tuple(cited),
             )
 
+    named = _names_not_in_evidence(text, cited, pack.roster)
+    if named:
+        return Verdict(
+            sentence=text,
+            ok=False,
+            code=CODE_NAME,
+            reason=f"The sentence names {named[0]}, and the cited evidence does not.",
+            handles=handles,
+            spans=tuple(cited),
+        )
+
     return Verdict(sentence=text, ok=True, code=CODE_OK, handles=handles, spans=tuple(cited))
+
+
+def _names_not_in_evidence(sentence: str, cited: list[Span], roster: Roster) -> tuple[str, ...]:
+    """The people this sentence names that its cited evidence never names.
+
+    Two readings, both on the folded text and both by surname, because that is
+    how a record prints a person beside a title (spec 10.6):
+
+    * a surname the roster holds, printed anywhere in the sentence, is a claim
+      about that person. The bare form ("McCoy moved it") and the titled forms
+      ("Council Member McCoy", "Mayor Pro Tem McCoy") all print the surname, so
+      the one reading answers all three;
+    * a title the roster holds with one holder, printed with no surname after
+      it ("the Mayor"), is a claim about the holder, and stands only if the
+      cited spans print the holder's surname or the title itself. A title whose
+      holder the roster does not know claims nobody, the same answer spec 10.6
+      gives an unidentified speaker.
+
+    A surname the roster does not hold is not read at all, and neither is a
+    title it holds no holder for. The check cannot make a person out of a name
+    it cannot place: the database is the only thing here that knows who the
+    officials are, and reading every capitalized run as a person would fail
+    honest sentences ("the City Manager", "the Consent Agenda") and remove
+    them. The cost is on the record: a name invented out of nothing, unknown to
+    the roster, is not caught here. Failing such a sentence would mean reading
+    a name out of a shape rather than out of what the database knows, which is
+    the guess this module refuses to make.
+
+    The second reading is narrower than "a title appears in the sentence",
+    because one held title can be printed inside a longer one: "Mayor" is a
+    whole word of "Mayor Pro Tem". So the longest held title is read first and
+    its words are spent before the shorter titles are looked for; and a title
+    with a roster surname right after it is the titled form the surname reading
+    above has answered already, not a claim on the seat. Both are what keeps
+    "Mayor Pro Tem McCoy" from also being read as a claim about the Mayor.
+    """
+    said = normalize(without_handles(sentence)).casefold()
+    evidence = " ".join(normalize(span.text) for span in cited).casefold()
+    surnames = {official.surname.casefold() for official in roster.officials}
+    faults: list[str] = []
+    named: set[str] = set()
+    for official in roster.officials:
+        surname = official.surname.casefold()
+        if not surname or not _says(said, surname):
+            continue
+        named.add(surname)
+        if not _says(evidence, surname):
+            faults.append(official.name)
+    rest = said
+    for title, holder in sorted(roster.holders.items(), key=lambda pair: -len(pair[0])):
+        found = _whole_words(title).search(rest)
+        if found is None:
+            continue
+        rest = _spent(rest, title)
+        surname = holder.surname.casefold()
+        if not surname or surname in named:
+            continue
+        if _followed_by_a_surname(rest[found.end() :], surnames):
+            continue
+        if not (_says(evidence, title) or _says(evidence, surname)):
+            faults.append(holder.name)
+    return tuple(dict.fromkeys(faults))
 
 
 def _is_count(tally: Mapping[str, int] | None, yes: int, no: int) -> bool:

@@ -33,6 +33,7 @@ from pypdf import PdfReader
 from townrecord.ai.failover import REASON_UNAVAILABLE, Attempt
 from townrecord.ai.grounding import (
     CODE_EMPTY,
+    CODE_NAME,
     CODE_NO_EVIDENCE,
     CODE_NO_HANDLE,
     CODE_NO_REPAIR,
@@ -55,6 +56,7 @@ from townrecord.ai.grounding import (
     LadderAsk,
     RepairAnswer,
     RepairRequest,
+    Roster,
     Span,
     Verdict,
     changed_facts,
@@ -88,6 +90,8 @@ from townrecord.repo import (
     insert_transcript,
     insert_video,
     insert_vote,
+    upsert_person,
+    upsert_seat,
 )
 
 from .conftest import CLAUDE_NAME, CLOUD_NAME, PACKET_MINUTES_SEP08, needs
@@ -111,6 +115,16 @@ COUNCIL = (
     "Matthew Popkin",
     "Crystal Prieto",
 )
+
+#: The seats of that council (spec 6.2, spec 10.6). "Mayor" and "Mayor Pro
+#: Tem" name one office each and so name one person; the other five hold the
+#: rank "Council Member", which every member holds and so names nobody. The
+#: database is where the name check reads a person from (S2).
+OFFICES = {
+    "Susie Hidalgo-Fahring": "Mayor",
+    "Sean McCoy": "Mayor Pro Tem",
+}
+COUNCIL_SEAT = "Council Member"
 
 #: The consent motion of that meeting, as the minutes print it.
 CONSENT_TEXT = "to approve the Consent Agenda except items 9B and 9E"
@@ -198,6 +212,17 @@ def stored(conn: sqlite3.Connection, tmp_path: Path) -> Stored:
         starts_at="2026-09-08T19:00:00-06:00",
         title="City Council Regular Session",
     )
+    # The council is seated on the body before the meeting (spec 6.2). The pack
+    # reads its roster from these rows, so the name check holds on rows the
+    # running system would have rather than on a list the test handed it.
+    for name in COUNCIL:
+        upsert_seat(
+            conn,
+            person_id=upsert_person(conn, name=name),
+            body_id=body,
+            title=OFFICES.get(name, COUNCIL_SEAT),
+            on="2026-01-01",
+        )
     video = insert_video(
         conn,
         source_id=channel,
@@ -536,6 +561,138 @@ class TestTheNumbersInASentence:
         assert check_sentence("The sum was $1,300 [E1].", pack).code == CODE_NUMBER
 
 
+class TestTheNameInASentence:
+    """A name is a fact like a number (spec 11.7 with spec 10.6, unit S2).
+
+    A sentence that names a person must find that person in its cited spans.
+    The people are read from the database — the seated council of the meeting —
+    and never from the sentence, so a name the database does not know is not
+    read as a person at all. Both directions are pinned below, because that
+    answer is the one this check gives on purpose.
+    """
+
+    #: The mover line of the printed motion with no vote list under it: this
+    #: page names Kalkhofer and Popkin and nobody else. It is the page the
+    #: coordinator's check calls "a Kalkhofer page".
+    MOVER_LINE = (
+        "Alex Kalkhofer moved, seconded by Matthew Popkin, to approve the "
+        "Consent Agenda except items 9B and 9E."
+    )
+
+    @pytest.fixture
+    def roster(self, conn: sqlite3.Connection, stored: Stored) -> Roster:
+        """Who the database knows at that meeting, as the pack builds it (S2)."""
+        return evidence_pack(conn, meeting_id=stored.meeting).roster
+
+    @staticmethod
+    def a_pack(*texts: str, roster: Roster) -> EvidencePack:
+        """A pack of pages carrying the roster the name check reads."""
+        return EvidencePack(
+            spans=tuple(
+                Span(handle=f"[E{index}]", kind=KIND_RECORD, text=text, label="a page")
+                for index, text in enumerate(texts, start=1)
+            ),
+            roster=roster,
+        )
+
+    def test_the_roster_is_the_council_the_database_knows(self, roster: Roster) -> None:
+        surnames = {official.surname for official in roster.officials}
+        assert surnames == {name.split()[-1] for name in COUNCIL}
+        # The two offices name one person each; the rank every member holds
+        # names nobody and is not a title the check can stand on.
+        assert set(roster.holders) == {"mayor", "mayor pro tem"}
+        assert roster.holders["mayor pro tem"].name == "Sean McCoy"
+
+    def test_a_name_the_cited_page_does_not_print_fails(self, roster: Roster) -> None:
+        pack = self.a_pack(self.MOVER_LINE, roster=roster)
+        verdict = check_sentence("Council Member McCoy moved it [E1].", pack)
+
+        assert verdict.ok is False
+        assert verdict.code == CODE_NAME
+        assert "Sean McCoy" in verdict.reason
+
+    def test_a_name_the_cited_page_prints_passes(self, roster: Roster) -> None:
+        pack = self.a_pack(self.MOVER_LINE, roster=roster)
+        assert check_sentence("Council Member Kalkhofer moved it [E1].", pack).ok is True
+        # The title is not needed for the reading: the surname is the claim.
+        assert check_sentence("Kalkhofer moved it [E1].", pack).ok is True
+
+    def test_a_title_and_a_surname_stand_on_the_span_that_names_the_person(
+        self, roster: Roster
+    ) -> None:
+        # The recorded line of the video names McCoy as the seconder.
+        named = self.a_pack(SPOKEN, roster=roster)
+        assert check_sentence("Mayor Pro Tem McCoy moved it [E1].", named).ok is True
+
+        omitted = self.a_pack(self.MOVER_LINE, roster=roster)
+        wrong = check_sentence("Mayor Pro Tem McCoy moved it [E1].", omitted)
+        assert wrong.ok is False
+        assert wrong.code == CODE_NAME
+        # The title names McCoy's seat and not the Mayor's: "Mayor" is a word
+        # of "Mayor Pro Tem", and the sentence claims the one person it prints.
+        assert wrong.reason == "The sentence names Sean McCoy, and the cited evidence does not."
+
+    def test_a_title_does_not_stand_on_the_seat_of_a_surname_after_it(self, roster: Roster) -> None:
+        # "Mayor Marsing" is the titled form of one person, read by surname
+        # like any other: it does not also claim the seat of the Mayor, so a
+        # page that prints Marsing carries the sentence.
+        page = self.a_pack("Jake Marsing asked about the water rate.", roster=roster)
+        assert check_sentence("Mayor Marsing asked about it [E1].", page).ok is True
+
+        # The title with no surname after it is the other reading: now the
+        # sentence does claim the seat, and this page does not carry it.
+        wrong = check_sentence("The Mayor asked about it [E1].", page)
+        assert wrong.ok is False
+        assert wrong.code == CODE_NAME
+        assert wrong.reason == (
+            "The sentence names Susie Hidalgo-Fahring, and the cited evidence does not."
+        )
+
+    def test_a_title_alone_stands_on_the_holder_of_that_seat(self, roster: Roster) -> None:
+        # "the Mayor" is Hidalgo-Fahring's seat on this date, so the sentence
+        # stands on a span that names her or that prints the title.
+        named = self.a_pack("Mayor Hidalgo-Fahring read the title of the ordinance.", roster=roster)
+        assert check_sentence("The Mayor read the title [E1].", named).ok is True
+
+        omitted = self.a_pack(self.MOVER_LINE, roster=roster)
+        wrong = check_sentence("The Mayor read the title [E1].", omitted)
+        assert wrong.ok is False
+        assert wrong.code == CODE_NAME
+        assert "Susie Hidalgo-Fahring" in wrong.reason
+
+    def test_a_title_with_no_known_holder_claims_nobody(self) -> None:
+        # No seat, so no holder, so no person: the same answer spec 10.6 gives
+        # an unidentified speaker.
+        pack = self.a_pack("The City Manager introduced the item.", roster=Roster())
+        assert check_sentence("The City Manager introduced the item [E1].", pack).ok is True
+
+    def test_a_name_the_database_does_not_know_is_not_read_as_a_person(
+        self, roster: Roster
+    ) -> None:
+        # Nobody called Smith is in the roster, so the check does not make a
+        # person out of the name and says nothing about it. This is the answer
+        # the fix round asked to be pinned: a name is read from what the
+        # database knows, never guessed at from a shape.
+        assert all(official.surname != "Smith" for official in roster.officials)
+        pack = self.a_pack(self.MOVER_LINE, roster=roster)
+        assert check_sentence("Council Member Smith moved it [E1].", pack).ok is True
+
+    def test_a_pack_with_no_roster_reads_no_name(self) -> None:
+        # A pack built by hand carries no roster, and then there is nobody the
+        # check can name: it says nothing rather than failing every surname.
+        pack = EvidencePack(
+            spans=(
+                Span(
+                    handle="[E1]",
+                    kind=KIND_RECORD,
+                    text=self.MOVER_LINE,
+                    label="a page",
+                ),
+            )
+        )
+        assert check_sentence("Council Member McCoy moved it [E1].", pack).ok is True
+
+
 class TestTheTallyOfAVote:
     """A count comes from a stored vote (spec 10.4, 11.7)."""
 
@@ -712,9 +869,11 @@ class TestTheRepairRound:
         assert "quote" in decision.reason
 
     def test_a_repair_that_changes_a_name_is_rejected(self, pack: EvidencePack) -> None:
-        # A name is not read against the evidence — the check reads quotes,
-        # counts and numbers — so the original here is sent back for the handle
-        # it lacks. The mover it names is what refuses the repair.
+        # The handle a sentence lacks is asked about before a name is read, so
+        # this original is sent back for the handle and the mover it names is
+        # what refuses the repair. The check reads a name against the evidence
+        # too (:class:`TestTheNameInASentence`); a repair is refused whichever
+        # rule the original broke.
         handle = a_handle(pack, KIND_RECORD)
         ask = FakeAsk(f"Council Member Kalkhofer moved it {handle}.")
         result = ground("Council Member McCoy moved it.", pack, ask=ask)
@@ -993,6 +1152,12 @@ class TestTheRealMinutes:
         raise AssertionError("the recorded minutes print no counted result")
 
     @staticmethod
+    def a_page_at(page_number: int) -> str:
+        """The text of one page of the run, by the packet page number it prints."""
+        reader = PdfReader(PACKET_MINUTES_SEP08)
+        return reader.pages[page_number - 17].extract_text() or ""
+
+    @staticmethod
     def a_pack(text: str, page_number: int) -> EvidencePack:
         """A pack holding that one page, as the code would hold it."""
         return EvidencePack(
@@ -1059,3 +1224,30 @@ class TestTheRealMinutes:
         assert check_sentence("The council read it as item 41 [E1].", pack).code == CODE_NUMBER
         # And a number the page does print passes: it prints "September 29th".
         assert check_sentence("The council met again on September 29 [E1].", pack).ok is True
+
+    def test_a_name_the_recorded_page_prints_passes_and_one_it_omits_fails(
+        self, conn: sqlite3.Connection, stored: Stored
+    ) -> None:
+        # Packet page 32 prints the approved list of its counted vote, and
+        # Marsing is not on it. The roster is the one the pack builds from the
+        # database, so the two sentences differ only in the name they print.
+        text = self.a_page_at(32)
+        assert f"Carried: 5 {DASH} 1" in text, "the packet page number is right"
+        roster = evidence_pack(conn, meeting_id=stored.meeting).roster
+        page = Span(
+            handle="[E1]",
+            kind=KIND_RECORD,
+            text=text,
+            label="packet page 32",
+            page_number=32,
+            sha256="recorded",
+        )
+        pack = EvidencePack(spans=(page,), roster=roster)
+
+        assert "Marsing" not in normalize(text), "the page does not print his name"
+        assert check_sentence("Council Member McCoy moved it [E1].", pack).ok is True
+
+        omitted = check_sentence("Council Member Marsing moved it [E1].", pack)
+        assert omitted.ok is False
+        assert omitted.code == CODE_NAME
+        assert "Jake Marsing" in omitted.reason

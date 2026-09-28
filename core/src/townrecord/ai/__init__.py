@@ -20,7 +20,8 @@ Spec 11 in six pieces, and each piece is one module:
   spec 11.8, and :mod:`townrecord.ai.preflight` is the check every call goes
   through first.
 * :mod:`townrecord.ai.grounding` is spec 11.7: the evidence pack a model is
-  given, the check on what it wrote, and the one repair round.
+  given, the check on what it wrote — every quote, number and name read
+  against the evidence that sentence cites — and the one repair round.
 
 :mod:`townrecord.ai.store` is where all of that meets the database
 (migration 0016). Nothing in this package calls a model: a caller hands in the
@@ -83,6 +84,7 @@ from .failover import (
 )
 from .grounding import (
     CODE_EMPTY,
+    CODE_NAME,
     CODE_NO_EVIDENCE,
     CODE_NO_HANDLE,
     CODE_NO_REPAIR,
@@ -106,8 +108,10 @@ from .grounding import (
     Facts,
     Grounded,
     LadderAsk,
+    Official,
     RepairAnswer,
     RepairRequest,
+    Roster,
     Span,
     Verdict,
     changed_facts,
@@ -229,6 +233,7 @@ __all__ = [
     "CLOUD_NAME_MARKERS",
     "CODE_EMPTY",
     "CODE_GROUNDED",
+    "CODE_NAME",
     "CODE_NO_EVIDENCE",
     "CODE_NO_HANDLE",
     "CODE_NO_REPAIR",
@@ -299,6 +304,7 @@ __all__ = [
     "moves_on",
     "normalize",
     "NOT_FOUND",
+    "Official",
     "OUTCOME_KEPT",
     "OUTCOME_REMOVED",
     "OUTCOME_REPAIRED",
@@ -324,6 +330,7 @@ __all__ = [
     "RepairAnswer",
     "RepairRequest",
     "Resolution",
+    "Roster",
     "run_program",
     "run_task",
     "Rung",
