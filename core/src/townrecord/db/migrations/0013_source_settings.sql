@@ -1,0 +1,22 @@
+-- Settings a source carries of its own (spec 7.2 step 6, rule D).
+--
+-- Watching a video channel means classifying each listed title as a meeting or
+-- not, and spec 7.2 step 6 says the skip seeds are per source: "This Week in
+-- Council" is a Longmont program and "City Council" is a meeting, and a second
+-- area's channel will want its own list. Nothing on `sources` could hold that
+-- before this migration, so a watch job had only the built-in seeds and a
+-- channel whose programs differ from them could not be watched correctly.
+--
+-- The column is JSON text, one object per source, and it is read with the same
+-- settings names the classifier already takes (`meeting_keywords`,
+-- `meeting_skip_titles`). `'{}'` is the honest default and it is not a
+-- placeholder: it is exactly the meaning of a source that has no settings of
+-- its own, which is every row that exists before this migration, and it is what
+-- `MeetingClassifier.from_settings({})` already documents as the built-in seeds.
+--
+-- It is text and not a set of columns because the settings are the source's,
+-- not the schema's: a new knob must not be a migration. A value that cannot be
+-- read as a JSON object is treated as no settings and named in the job's note,
+-- never a crash (spec 16.3).
+
+ALTER TABLE sources ADD COLUMN settings TEXT NOT NULL DEFAULT '{}';

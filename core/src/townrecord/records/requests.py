@@ -32,7 +32,7 @@ from __future__ import annotations
 import json
 import sqlite3
 
-from ..jobs import PAUSED, QUEUED, RUNNING, enqueue, requeue_paused
+from ..jobs import ORIGIN_MANUAL, PAUSED, QUEUED, RUNNING, enqueue, requeue_paused
 from ..repo import (
     Record,
     get_meeting,
@@ -75,7 +75,11 @@ MINUTES_LOOKBACK = 3
 
 
 def request_alignment(
-    conn: sqlite3.Connection, meeting_id: int, *, reason: str | None = None
+    conn: sqlite3.Connection,
+    meeting_id: int,
+    *,
+    reason: str | None = None,
+    origin: str = ORIGIN_MANUAL,
 ) -> int | None:
     """Put one meeting's alignment back on the queue, or queue it for the first time.
 
@@ -96,11 +100,16 @@ def request_alignment(
         meeting_id,
         AlignRequest(meeting_id=meeting_id, source_id=meeting.portal_source_id).as_payload(),
         reason or ASKED_FOR.format(meeting_id=meeting_id),
+        origin,
     )
 
 
 def request_minutes(
-    conn: sqlite3.Connection, meeting_id: int, *, reason: str | None = None
+    conn: sqlite3.Connection,
+    meeting_id: int,
+    *,
+    reason: str | None = None,
+    origin: str = ORIGIN_MANUAL,
 ) -> int | None:
     """Put one meeting's minutes reading back on the queue, or queue it first.
 
@@ -117,6 +126,7 @@ def request_minutes(
         meeting_id,
         MinutesRequest(meeting_id=meeting_id).as_payload(),
         reason or MINUTES_ASKED_FOR.format(meeting_id=meeting_id),
+        origin,
     )
 
 
@@ -166,6 +176,7 @@ def _request(
     meeting_id: int,
     payload: dict[str, object],
     reason: str,
+    origin: str = ORIGIN_MANUAL,
 ) -> int | None:
     """Make one meeting's job of one kind ready, or say there is nothing to do.
 
@@ -183,7 +194,7 @@ def _request(
         requeue_paused(conn, job_id, reason=reason)
         return job_id
 
-    return enqueue(conn, kind, payload)
+    return enqueue(conn, kind, payload, origin=origin)
 
 
 def _jobs_of(conn: sqlite3.Connection, kind: str, meeting_id: int) -> list[sqlite3.Row]:

@@ -14,9 +14,10 @@ from townrecord.db import applied_versions, connect, discover, migrate, split_st
 #: (spec 12.4), 0008 is the window index that finds a phrase split by a line
 #: break (spec 12.4), 0009 is the portal sync columns (spec 7.2, 9.2), 0010
 #: is the OCR reason of a page with no text layer (spec 9.6), 0011 is the
-#: motions of the minutes (spec 10.4) and 0012 is the schedule's record of one
-#: run per task, subject and local day (spec 16.2).
-SHIPPED_VERSIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+#: motions of the minutes (spec 10.4), 0012 is the schedule's record of one
+#: run per task, subject and local day (spec 16.2) and 0013 is the classifier
+#: settings of one source (spec 7.2 step 6, rule D).
+SHIPPED_VERSIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
 
 
 def table_names(conn: sqlite3.Connection) -> set[str]:

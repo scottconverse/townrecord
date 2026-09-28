@@ -2,8 +2,11 @@
 
 One job, one video, and the order the spec gives:
 
-1. readiness (8.2): an upcoming or live video waits, an unknown one waits for
-   its metadata, and neither is a failure;
+1. readiness (8.2): an upcoming or live video waits, an unknown one is asked
+   what its status is -- the API, the player endpoint, then yt-dlp, in the
+   spec's order -- and a row that is still unknown after being asked waits
+   with the sentence naming what was asked and what each step answered.
+   None of the three is a failure;
 2. the download archive is written from the database, so a stale file cannot
    hide a meeting (8.7);
 3. the command of 8.3 runs, as an argument list, with an allow-listed
@@ -53,6 +56,8 @@ from ..jobs import JobContext
 from ..runtime.javascript import JavaScriptRuntime
 from ..runtime.javascript import resolve as resolve_javascript
 from ..stt.audio import AudioTrigger
+from ..video.youtube.readiness import READINESS_UNKNOWN, READINESS_WAITING_REASON
+from ..video.youtube.status import StatusAsker
 from . import archive, command, fallback, gate, limits, sidecar, work
 from .command import CaptureFailed
 from .settings import CaptureSettings
@@ -160,6 +165,12 @@ class CaptionCapture:
     #: installed beside yt-dlp when it is there, and the bare fallback name when
     #: it is not.
     javascript: JavaScriptRuntime | None = None
+    #: How a row that says ``unknown`` is asked what the video's status is
+    #: (spec 8.2, :mod:`townrecord.video.youtube.status`). None means one is
+    #: built from the runner, the interpreter and the JavaScript runtime above,
+    #: so an injected fake runner is the fake this asks through too and no test
+    #: starts a process.
+    status_asker: StatusAsker | None = None
 
     def __post_init__(self) -> None:
         self.storage_root = Path(self.storage_root)
@@ -169,6 +180,12 @@ class CaptionCapture:
             self.interpreter = sys.executable
         if self.javascript is None:
             self.javascript = resolve_javascript(self.interpreter)
+        if self.status_asker is None:
+            self.status_asker = StatusAsker(
+                runner=self.runner,
+                interpreter=self.interpreter,
+                js_runtime=self.javascript.argument,
+            )
 
     def __call__(self, ctx: JobContext) -> None:
         video = self._video(ctx)
@@ -221,14 +238,45 @@ class CaptionCapture:
         return video
 
     def _wait_if_not_ready(self, ctx: JobContext, video: repo.Video) -> bool:
-        """Send the job back to the queue when the video is not ready (spec 8.2)."""
-        reason = gate.wait_reason(video.readiness)
+        """Find out whether the video is ready, then wait or carry on (spec 8.2).
+
+        A listing writes the readiness it managed to read, and a public feed
+        carries no status at all, so a row can sit at ``unknown`` with nothing
+        in the system that would ever change it. Reading that word back and
+        deferring on it would wait forever, so the word ``unknown`` is the one
+        that means "ask": spec 8.2's order, the API then the player endpoint
+        then yt-dlp, is asked by :class:`~townrecord.video.youtube.status.StatusAsker`.
+
+        The answer is written on the row before anything else happens, so the
+        next run reads it instead of asking again, and this run continues or
+        defers with the reason the answer actually gives. An answer that is
+        still ``unknown`` defers too, and its sentence says which steps were
+        asked and what each of them said, so a video waiting for its status is
+        never a bare "unknown".
+        """
+        word = video.readiness
+        note = ""
+        if gate.wait_reason(word) == READINESS_WAITING_REASON:
+            # The row has no usable status, so this is the run that asks
+            # (spec 8.2). An "upcoming" or "live" row is a definite word and
+            # is not asked again: it is simply skipped and retried.
+            ctx.heartbeat()
+            answer = self.status_asker.ask(
+                video_id=video.platform_video_id,
+                url=command.watch_url(video.url, video.platform_video_id),
+            )
+            note = f" {answer.sentence}"
+            if answer.readiness != READINESS_UNKNOWN:
+                repo.set_readiness(ctx.conn, video.id, answer.readiness)
+                word = answer.readiness
+        reason = gate.wait_reason(word)
         if reason is None:
             return False
-        if gate.marks_skipped(video.readiness):
+        if gate.marks_skipped(word):
             repo.set_capture_state(ctx.conn, video.id, "skipped")
-        logger.info("Video %s is not ready: %s", video.id, reason)
-        ctx.defer(reason, delay_s=self.settings.not_ready_retry_s)
+        logger.info("Video %s is not ready: %s%s", video.id, reason, note)
+        deferral = reason if not note else f"{reason}.{note}"
+        ctx.defer(deferral, delay_s=self.settings.not_ready_retry_s)
         return True  # not reached: defer raises
 
     def _run(self, ctx: JobContext, video: repo.Video, folder: Path) -> Attempt:

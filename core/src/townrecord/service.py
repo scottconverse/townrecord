@@ -44,6 +44,9 @@ from .runtime import RuntimeManager, RuntimeNotInstalled, RuntimeSettings
 from .runtime import register as register_runtime_update
 from .runtime.settings import TEXTFLOWKIT_TOOL, TOOL_NAME
 from .schedule import Scheduler
+from .video.watch import JOB_KIND as WATCH_CHANNEL_JOB_KIND
+from .video.watch import register as register_watch_channel
+from .video.watch import service_ladder
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +61,7 @@ KIND_MODULES: tuple[tuple[str, str], ...] = (
     (READ_MINUTES, "townrecord.records"),
     (CAPTURE_JOB_KIND, "townrecord.capture"),
     (TRANSCRIBE_JOB_KIND, "townrecord.capture"),
+    (WATCH_CHANNEL_JOB_KIND, "townrecord.video.watch"),
     (RUNTIME_UPDATE_KIND, "townrecord.runtime"),
 )
 
@@ -208,6 +212,10 @@ def _register_handlers(
             runner=capture_runner,
             interpreter=interpreter,
             textflowkit_program=textflowkit,
+        ),
+        WATCH_CHANNEL_JOB_KIND: register_watch_channel(
+            registry=registry,
+            ladder=service_ladder(client=client, interpreter=interpreter),
         ),
         RUNTIME_UPDATE_KIND: register_runtime_update(
             root=settings.runtime_root,

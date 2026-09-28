@@ -28,7 +28,7 @@ from townrecord.adapters.primegov import (
     PORTAL_MEETING_PATH,
     UPCOMING_MEETINGS_PATH,
 )
-from townrecord.jobs import Registry, Runner, enqueue, get
+from townrecord.jobs import ORIGIN_MANUAL, Registry, Runner, enqueue, get
 from townrecord.records import register_jobs
 from townrecord.repo import insert_body, insert_jurisdiction, insert_source
 
@@ -323,9 +323,13 @@ class Sync:
         """A runner over this test's database, with the records kinds on it."""
         return Runner(self.db_path, registry=self.registry)
 
-    def queue(self, kind: str, payload: Any = None) -> int:
-        """Queue one job, on the lane its kind belongs to."""
-        return enqueue(self.conn, kind, payload)
+    def queue(self, kind: str, payload: Any = None, *, origin: str = ORIGIN_MANUAL) -> int:
+        """Queue one job, on the lane its kind belongs to.
+
+        ``origin`` is who asked for it: a person here, the daily schedule in
+        the service (spec 16.1), and the children a job queues take after it.
+        """
+        return enqueue(self.conn, kind, payload, origin=origin)
 
     def queue_sync(
         self,
@@ -333,11 +337,13 @@ class Sync:
         *,
         from_date: str = "2026-09-01",
         to_date: str = "2026-09-30",
+        origin: str = ORIGIN_MANUAL,
     ) -> int:
         """Queue one sync of a window, and return its id."""
         return self.queue(
             "sync_primegov",
             {"source_id": source_id, "from_date": from_date, "to_date": to_date},
+            origin=origin,
         )
 
     def lane(self, lane: str) -> list[int]:
