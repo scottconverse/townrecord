@@ -31,6 +31,7 @@ from typing import Any
 import httpx
 import pytest
 
+from townrecord import artifacts
 from townrecord.capture import LANE as CAPTURE_LANE
 from townrecord.capture.command import JOB_KIND as CAPTURE_JOB_KIND
 from townrecord.jobs import (
@@ -51,6 +52,7 @@ from townrecord.repo import (
     insert_jurisdiction,
     insert_meeting,
     insert_source,
+    insert_transcript,
     insert_video,
     set_capture_state,
     videos_of_platform,
@@ -422,12 +424,19 @@ def test_an_upcoming_video_is_counted_and_not_captured(
 # -- a row is never renamed ----------------------------------------------------
 
 
-def test_a_row_a_portal_sync_made_is_not_renamed(
+def test_a_row_a_portal_sync_made_is_reused_and_not_renamed(
     db_path: Path, conn: sqlite3.Connection, world: World
 ) -> None:
-    """Spec 7.2 step 7: a row that exists is never renamed by another reader."""
+    """Spec 7.2 step 7: one video is one row, and a row that exists is never renamed.
+
+    The portal read the video first and wrote what it knew: the title its own
+    listing carries, the URL, the length, and its own note. The watch adopts
+    that row rather than making a second one for the same video, adds what the
+    row was missing -- the meeting it can now link, and the primary flag -- and
+    writes over nothing the row already had.
+    """
     portal_id = world.source(type=portal.MEETING_PORTAL, origin="https://portal.test.invalid")
-    world.meeting(world.body_id, "2026-09-22T19:00:00", "City Council Regular Session")
+    meeting = world.meeting(world.body_id, "2026-09-22T19:00:00", "City Council Regular Session")
     theirs = insert_video(
         conn,
         source_id=portal_id,
@@ -443,19 +452,75 @@ def test_a_row_a_portal_sync_made_is_not_renamed(
     channel_listing = listed("jhsFsEz0P5A", "City Council Regular Session 9/22/26")
     watch = Watch(db_path, conn, ladder=ListingLadder(rss=StubLister([channel_listing])))
 
-    watch.watch(source)
+    _, checkpoint = watch.watch(source)
 
     kept = conn.execute("SELECT * FROM videos WHERE id = ?", (theirs,)).fetchone()
-    assert kept["source_id"] == portal_id
-    assert kept["title"] == "City Council Regular Session - 22 September 2026"
+    assert kept["source_id"] == portal_id, "the row still belongs to the reader that made it"
+    assert kept["title"] == "City Council Regular Session - 22 September 2026", "never renamed"
     assert kept["url"] == "https://www.youtube.com/watch?v=jhsFsEz0P5A"
     assert kept["duration_s"] == 14290
     assert kept["source_note"] == "Listed by the meeting portal source."
+    assert kept["meeting_id"] == meeting, "the meeting the row was missing is added"
+    assert kept["is_primary"] == 1
+    assert kept["capture_state"] == "pending", "the watch changed no capture state"
 
-    mine = watch.row("jhsFsEz0P5A", source)
-    assert mine is not None and mine.id != theirs, "the channel keeps its own row"
-    assert mine.title == "City Council Regular Session 9/22/26"
-    assert len(videos_of_platform(conn, "jhsFsEz0P5A")) == 2
+    assert [video.id for video in videos_of_platform(conn, "jhsFsEz0P5A")] == [theirs], (
+        "one YouTube video is one row, whichever reader found it first"
+    )
+    assert checkpoint["videos_created"] == 0, "the watch wrote no second row"
+    assert checkpoint["videos_updated"] == 1
+    assert checkpoint["captures_queued"] == 1
+    assert [json.loads(row["payload"])["video_id"] for row in watch.captures()] == [theirs], (
+        "the capture names the one row there is, which is the row the alignment asks for "
+        "(spec 16.3)"
+    )
+
+
+def test_a_video_a_portal_sync_already_captured_is_not_captured_again(
+    db_path: Path, conn: sqlite3.Connection, world: World, tmp_path: Path
+) -> None:
+    """Spec 7.2 step 7, 8.7: the words on the row are the capture, whoever stored them.
+
+    A portal sync stores the transcript of a video it found and never writes
+    ``capture_state``, so the row still reads ``pending`` while the transcript is
+    there. A watch that read only the state would queue a second capture of a
+    meeting the system already holds and pay for a second transcript of it.
+    """
+    portal_id = world.source(type=portal.MEETING_PORTAL, origin="https://portal.test.invalid")
+    world.meeting(world.body_id, "2026-09-22T19:00:00", "City Council Regular Session")
+    theirs = insert_video(
+        conn,
+        source_id=portal_id,
+        platform_video_id="jhsFsEz0P5A",
+        title="City Council Regular Session - 22 September 2026",
+        url="https://www.youtube.com/watch?v=jhsFsEz0P5A",
+        published_at=A_PUBLISHED,
+        duration_s=14290,
+        capture_state="pending",
+        source_note="Listed by the meeting portal source.",
+    )
+    artifact = artifacts.store(
+        conn,
+        tmp_path / "storage",
+        artifacts.TRANSCRIPT,
+        b"WEBVTT\n\n00:00:00.000 --> 00:00:05.000\nGood evening.\n",
+        "vtt",
+    )
+    insert_transcript(conn, video_id=theirs, artifact_id=artifact.id, origin="publisher_captions")
+
+    source = world.channel()
+    watch = Watch(db_path, conn, ladder=ListingLadder(rss=StubLister([one_meeting_video()])))
+
+    _, checkpoint = watch.watch(source)
+
+    assert [video.id for video in videos_of_platform(conn, "jhsFsEz0P5A")] == [theirs], (
+        "a video the portal already made a row for is reused, not duplicated"
+    )
+    assert watch.captures() == [], "a video that already has its words is not captured again"
+    assert watch.capture_runs == []
+    assert checkpoint["captures_queued"] == 0
+    assert checkpoint["already_captured"] == 1
+    assert checkpoint["videos_created"] == 0
 
 
 def test_a_row_this_watch_made_is_not_renamed_by_a_later_listing(
@@ -563,7 +628,12 @@ def test_the_skip_seeds_come_from_the_source_itself(
     assert second["meeting_videos"] == 0, "the source's own skip seeds decided this"
     assert second["other_videos"] == 1
     assert second["captures_queued"] == 0
-    assert watch.row("jhsFsEz0P5A", configured) is not None, "the row is stored either way"
+    assert watch.row("jhsFsEz0P5A") is not None, "the row is stored either way"
+    assert watch.row("jhsFsEz0P5A", configured) is None, (
+        "the second source reused the row the first one made rather than adding another"
+    )
+    assert len(videos_of_platform(conn, "jhsFsEz0P5A")) == 1
+    assert second["videos_created"] == 0
 
 
 # -- the schedule (spec 16.2) --------------------------------------------------

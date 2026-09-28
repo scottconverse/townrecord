@@ -13,12 +13,12 @@ One run does four things:
 * it classifies each listed title as a meeting or not, with the classifier built
   from that source's own settings (the ``sources.settings`` column of migration
   0013), falling back to the built-in seeds when the source carries none;
-* it upserts one ``videos`` row per listed video -- the channel's own row, which
-  the portal sync then adopts rather than the other way round -- and links it to
-  a meeting of the source's body when the published date and the title agree,
-  writing a plain note when they do not (spec 7.2 step 7). A row that exists is
-  never renamed: only the meeting, the primary flag, the URL and a reading that
-  is more definite than the one it holds are added;
+* it keeps one ``videos`` row per platform video, whichever reader found it
+  first. A row a portal sync already made is adopted, not duplicated, and links
+  it to a meeting of the source's body when the published date and the title
+  agree, writing a plain note when they do not (spec 7.2 step 7). A row that
+  exists is never renamed: only the meeting, the primary flag, the URL and a
+  reading that is more definite than the one it holds are added;
 * it queues one ``capture_captions`` per meeting video, once.
 
 **Never captured early.** A video the listing says is ``upcoming`` or ``live`` is
@@ -35,8 +35,10 @@ that was tried and what it answered, so "no videos" can never be read as "no
 meetings" (spec 16.3).
 
 **Idempotent.** A video already captured (``captions`` or ``audio``) is not
-queued again, and the queue refuses a second job of the same kind with the same
-payload, so watching the same channel twice adds nothing.
+queued again, and neither is a video that already has a stored transcript, even
+when its capture state says nothing -- the words are the capture. The queue
+refuses a second job of the same kind with the same payload too, so watching the
+same channel twice adds nothing.
 """
 
 from __future__ import annotations
@@ -415,7 +417,7 @@ def _watch_video(
                 "for a later watch (spec 8.2)."
             )
         return
-    if video.capture_state in CAPTURED_STATES:
+    if _already_captured(ctx, video):
         tally.already_captured += 1
         return
 
@@ -430,6 +432,22 @@ def _watch_video(
         tally.captures_queued += 1
 
 
+def _already_captured(ctx: JobContext, video: repo.Video) -> bool:
+    """True when this video already has a capture, whoever made it.
+
+    The capture state is the plain answer: it says a capture of this row
+    finished. A stored transcript says the same thing even when the state does
+    not, which is exactly what a row a portal sync made looks like -- the words
+    are on the row, and the state column was never written by the job that
+    stored them. Counting that as captured is what keeps a watch from queueing
+    a second capture and a second transcript of a video the system already has
+    (spec 7.2 step 7, 8.7).
+    """
+    if video.capture_state in CAPTURED_STATES:
+        return True
+    return repo.latest_transcript(ctx.conn, video.id) is not None
+
+
 def _upsert_video(
     ctx: JobContext,
     source: Source,
@@ -439,32 +457,38 @@ def _upsert_video(
     *,
     meeting_id: int | None,
 ) -> tuple[repo.Video, bool]:
-    """Store the channel's own row for one listed video, or update the one it has.
+    """Store the one row for one platform video, or update the row it has.
 
-    The row is this channel's: the unique key of the table is the source and the
-    platform id together, and a second source that listed the same platform
-    video keeps its own row (the portal sync adopts the channel's row, not the
-    other way round). A row that exists is never renamed: the title, the source
-    and the capture state stay exactly as they were (spec 7.2 step 7). What a
-    watch adds is what a listing knows and a row may not: the meeting, the
-    primary flag, the URL, and a readiness that is more definite than the one
-    the row holds -- a reading of ``finished`` replaces a row that was waiting
-    for status metadata, and a reading of ``unknown`` never replaces an answer.
+    One YouTube video is one row, whichever reader found it first (spec 7.2
+    step 7). So the row is found by platform id and not by this source: a row a
+    portal sync made for the same video is the row this watch adopts, and the
+    watch keeps its title, its source and its capture state exactly as they are.
+    This is the same adoption the portal sync does in the other direction
+    (:func:`townrecord.records.sync._record_video`), so two readers that found
+    one video cannot leave two rows behind. A row that exists is never renamed.
+
+    What a watch adds is only what the row lacks: the meeting, the primary flag,
+    the URL, and a readiness that is more definite than the one the row holds --
+    a reading of ``finished`` replaces a row that was waiting for status
+    metadata, and a reading of ``unknown`` never replaces an answer.
     """
     known = repo.videos_of_platform(ctx.conn, listing.video_id)
     mine = next((video for video in known if video.source_id == source.id), None)
-    if mine is not None:
+    # This channel's own row when it has one; otherwise the oldest row for the
+    # video, which is the one whoever read the video first left behind.
+    row = mine if mine is not None else (known[0] if known else None)
+    if row is not None:
         if meeting_id is not None:
             repo.attach_video(
                 ctx.conn,
-                mine.id,
+                row.id,
                 meeting_id=meeting_id,
                 is_primary=repo.primary_video(ctx.conn, meeting_id) is None,
                 url=listing_url(listing.video_id),
             )
-        if readiness != READINESS_UNKNOWN and mine.readiness == READINESS_UNKNOWN:
-            repo.set_readiness(ctx.conn, mine.id, readiness)
-        return repo.get_video(ctx.conn, mine.id) or mine, False
+        if readiness != READINESS_UNKNOWN and row.readiness == READINESS_UNKNOWN:
+            repo.set_readiness(ctx.conn, row.id, readiness)
+        return repo.get_video(ctx.conn, row.id) or row, False
 
     video_id = repo.insert_video(
         ctx.conn,

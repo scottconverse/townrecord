@@ -109,6 +109,17 @@ class FakeYtDlp:
     #: When set, a call naming one of these clients is rate limited instead of
     #: bot-checked, which is how a test puts a 429 in the middle of the ladder.
     rate_limit_clients: tuple[str, ...] = ()
+    #: What an info ask (``--dump-single-json``, spec 8.2's third step) prints
+    #: on stdout. The default is a broadcast that has finished, which is the
+    #: answer that lets a capture go ahead; ``live_status`` is the field the
+    #: spec reads. The real ask downloads nothing, so this prints and writes no
+    #: file, exactly as the real one does.
+    status: dict[str, Any] | None = field(
+        default_factory=lambda: {"id": PLATFORM_VIDEO_ID, "live_status": "was_live"}
+    )
+    #: When set, the info ask fails with this exit code instead of answering.
+    status_returncode: int = 0
+    status_stderr: str = ""
     calls: list[dict[str, Any]] = field(default_factory=list)
 
     def __call__(
@@ -116,6 +127,8 @@ class FakeYtDlp:
     ) -> proc.ProcessResult:
         command = [str(part) for part in argv]
         self.calls.append({"argv": command, "timeout_s": timeout_s, "env": dict(env)})
+        if "--dump-single-json" in command:
+            return self._answer_status(command)
         self.skipped_by_archive = self._already_captured(command)
         if self.rate_limit_clients and self._player_client(command) in self.rate_limit_clients:
             return proc.ProcessResult(
@@ -136,6 +149,39 @@ class FakeYtDlp:
             stdout=b"",
             stderr=self.stderr,
         )
+
+    def _answer_status(self, command: Sequence[str]) -> proc.ProcessResult:
+        """Answer an info ask the way spec 8.2's third step would.
+
+        ``--dump-single-json`` prints the video's information and downloads
+        nothing, so there is no folder to write into and no archive to consult:
+        the whole answer is on stdout. The capture command of spec 8.3 never
+        carries that flag, which is what keeps this branch out of the caption
+        tests.
+        """
+        if self.status_returncode != 0:
+            return proc.ProcessResult(
+                argv=tuple(command),
+                returncode=self.status_returncode,
+                stdout=b"",
+                stderr=self.status_stderr,
+            )
+        return proc.ProcessResult(
+            argv=tuple(command),
+            returncode=0,
+            stdout=json.dumps(self.status if self.status is not None else {}).encode("utf-8"),
+            stderr="",
+        )
+
+    @property
+    def status_asks(self) -> list[dict[str, Any]]:
+        """The info asks this fake saw (spec 8.2's third step), in order."""
+        return [call for call in self.calls if "--dump-single-json" in call["argv"]]
+
+    @property
+    def capture_calls(self) -> list[dict[str, Any]]:
+        """The caption commands this fake saw, in order: every non-info call."""
+        return [call for call in self.calls if "--dump-single-json" not in call["argv"]]
 
     def _already_captured(self, command: Sequence[str]) -> bool:
         """True when the archive file says this video was already downloaded."""
@@ -205,15 +251,17 @@ class FakeYtDlp:
 
     @property
     def argv(self) -> list[str]:
-        """The argument list of the one call this fake saw. Fails when it saw none."""
-        assert self.calls, "the capture command was never run"
-        return self.calls[0]["argv"]
+        """The argument list of the first caption command. Fails when it saw none."""
+        calls = self.capture_calls
+        assert calls, "the capture command was never run"
+        return calls[0]["argv"]
 
     @property
     def env(self) -> dict[str, str]:
-        """The environment of the one call this fake saw."""
-        assert self.calls, "the capture command was never run"
-        return self.calls[0]["env"]
+        """The environment of the first caption command."""
+        calls = self.capture_calls
+        assert calls, "the capture command was never run"
+        return calls[0]["env"]
 
 
 #: What the second fake returns: yt-dlp's own words for a rate limit. The
