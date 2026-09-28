@@ -40,6 +40,14 @@ class BodyCapture:
     last_video: str | None
     last_state: str | None
     last_at: str | None
+    #: The captions of the newest capture, as the two flags spec 8.7 decides on,
+    #: read off the transcript version in hand. They are flags and not the state
+    #: word because the words are the capture rules'
+    #: (:func:`townrecord.capture.settle.state_of`) and this module reads no
+    #: capture code; a caller that shows the word translates them. None means the
+    #: newest capture has no transcript at all, which is not a state either.
+    last_is_provisional: bool | None = None
+    last_settled_under_churn: bool | None = None
 
 
 def job_state_counts(conn: sqlite3.Connection) -> list[JobStateCount]:
@@ -87,7 +95,10 @@ def captures_by_body(conn: sqlite3.Connection) -> list[BodyCapture]:
 
     The newest capture is read in the same query as the counts, so the state
     shown for a body is the state of the video whose timestamp is shown with
-    it, and never a mixture of two videos.
+    it, and never a mixture of two videos. The captions of that same video come
+    from its own version in hand -- the same pick the API makes (spec 8.7:
+    ``ORDER BY is_provisional, id DESC``), so the two never disagree about which
+    version a body's captions are.
     """
     rows = conn.execute(
         """
@@ -95,6 +106,8 @@ def captures_by_body(conn: sqlite3.Connection) -> list[BodyCapture]:
             SELECT m.body_id AS body_id,
                    v.platform_video_id AS platform_video_id,
                    v.capture_state AS capture_state,
+                   t.is_provisional AS is_provisional,
+                   t.settled_under_churn AS settled_under_churn,
                    COALESCE(v.published_at, v.created_at) AS captured_at,
                    ROW_NUMBER() OVER (
                        PARTITION BY m.body_id
@@ -102,6 +115,12 @@ def captures_by_body(conn: sqlite3.Connection) -> list[BodyCapture]:
                    ) AS recency
             FROM videos v
             JOIN meetings m ON m.id = v.meeting_id
+            LEFT JOIN transcripts t ON t.id = (
+                SELECT id FROM transcripts
+                WHERE video_id = v.id
+                ORDER BY is_provisional, id DESC
+                LIMIT 1
+            )
         )
         SELECT b.id AS body_id,
                b.name AS body,
@@ -111,7 +130,10 @@ def captures_by_body(conn: sqlite3.Connection) -> list[BodyCapture]:
                                  THEN 1 ELSE 0 END), 0) AS failed,
                MAX(CASE WHEN c.recency = 1 THEN c.platform_video_id END) AS last_video,
                MAX(CASE WHEN c.recency = 1 THEN c.capture_state END) AS last_state,
-               MAX(CASE WHEN c.recency = 1 THEN c.captured_at END) AS last_at
+               MAX(CASE WHEN c.recency = 1 THEN c.captured_at END) AS last_at,
+               MAX(CASE WHEN c.recency = 1 THEN c.is_provisional END) AS last_is_provisional,
+               MAX(CASE WHEN c.recency = 1 THEN c.settled_under_churn END)
+                   AS last_settled_under_churn
         FROM bodies b
         LEFT JOIN captures c ON c.body_id = b.id
         GROUP BY b.id, b.name
@@ -128,6 +150,14 @@ def captures_by_body(conn: sqlite3.Connection) -> list[BodyCapture]:
             last_video=row["last_video"],
             last_state=row["last_state"],
             last_at=row["last_at"],
+            last_is_provisional=(
+                None if row["last_is_provisional"] is None else bool(row["last_is_provisional"])
+            ),
+            last_settled_under_churn=(
+                None
+                if row["last_settled_under_churn"] is None
+                else bool(row["last_settled_under_churn"])
+            ),
         )
         for row in rows
     ]

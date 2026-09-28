@@ -94,6 +94,13 @@ class VideoOut(BaseModel):
     capture_state: str
     readiness: str
     transcript_id: int | None = None
+    #: Spec 8.7: whether the transcript in hand may still change ("provisional"),
+    #: has stopped changing ("settled"), or stopped while it was still changing
+    #: ("settled under churn"). None when the video has no transcript at all,
+    #: which is a different answer from "settled" and is not rounded up to one.
+    caption_state: str | None = None
+    #: When the next recheck of this video is due, or None when none is waiting.
+    next_recheck_at: str | None = None
 
 
 class DocumentOut(BaseModel):

@@ -28,6 +28,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse, Response
 
 from .. import artifacts
+from ..capture.recheck import next_recheck_at
+from ..capture.settle import state_of
 from ..repo import (
     VOTE_SOURCE_KINDS,
     AgendaItem,
@@ -226,29 +228,52 @@ def _documents_of(conn: sqlite3.Connection, meeting_id: int) -> list[DocumentOut
 
 
 def _videos_of(conn: sqlite3.Connection, meeting_id: int) -> list[VideoOut]:
-    """Return the recordings of a meeting, primary first, with their transcript."""
+    """Return the recordings of a meeting, primary first, with their transcript.
+
+    The version in hand is the newest transcript of the video, with a settled one
+    preferred to a provisional one, which is the same row
+    :func:`townrecord.repo.text.latest_transcript` returns: the state word and the
+    next recheck belong to the transcript the rest of the system is reading
+    (spec 8.7).
+    """
     rows = conn.execute(
-        "SELECT videos.*, "
-        "(SELECT transcripts.id FROM transcripts WHERE transcripts.video_id = videos.id "
-        " ORDER BY transcripts.is_provisional, transcripts.id DESC LIMIT 1) AS transcript_id "
-        "FROM videos WHERE videos.meeting_id = ? ORDER BY videos.is_primary DESC, videos.id",
+        "SELECT videos.*, transcripts.id AS transcript_id, transcripts.is_provisional, "
+        "transcripts.settled_under_churn "
+        "FROM videos LEFT JOIN transcripts ON transcripts.id = ("
+        "SELECT id FROM transcripts WHERE transcripts.video_id = videos.id "
+        "ORDER BY transcripts.is_provisional, transcripts.id DESC LIMIT 1) "
+        "WHERE videos.meeting_id = ? ORDER BY videos.is_primary DESC, videos.id",
         (meeting_id,),
     ).fetchall()
-    return [
-        VideoOut(
-            id=int(row["id"]),
-            platform_video_id=str(row["platform_video_id"]),
-            title=row["title"],
-            url=row["url"],
-            published_at=row["published_at"],
-            duration_s=row["duration_s"],
-            is_primary=bool(row["is_primary"]),
-            capture_state=str(row["capture_state"]),
-            readiness=str(row["readiness"]),
-            transcript_id=row["transcript_id"],
+    videos: list[VideoOut] = []
+    for row in rows:
+        provisional = row["is_provisional"]
+        videos.append(
+            VideoOut(
+                id=int(row["id"]),
+                platform_video_id=str(row["platform_video_id"]),
+                title=row["title"],
+                url=row["url"],
+                published_at=row["published_at"],
+                duration_s=row["duration_s"],
+                is_primary=bool(row["is_primary"]),
+                capture_state=str(row["capture_state"]),
+                readiness=str(row["readiness"]),
+                transcript_id=row["transcript_id"],
+                caption_state=(
+                    None
+                    if provisional is None
+                    else state_of(
+                        is_provisional=bool(provisional),
+                        settled_under_churn=bool(row["settled_under_churn"]),
+                    )
+                ),
+                next_recheck_at=(
+                    None if provisional is None else next_recheck_at(conn, int(row["id"]))
+                ),
+            )
         )
-        for row in rows
-    ]
+    return videos
 
 
 def meeting_summary(conn: sqlite3.Connection, meeting: Any) -> MeetingSummary:
