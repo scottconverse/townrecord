@@ -45,11 +45,19 @@ JurisdictionNode.model_rebuild()
 
 
 class BodyOut(BaseModel):
-    """A group that holds public meetings."""
+    """A group that holds public meetings.
+
+    ``type`` is what kind of body it is -- a council, a commission, a board or
+    an authority (spec 9.5, migration 0018) -- and ``None`` means nobody has
+    stated one. It is published because it is what the missing-record rule
+    reads: a reader looking at a body that is not on the catalog can see from
+    here whether the reason is its kind.
+    """
 
     id: int
     jurisdiction_id: int
     name: str
+    type: str | None = None
 
 
 class SourceOut(BaseModel):
@@ -369,3 +377,84 @@ class SearchResults(BaseModel):
     query: str
     count: int
     hits: list[SearchHitOut] = Field(default_factory=list)
+
+
+class BodyMissingSummary(BaseModel):
+    """One body and how many records it is missing right now (spec 9.5).
+
+    A body that is missing nothing is still listed, with a zero: a list that
+    dropped the bodies with nothing missing could not be told apart from a list
+    nobody computed. ``oldest_days`` is how long the oldest of them has been
+    open, and is None for a body with no open gap.
+    """
+
+    id: int
+    jurisdiction_id: int
+    name: str
+    type: str | None = None
+    missing_count: int
+    oldest_days: int | None = None
+    alert_days: int | None = None
+    alert_due: bool = False
+
+
+class BodiesOut(BaseModel):
+    """Every body, and how many of them are missing a record (spec 9.5).
+
+    ``count`` is the number of bodies carrying at least one open gap. It is the
+    one-line figure ``townrecord status`` prints, and it is counted from the
+    same catalog the per-body route answers with.
+    """
+
+    count: int
+    bodies: list[BodyMissingSummary] = Field(default_factory=list)
+
+
+class MissingRecordOut(BaseModel):
+    """One record a body should have and does not (spec 9.5).
+
+    ``since`` is when the gap opened -- the meeting's start plus the 36 hours
+    the rule waits -- and ``missing_hours`` and ``missing_days`` are how long it
+    has been open, whole numbers rounded down. ``starts_at`` is the meeting's
+    local start time as the body published it, with its offset, and is never
+    converted (spec 16.2).
+
+    ``alert_due`` says whether the body's own "alert me after N days" threshold
+    has been crossed. No alert is delivered by this API: the setting is stored
+    and reported, and the notification of spec 12.7 is a later unit.
+    """
+
+    meeting_id: int
+    meeting_title: str | None = None
+    kind: str
+    starts_at: str
+    since: str
+    missing_hours: int
+    missing_days: int
+    alert_days: int | None = None
+    alert_due: bool = False
+
+
+class MissingCatalogOut(BaseModel):
+    """What one body is missing right now, and what it was once missing.
+
+    ``flagged`` says whether the missing-record rule reads this body at all. It
+    is false for a body whose kind nobody has stated and for one stated as
+    ``'other'``, and ``notes`` says which of the two it is in words rather than
+    leaving a reader to infer it from an empty list (decision 10 rule F).
+
+    ``filled_count`` is how many of this body's gaps have since been filled.
+    Those rows are kept rather than deleted, which is what lets the catalog say
+    that a record arrived.
+    """
+
+    body_id: int
+    body_name: str
+    body_type: str | None = None
+    jurisdiction_id: int
+    flagged: bool
+    alert_days: int | None = None
+    count: int
+    filled_count: int
+    missing: list[MissingRecordOut] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)

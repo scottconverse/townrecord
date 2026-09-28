@@ -55,6 +55,7 @@ from .repo import (
     paused_runs,
     running_before,
 )
+from .repo import counts as missing_counts
 from .repo.rows import ScheduledRun, Source
 from .runtime import RuntimeManager, RuntimeNotInstalled, RuntimeSettings
 from .runtime.pointer import PointerUnreadable
@@ -143,6 +144,11 @@ class Reading:
     captures: tuple[Capture, ...] = ()
     runs: tuple[Run, ...] = ()
     paused: tuple[Run, ...] = ()
+    #: How many bodies have a record missing right now (spec 9.5). It is
+    #: derived here and read from the meetings, not from the ``missing_records``
+    #: rows, because nothing in this module writes and a count of stored rows
+    #: would be a count of what some earlier pass happened to find.
+    missing_bodies: int = 0
 
 
 @dataclass(frozen=True)
@@ -171,6 +177,9 @@ class Status:
     tools: tuple[Tool, ...]
     runs: tuple[Run, ...]
     paused: tuple[Run, ...]
+    #: How many bodies have a record missing right now (spec 9.5). Zero is the
+    #: ordinary case, and the report shows the line only when it is not.
+    missing_bodies: int = 0
     #: The service that is running on this app-data root, when one is. Everything
     #: above it describes that service when it is here and this shell's settings
     #: when it is not; ``service`` is what tells the two apart.
@@ -262,6 +271,7 @@ def collect(
         tools=_tools(settings, runtime),
         runs=reading.runs,
         paused=reading.paused,
+        missing_bodies=reading.missing_bodies,
         service=served,
         service_locked=locked and served is None,
         warnings=_warnings(host, port, allowed),
@@ -308,6 +318,7 @@ def _read(
             captures=tuple(_capture(row) for row in captures_by_body(conn)),
             runs=tuple(_run(row) for row in latest_runs(conn, limit)),
             paused=tuple(_run(row) for row in paused_runs(conn, limit)),
+            missing_bodies=len(missing_counts(conn, now=clock())),
         )
     except sqlite3.Error as exc:
         notes.append(
@@ -423,6 +434,8 @@ def render(status: Status) -> str:
     lines.append(f"  Storage    {status.storage_root}")
     lines.append(f"  Runtimes   {status.runtime_root}")
     lines.append(f"  Schedule   {_schedule_line(status)}")
+    if status.missing_bodies:
+        lines.append(f"  Missing    {_missing_line(status)}")
     lines.extend(status.warnings)
     lines.append("")
     lines.extend(_job_lines(status))
@@ -476,6 +489,20 @@ def _schedule_line(status: Status) -> str:
             "(set TOWNRECORD_TIME_ZONE)"
         )
     return f"{status.time_zone}, daily at {status.daily_time} local time"
+
+
+def _missing_line(status: Status) -> str:
+    """Say how many bodies are missing a record, in one line (spec 9.5).
+
+    The line is shown only when the count is not zero, because the ordinary
+    case is that nothing is missing and a report that repeated "0" every time
+    would train a reader to skip the line that matters. The words say which
+    rule was applied, so the count is not a number with no definition.
+    """
+    return (
+        f"{status.missing_bodies} body(ies) have a record missing 36 hours or more "
+        "after a meeting that was not cancelled or continued"
+    )
 
 
 def _job_lines(status: Status) -> list[str]:
