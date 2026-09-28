@@ -35,7 +35,12 @@ from typing import Any
 
 from .. import artifacts, repo
 from ..captions.parse import Segment
-from ..records.requests import TRANSCRIPT_STORED, request_alignment
+from ..records.requests import (
+    SPEAKERS_TRANSCRIPT_STORED,
+    TRANSCRIPT_STORED,
+    request_alignment,
+    request_speakers,
+)
 from ..stt.provenance import Provenance
 
 __all__ = ["insert_transcript_with_segments", "provenance_meta"]
@@ -132,6 +137,7 @@ def insert_transcript_with_segments(
         if provenance is not None:
             artifacts.merge_meta(conn, artifact_id, {"provenance": provenance_meta(provenance)})
         _ask_for_alignment(conn, video_id)
+        _ask_for_speakers(conn, video_id)
         conn.execute("COMMIT")
     except BaseException:
         with suppress(sqlite3.Error):  # nothing to roll back
@@ -169,4 +175,33 @@ def _ask_for_alignment(conn: sqlite3.Connection, video_id: int) -> None:
         conn,
         video.meeting_id,
         reason=TRANSCRIPT_STORED.format(video_id=video_id, meeting_id=video.meeting_id),
+    )
+
+
+def _ask_for_speakers(conn: sqlite3.Connection, video_id: int) -> None:
+    """Ask for the speaker reading of a meeting whose video just got a transcript.
+
+    Spec 10.6 labels the lines of a meeting's transcript, and the reading pauses
+    on the two things it can be missing: a transcript, and the seats of the
+    body. The seats come from the minutes, which are read on their own schedule,
+    so either can arrive second. This is the half where the transcript arrives
+    second: the meeting's seats are already stored, and the reading is asked for
+    now rather than waiting for a minutes reading to ask again.
+
+    ``request_speakers`` decides whether the meeting can be read at all, so a
+    meeting with no seats yet is asked for nothing here and the minutes reading
+    asks instead. Like the alignment above, the ask is inside the transaction,
+    and it is only made for the primary video: a meeting's transcript is one
+    transcript, and a second video of the same meeting is not it.
+    """
+    video = repo.get_video(conn, video_id)
+    if video is None or video.meeting_id is None:
+        return
+    primary = repo.primary_video(conn, video.meeting_id)
+    if primary is None or primary.id != video_id:
+        return
+    request_speakers(
+        conn,
+        video.meeting_id,
+        reason=SPEAKERS_TRANSCRIPT_STORED.format(video_id=video_id, meeting_id=video.meeting_id),
     )

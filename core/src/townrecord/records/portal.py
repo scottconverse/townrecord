@@ -44,6 +44,7 @@ DOWNLOAD_RECORD = "download_record"
 EXTRACT_PAGES = "extract_pages"
 ALIGN_MEETING = "align_meeting"
 READ_MINUTES = "read_minutes"
+READ_SPEAKERS = "read_speakers"
 
 #: The lanes, as spec 16.1 spells them.
 NORMAL = "normal"
@@ -311,6 +312,17 @@ class MinutesRequest:
 
 
 @dataclass(frozen=True)
+class SpeakersRequest:
+    """One meeting whose transcript is to be labelled with who is speaking."""
+
+    meeting_id: int
+
+    def as_payload(self) -> dict[str, Any]:
+        """The JSON payload a speaker reading job carries."""
+        return {"meeting_id": self.meeting_id}
+
+
+@dataclass(frozen=True)
 class AlignRequest:
     """One meeting to align, and the portal source it came from."""
 
@@ -466,6 +478,18 @@ def minutes_request(payload: Any) -> MinutesRequest:
         meeting_id=_as_int(
             payload.get("meeting_id"),
             "A minutes reading job names the meeting whose minutes to read.",
+        )
+    )
+
+
+def speakers_request(payload: Any) -> SpeakersRequest:
+    """Read the payload of a speaker reading job (spec 10.6)."""
+    if not isinstance(payload, Mapping):
+        raise SyncRefused("A speaker reading job carries the meeting whose transcript to label.")
+    return SpeakersRequest(
+        meeting_id=_as_int(
+            payload.get("meeting_id"),
+            "A speaker reading job names the meeting whose transcript to label.",
         )
     )
 

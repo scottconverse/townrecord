@@ -8,6 +8,7 @@ function stores a row the caller already has, or reads one back.
 from __future__ import annotations
 
 import sqlite3
+from datetime import date
 
 from .rows import Body, Jurisdiction, Person, Seat, Source
 from .store import get, insert
@@ -126,6 +127,22 @@ def insert_person(conn: sqlite3.Connection, *, name: str) -> int:
     return insert(conn, "people", {"name": name})
 
 
+def upsert_person(conn: sqlite3.Connection, *, name: str) -> int:
+    """Store one person, or return the one already stored under that name.
+
+    The name is compared without case, because the same person is written with
+    different capitalisation by different records and a second row for them
+    would be a second person. It is not compared loosely: two names that differ
+    by more than case are two people until a person says otherwise.
+    """
+    row = conn.execute(
+        "SELECT id FROM people WHERE name = ? COLLATE NOCASE ORDER BY id LIMIT 1", (name,)
+    ).fetchone()
+    if row is not None:
+        return int(row["id"])
+    return insert_person(conn, name=name)
+
+
 def get_person(conn: sqlite3.Connection, person_id: int) -> Person | None:
     """Return the person, or None when there is no such row."""
     row = get(conn, "people", person_id)
@@ -159,6 +176,109 @@ def get_seat(conn: sqlite3.Connection, seat_id: int) -> Seat | None:
     """Return the seat, or None when there is no such row."""
     row = get(conn, "seats", seat_id)
     return None if row is None else Seat.from_row(row)
+
+
+def upsert_seat(
+    conn: sqlite3.Connection,
+    *,
+    person_id: int,
+    body_id: int,
+    title: str,
+    on: str | None = None,
+) -> int:
+    """Store one seat, or return the open one the person already holds.
+
+    One person holds one title on one body across many meetings, so a reading
+    that sees them again reuses the row it wrote last time rather than writing
+    the same seat once per meeting. ``on`` is the date of the meeting the seat
+    was seen at: the start of the seat is moved back to it when it is earlier
+    than what is stored, and never forward, because the first meeting a record
+    names is not the day the person took office.
+
+    A seat that was closed is left alone: a person who left and came back held
+    the seat twice, and that is two rows.
+    """
+    row = conn.execute(
+        "SELECT id, start_date FROM seats WHERE person_id = ? AND body_id = ? AND title = ? "
+        "AND end_date IS NULL ORDER BY id LIMIT 1",
+        (person_id, body_id, title),
+    ).fetchone()
+    if row is None:
+        return insert_seat(conn, person_id=person_id, body_id=body_id, title=title, start_date=on)
+    started = row["start_date"]
+    if on is not None and (started is None or on < started):
+        conn.execute("UPDATE seats SET start_date = ? WHERE id = ?", (on, int(row["id"])))
+    return int(row["id"])
+
+
+def officials_of(conn: sqlite3.Connection, *, body_id: int, on: date) -> list[Person]:
+    """The people seated on one body on one date, by name.
+
+    A seat is held on a date when it starts on or before that date and has no
+    end or an end on or after it. A seat with no start date counts as held:
+    the record that named the person did not say since when, and a seat whose
+    dates are unknown is still a seat that was seen.
+
+    One person is one row however many seats they hold: a council member who is
+    also the mayor pro tem has two seats on one body and is still one person,
+    and a reading of a name that counted them twice would find a tie with
+    itself. The first seat a person holds is the row that is kept.
+    """
+    rows = conn.execute(
+        "SELECT people.* FROM seats JOIN people ON people.id = seats.person_id "
+        "WHERE seats.body_id = ? "
+        "AND (seats.start_date IS NULL OR seats.start_date <= ?) "
+        "AND (seats.end_date IS NULL OR seats.end_date >= ?) "
+        "ORDER BY people.name, seats.id",
+        (body_id, on.isoformat(), on.isoformat()),
+    ).fetchall()
+    seen: set[int] = set()
+    people: list[Person] = []
+    for row in rows:
+        person = Person.from_row(row)
+        if person.id in seen:
+            continue
+        seen.add(person.id)
+        people.append(person)
+    return people
+
+
+def seat_holders_of(conn: sqlite3.Connection, *, body_id: int, on: date) -> dict[str, Person]:
+    """The one person each titled seat of a body holds on one date, by title.
+
+    A title that names an office rather than a rank, "Mayor" or "Mayor Pro
+    Tem", is a seat with one holder, and a reading of that title stands on
+    knowing who the minutes put in it on the meeting's date. The key is the
+    title as the record wrote it, folded and with its whitespace collapsed, so
+    a reader looks a title up the way a minutes document prints it.
+
+    A title held by more than one person at once names nobody here. Two holders
+    are not one answer, and a reading that picked between them would be choosing
+    a person the record does not choose. "Council Member" is held by every
+    member of a body and is left out for the same reason: the seat does not name
+    one person, so the name read against it has to stand on its own sound.
+    """
+    rows = conn.execute(
+        "SELECT seats.title, people.* FROM seats JOIN people ON people.id = seats.person_id "
+        "WHERE seats.body_id = ? "
+        "AND (seats.start_date IS NULL OR seats.start_date <= ?) "
+        "AND (seats.end_date IS NULL OR seats.end_date >= ?) "
+        "ORDER BY people.name, seats.id",
+        (body_id, on.isoformat(), on.isoformat()),
+    ).fetchall()
+    held: dict[str, Person] = {}
+    shared: set[str] = set()
+    for row in rows:
+        title = " ".join(str(row["title"]).casefold().split())
+        person = Person.from_row(row)
+        first = held.get(title)
+        if first is None:
+            held[title] = person
+        elif first.id != person.id:
+            shared.add(title)
+    for title in shared:
+        del held[title]
+    return held
 
 
 def insert_source(
