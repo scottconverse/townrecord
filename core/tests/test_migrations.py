@@ -16,8 +16,12 @@ from townrecord.db import applied_versions, connect, discover, migrate, split_st
 #: is the OCR reason of a page with no text layer (spec 9.6), 0011 is the
 #: motions of the minutes (spec 10.4), 0012 is the schedule's record of one
 #: run per task, subject and local day (spec 16.2) and 0013 is the classifier
-#: settings of one source (spec 7.2 step 6, rule D).
-SHIPPED_VERSIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+#: settings of one source (spec 7.2 step 6, rule D). 0016 is the AI provider
+#: registry, the per-task model setting and the usage ledger (spec 11.1, 11.4,
+#: 11.6, 11.8). 0014 and 0015 are not written yet: lane 1's work takes them, and
+#: this list is exact on purpose, so a number that ships without an entry here
+#: fails rather than passes quietly.
+SHIPPED_VERSIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 16]
 
 
 def table_names(conn: sqlite3.Connection) -> set[str]:
