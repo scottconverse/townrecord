@@ -19,8 +19,12 @@ from townrecord.ai.providers import (
     KIND_OPENAI,
     KIND_OPENAI_COMPATIBLE,
     KINDS,
+    REMOTE_FIELDS,
+    RUNS_HERE,
     Provider,
     ProviderRegistry,
+    cloud_label,
+    model_home,
     redact,
 )
 from townrecord.ai.store import (
@@ -33,6 +37,9 @@ from townrecord.ai.store import (
 
 from .conftest import (
     LOCAL_NAME,
+    RECORDED_CLOUD,
+    RECORDED_HERE,
+    RECORDED_OLLAMA_TAGS,
     TEST_KEY,
 )
 
@@ -69,6 +76,123 @@ class TestTheKinds:
     def test_a_provider_needs_a_name(self) -> None:
         with pytest.raises(ValueError, match="needs a name"):
             Provider(name="  ", kind=KIND_LOCAL)
+
+
+class TestWhereAModelRuns:
+    """A local program is not a local model (spec 2, 11.5).
+
+    Ollama serves some of the models it lists from its own cloud, so "is this
+    model local" is a question about the model and not about the row it was
+    reached through. The recorded reply in ``conftest`` is the reply a real
+    Ollama wrote over the loopback address: these tests read the rule's answer
+    off it, so the fields the rule uses are pinned to something recorded rather
+    than to something invented.
+    """
+
+    def test_a_cloud_model_on_a_local_row_is_not_local(self) -> None:
+        """The named check: a ``:cloud`` model behind a local program is not local."""
+        provider = Provider(
+            name=LOCAL_NAME,
+            kind=KIND_LOCAL,
+            base_url="http://127.0.0.1:11434",
+            models=("qwen3:8b", "kimi-k2.6:cloud"),
+        )
+        home = provider.model_home("kimi-k2.6:cloud")
+        assert home.is_local is False
+        assert home.known is True, "the name says where it runs, so the answer is known"
+        assert home.runs_on == "cloud (via Ollama)"
+        assert home.runs_on == cloud_label("ollama")
+        assert ":cloud" in home.reason
+        assert provider.is_local("kimi-k2.6:cloud") is False
+
+    def test_a_model_the_same_row_holds_here_is_local(self) -> None:
+        provider = Provider(
+            name=LOCAL_NAME,
+            kind=KIND_LOCAL,
+            base_url="http://127.0.0.1:11434",
+            models=("qwen3:8b", "kimi-k2.6:cloud"),
+        )
+        home = provider.model_home("qwen3:8b")
+        assert home.is_local is True
+        assert home.runs_on == RUNS_HERE
+        assert provider.is_local("qwen3:8b") is True
+
+    def test_a_model_nothing_listed_is_not_local(self) -> None:
+        """An answer that is not known is not local: the rule fails closed."""
+        provider = Provider(
+            name=LOCAL_NAME,
+            kind=KIND_LOCAL,
+            base_url="http://127.0.0.1:11434",
+            models=("qwen3:8b",),
+        )
+        home = provider.model_home("a-model-nobody-listed:70b")
+        assert home.is_local is False
+        assert home.known is False
+        assert home.runs_on == cloud_label("ollama")
+        assert "Nothing says where" in home.sentence()
+        assert provider.is_local("a-model-nobody-listed:70b") is False
+
+    def test_a_provider_that_is_not_a_local_program_is_never_this_machine(
+        self, cloud_provider: Provider, gateway_provider: Provider
+    ) -> None:
+        # A vendor's API, and a gateway whose address is on this machine: the
+        # kind is what decides, and neither kind runs its models here.
+        assert cloud_provider.is_local("claude-sonnet-5") is False
+        assert cloud_provider.model_home("claude-sonnet-5").runs_on == "cloud"
+        assert gateway_provider.is_local("whatever/gguf") is False
+
+    def test_a_local_row_with_no_model_named_is_this_machine(self) -> None:
+        provider = Provider(name=LOCAL_NAME, kind=KIND_LOCAL, base_url="http://127.0.0.1:11434")
+        home = provider.model_home()
+        assert home.is_local is True
+        assert home.runs_on == RUNS_HERE
+        assert provider.is_local() is True
+
+    def test_a_program_with_no_cloud_holds_its_models_here(self) -> None:
+        # LM Studio and llama.cpp have no service to serve a model from, which
+        # is why only Ollama's list reply has to be read model by model.
+        home = model_home("qwen3-8b", program="lmstudio")
+        assert home.is_local is True
+        assert home.runs_on == RUNS_HERE
+        assert "lmstudio" in home.reason
+
+    def test_the_recorded_reply_is_what_the_rule_reads(self) -> None:
+        """Every model of the reply a real Ollama wrote, read through the rule."""
+        listed = [str(entry["name"]) for entry in RECORDED_OLLAMA_TAGS["models"]]
+        assert listed == [*RECORDED_HERE, *RECORDED_CLOUD]
+        for entry in RECORDED_OLLAMA_TAGS["models"]:
+            name = str(entry["name"])
+            home = model_home(name, program="ollama", entry=entry)
+            if name in RECORDED_CLOUD:
+                assert any(field in entry for field in REMOTE_FIELDS), (
+                    "a recorded cloud entry carries the field the rule reads"
+                )
+                assert home.is_local is False
+                assert home.runs_on == cloud_label("ollama")
+            else:
+                assert not any(field in entry for field in REMOTE_FIELDS)
+                assert home.is_local is True
+                assert home.runs_on == RUNS_HERE
+
+    def test_the_recorded_field_alone_places_a_model_in_the_cloud(self) -> None:
+        """The same recorded entry with the name form taken off it."""
+        recorded = next(
+            entry
+            for entry in RECORDED_OLLAMA_TAGS["models"]
+            if str(entry["name"]) in RECORDED_CLOUD
+        )
+        entry = {**recorded, "name": "a-plain-name", "model": "a-plain-name"}
+        home = model_home("a-plain-name", program="ollama", entry=entry)
+        assert home.is_local is False
+        assert home.runs_on == cloud_label("ollama")
+        assert "remote_host" in home.reason
+
+    def test_the_program_is_what_is_local_not_the_model(self, local_provider: Provider) -> None:
+        # The row says which program answers; the model says where it runs.
+        assert local_provider.describe() == (
+            "the small local model, a local program at http://127.0.0.1:11434"
+        )
+        assert "a local model" not in local_provider.describe()
 
 
 class TestTheRegistry:

@@ -199,6 +199,58 @@ def ollama_body(*names: str) -> dict[str, Any]:
     return {"models": [{"name": name, "model": name} for name in names]}
 
 
+#: A recorded Ollama ``/api/tags`` reply, read over the loopback address with a
+#: GET and nothing else. This is the shape the local-versus-cloud rule is read
+#: from: the two models that run on this machine carry no ``remote_host``, and
+#: the two Ollama serves from its own cloud carry ``remote_host`` and
+#: ``remote_model`` beside a name in the ``:cloud`` or ``-cloud`` form. Both
+#: halves of that are pinned by ``tests/ai/test_registry.py`` and
+#: ``tests/ai/test_discovery.py``, so a change to the rule has to change what
+#: was recorded here first.
+#:
+#: It is trimmed: four of the twenty-three entries the machine listed, with the
+#: fields that show the shape and shortened values where the value is noise.
+RECORDED_OLLAMA_TAGS: dict[str, Any] = {
+    "models": [
+        {
+            "name": "qwen3.8:27b-q4_K_M",
+            "model": "qwen3.8:27b-q4_K_M",
+            "size": 17_200_000_000,
+            "digest": "recorded",
+            "format": "gguf",
+        },
+        {
+            "name": "qwen3-coder:30b-a3b-q4_K_M",
+            "model": "qwen3-coder:30b-a3b-q4_K_M",
+            "size": 18_600_000_000,
+            "digest": "recorded",
+            "format": "gguf",
+        },
+        {
+            "name": "kimi-k2.6:cloud",
+            "model": "kimi-k2.6:cloud",
+            "size": 310,
+            "digest": "recorded",
+            "remote_model": "kimi-k2.6",
+            "remote_host": "https://ollama.com",
+        },
+        {
+            "name": "deepseek-v4-pro:0813-cloud",
+            "model": "deepseek-v4-pro:0813-cloud",
+            "size": 310,
+            "digest": "recorded",
+            "remote_model": "deepseek-v4-pro:0813",
+            "remote_host": "https://ollama.com",
+        },
+    ]
+}
+
+#: The models of :data:`RECORDED_OLLAMA_TAGS` that run on this machine, and the
+#: ones Ollama serves from its own cloud.
+RECORDED_HERE = ("qwen3.8:27b-q4_K_M", "qwen3-coder:30b-a3b-q4_K_M")
+RECORDED_CLOUD = ("kimi-k2.6:cloud", "deepseek-v4-pro:0813-cloud")
+
+
 def openai_body(*names: str) -> dict[str, Any]:
     """An OpenAI-compatible ``/v1/models`` reply listing ``names``."""
     return {"object": "list", "data": [{"id": name, "object": "model"} for name in names]}

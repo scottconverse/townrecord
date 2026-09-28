@@ -141,6 +141,28 @@ class TestAPickedProvider:
     def test_a_picked_local_setting_fails_closed(self, registry: ProviderRegistry) -> None:
         assert Ladder.picked("answer", LOCAL_NAME).fails_closed(registry) is True
 
+    def test_a_picked_local_model_that_runs_here_fails_closed(
+        self, registry: ProviderRegistry
+    ) -> None:
+        """The model is asked, and this one runs on this machine."""
+        assert Ladder.picked("answer", LOCAL_NAME, "qwen3:8b").fails_closed(registry) is True
+
+    def test_a_picked_cloud_model_on_a_local_row_does_not_fail_closed(
+        self, registry: ProviderRegistry
+    ) -> None:
+        """A cloud model behind a local program is not local work (spec 11.5).
+
+        Failing closed is what a local model does after it fails. This one is
+        refused before it is called at all, which
+        ``tests/ai/test_failover.py`` checks.
+        """
+        ladder = Ladder.picked("summarize", LOCAL_NAME, "kimi-k2.6:cloud")
+        assert ladder.fails_closed(registry) is False
+
+    def test_a_picked_model_no_list_named_is_not_local(self, registry: ProviderRegistry) -> None:
+        ladder = Ladder.picked("summarize", LOCAL_NAME, "a-model-nobody-listed")
+        assert ladder.fails_closed(registry) is False
+
     def test_a_picked_cloud_setting_does_not_fail_closed(self, registry: ProviderRegistry) -> None:
         assert Ladder.picked("answer", CLOUD_NAME).fails_closed(registry) is False
 

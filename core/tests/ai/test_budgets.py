@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from townrecord.ai.budgets import (
+    BUDGET_CLOUD_MODEL,
     DEFAULT_BUDGETS,
     MEASURED_CALL_S,
     Budget,
@@ -19,6 +20,7 @@ from townrecord.ai.providers import (
     KIND_LOCAL,
     KIND_OPENAI,
     KIND_OPENAI_COMPATIBLE,
+    model_home,
 )
 
 
@@ -73,6 +75,37 @@ class TestChoosingABudget:
         overrides = {KIND_CLAUDE_CLI: {"job_s": 900.0, "call_s": 300.0}}
         assert for_task("summarize", KIND_CLAUDE_CLI, overrides=overrides) == Budget(
             job_s=900.0, call_s=300.0
+        )
+
+
+class TestWhereTheModelRuns:
+    """The budget follows the model, not the row it was reached through (11.6)."""
+
+    def test_a_cloud_model_on_a_local_row_gets_the_api_budget(self) -> None:
+        """The named check: forty minutes is for a model on this machine."""
+        cloud = model_home("kimi-k2.6:cloud", program="ollama")
+        assert cloud.is_local is False
+        assert for_task("summarize", KIND_LOCAL, home=cloud) == Budget(job_s=38.0, call_s=20.0)
+        assert for_task("summarize", KIND_LOCAL, home=cloud) == BUDGET_CLOUD_MODEL
+
+    def test_a_local_model_keeps_the_forty_minutes(self) -> None:
+        here = model_home("qwen3:8b", program="ollama", entry={})
+        assert for_task("summarize", KIND_LOCAL, home=here) == Budget(job_s=2400.0, call_s=600.0)
+
+    def test_an_unknown_model_gets_the_api_budget_too(self) -> None:
+        unknown = model_home("nobody-listed", program="ollama")
+        assert unknown.known is False
+        assert for_task("summarize", KIND_LOCAL, home=unknown) == BUDGET_CLOUD_MODEL
+
+    def test_a_caller_that_has_not_asked_keeps_the_kind_s_budget(self) -> None:
+        assert for_task("summarize", KIND_LOCAL) == DEFAULT_BUDGETS[KIND_LOCAL]
+        assert for_kind(KIND_LOCAL) == DEFAULT_BUDGETS[KIND_LOCAL]
+
+    def test_the_override_a_user_saved_still_wins(self) -> None:
+        cloud = model_home("kimi-k2.6:cloud", program="ollama")
+        overrides = {KIND_LOCAL: {"job_s": 100.0}}
+        assert for_task("summarize", KIND_LOCAL, home=cloud, overrides=overrides) == Budget(
+            job_s=100.0, call_s=20.0
         )
 
 

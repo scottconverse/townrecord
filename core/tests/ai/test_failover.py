@@ -51,6 +51,21 @@ class FakeModels:
         return self.answers.get(provider.name, Attempt(ok=True, output=f"{provider.name} answered"))
 
 
+def _ollama_row(*models: str) -> ProviderRegistry:
+    """A registry holding one local Ollama row, listing ``models``, and a vendor."""
+    return ProviderRegistry(
+        [
+            Provider(
+                name=LOCAL_NAME,
+                kind=KIND_LOCAL,
+                base_url="http://127.0.0.1:11434",
+                models=models,
+            ),
+            Provider(name=CLOUD_NAME, kind=KIND_ANTHROPIC, base_url="https://api.anthropic.com"),
+        ]
+    )
+
+
 class TestTheRules:
     def test_the_six_failures_that_move_the_ladder(self) -> None:
         assert {
@@ -198,6 +213,72 @@ class TestAPickedLocalModel:
         ladder = Ladder.picked("summarize", LOCAL_NAME)
         run = run_task(ladder=ladder, registry=registry, call=models)
         assert run.failed_closed is False, "a final reason is not a fail-closed stop"
+        assert models.asked == [LOCAL_NAME]
+
+
+class TestAPickedCloudModelBehindALocalProgram:
+    """A local program that serves a model from its own cloud (spec 2, 11.5).
+
+    The row the user picked says "local", and the model it would run does not
+    run on this machine. The work is refused before the first call, because the
+    call is the thing that would send the minutes to a vendor.
+    """
+
+    def test_a_picked_cloud_model_is_refused_before_the_first_call(self) -> None:
+        """The named check: nothing is called, and the sentence says what to do."""
+        models = FakeModels()
+        ladder = Ladder.picked("summarize", LOCAL_NAME, "kimi-k2.6:cloud")
+        run = run_task(
+            ladder=ladder, registry=_ollama_row("qwen3:8b", "kimi-k2.6:cloud"), call=models
+        )
+        assert run.ok is False
+        assert run.failed_closed is True
+        assert models.asked == [], "nothing was called, so nothing was sent anywhere"
+        assert run.records == ()
+        assert run.sentence.startswith("Nothing was sent to the model.")
+        assert "cloud (via Ollama)" in run.sentence
+        assert "kimi-k2.6:cloud" in run.sentence
+        assert "pick a model that runs here, or set summarize to Automatic" in run.sentence
+
+    def test_a_picked_model_no_list_named_is_refused_too(self) -> None:
+        """An answer nobody gave is not local either, so it is refused (11.5)."""
+        models = FakeModels()
+        ladder = Ladder.picked("summarize", LOCAL_NAME, "a-model-nobody-listed")
+        run = run_task(ladder=ladder, registry=_ollama_row("qwen3:8b"), call=models)
+        assert run.failed_closed is True
+        assert models.asked == []
+        assert "Nothing says where a-model-nobody-listed runs" in run.sentence
+
+    def test_a_picked_model_that_runs_here_still_runs(self) -> None:
+        models = FakeModels()
+        ladder = Ladder.picked("summarize", LOCAL_NAME, "qwen3:8b")
+        run = run_task(
+            ladder=ladder, registry=_ollama_row("qwen3:8b", "kimi-k2.6:cloud"), call=models
+        )
+        assert run.ok is True
+        assert models.asked == [LOCAL_NAME]
+
+    def test_a_picked_cloud_provider_is_the_user_s_own_choice(
+        self, registry: ProviderRegistry
+    ) -> None:
+        # A vendor the user picked is a cloud choice they made on purpose, and
+        # it runs: only a local program's row is refused.
+        models = FakeModels()
+        ladder = Ladder.picked("answer", CLOUD_NAME, "claude-sonnet-5")
+        run = run_task(ladder=ladder, registry=registry, call=models)
+        assert run.ok is True
+        assert models.asked == [CLOUD_NAME]
+
+    def test_an_automatic_rung_is_the_list_the_user_wrote(self) -> None:
+        # Spec 11.5's fail-closed rule is about a picked setting. The rung of an
+        # automatic ladder is a name the user wrote in the ladder itself, so it
+        # runs, and the listing is what tells them where that model runs.
+        models = FakeModels()
+        ladder = Ladder.automatic("summarize", [Rung(provider=LOCAL_NAME, model="kimi-k2.6:cloud")])
+        run = run_task(
+            ladder=ladder, registry=_ollama_row("qwen3:8b", "kimi-k2.6:cloud"), call=models
+        )
+        assert run.ok is True
         assert models.asked == [LOCAL_NAME]
 
 

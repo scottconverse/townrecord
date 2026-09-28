@@ -10,13 +10,21 @@ from townrecord.ai.discovery import (
     LOCAL_ENDPOINTS,
     LOOPBACK_HOSTS,
     READ_ONLY_PATHS,
+    Found,
     discover,
     endpoint_for,
     probe,
 )
-from townrecord.ai.providers import KIND_LOCAL
+from townrecord.ai.providers import KIND_LOCAL, RUNS_HERE, cloud_label
 
-from .conftest import FakeLocalServer, ollama_body, openai_body
+from .conftest import (
+    RECORDED_CLOUD,
+    RECORDED_HERE,
+    RECORDED_OLLAMA_TAGS,
+    FakeLocalServer,
+    ollama_body,
+    openai_body,
+)
 
 
 class TestWhatItAsksFor:
@@ -108,6 +116,90 @@ class TestFinding:
         local_server.replies = {11434: ollama_body("qwen3:8b")}
         found = discover(local_server.client()).found[0]
         assert found.as_provider("the small one").name == "the small one"
+
+
+class TestWhereEachModelRuns:
+    """A listing says where each model runs, and why (spec 2, 11.5).
+
+    Ollama answers for both the models it holds on this machine and the ones it
+    serves from its own cloud, and the two are listed side by side. A user
+    shown only names would pick one of the cloud ones believing it runs here.
+    """
+
+    def test_a_cloud_model_on_the_local_program_is_not_local(
+        self, local_server: FakeLocalServer
+    ) -> None:
+        """The named check: the recorded reply, read model by model."""
+        local_server.replies = {11434: RECORDED_OLLAMA_TAGS}
+        found = discover(local_server.client()).found[0]
+        assert found.models == (*RECORDED_HERE, *RECORDED_CLOUD), "every model is still listed"
+        assert [home.model for home in found.here] == list(RECORDED_HERE)
+        cloud = [home for home in found.homes if not home.is_local]
+        assert [home.model for home in cloud] == list(RECORDED_CLOUD)
+        assert {home.runs_on for home in cloud} == {cloud_label("ollama")} == {"cloud (via Ollama)"}
+        assert "2 on this machine and 2 in the cloud" in found.sentence()
+
+    def test_every_line_names_where_that_model_runs(self, local_server: FakeLocalServer) -> None:
+        local_server.replies = {11434: RECORDED_OLLAMA_TAGS}
+        found = discover(local_server.client()).found[0]
+        lines = found.lines()
+        assert len(lines) == len(found.models)
+        for line, home in zip(lines, found.homes, strict=True):
+            assert line == home.sentence()
+        assert "runs on this machine" in lines[0]
+        assert "the form Ollama gives a model it runs in its own cloud" in lines[2]
+        assert all(line.endswith(".") for line in lines)
+
+    def test_a_program_whose_models_all_run_here_says_so(
+        self, local_server: FakeLocalServer
+    ) -> None:
+        local_server.replies = {11434: ollama_body("qwen3:8b", "llama3.2:3b")}
+        found = discover(local_server.client()).found[0]
+        assert found.here == found.homes
+        assert "all of them on this machine" in found.sentence()
+
+    def test_a_program_with_nothing_on_this_machine_says_that_too(
+        self, local_server: FakeLocalServer
+    ) -> None:
+        cloud_only = {
+            "models": [
+                entry
+                for entry in RECORDED_OLLAMA_TAGS["models"]
+                if str(entry["name"]) in RECORDED_CLOUD
+            ]
+        }
+        local_server.replies = {11434: cloud_only}
+        found = discover(local_server.client()).found[0]
+        assert found.here == ()
+        assert "none of them on this machine" in found.sentence()
+
+    def test_the_other_programs_models_are_on_this_machine(
+        self, local_server: FakeLocalServer
+    ) -> None:
+        local_server.replies = {1234: openai_body("qwen3-8b")}
+        found = discover(local_server.client()).found[0]
+        assert found.program == "lmstudio"
+        assert found.here == found.homes
+        assert found.homes[0].runs_on == RUNS_HERE
+
+    def test_the_row_a_listing_becomes_keeps_the_same_answer(
+        self, local_server: FakeLocalServer
+    ) -> None:
+        """The saved row holds names only, and the name is the answer for those."""
+        local_server.replies = {11434: RECORDED_OLLAMA_TAGS}
+        provider = discover(local_server.client()).providers()[0]
+        assert provider.models == (*RECORDED_HERE, *RECORDED_CLOUD)
+        assert provider.is_local(RECORDED_CLOUD[0]) is False
+        assert provider.is_local(RECORDED_HERE[0]) is True
+
+    def test_a_found_built_from_names_alone_still_reads_the_name(self) -> None:
+        found = Found(
+            program="ollama",
+            base_url="http://127.0.0.1:11434",
+            models=("kimi-k2.6:cloud", "a-model-nobody-listed"),
+        )
+        assert found.here == ()
+        assert [home.runs_on for home in found.homes] == [cloud_label("ollama")] * 2
 
 
 class TestWhenNothingAnswers:
