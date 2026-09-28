@@ -608,8 +608,8 @@ MEASURED_PER_PERSON = {
 #: Every way the captioner wrote a name that the reading of this meeting kept,
 #: and the official it was read as, or None for the lines it refused to name.
 #: It is a table of what the reading did rather than of what it should do: the
-#: two readings marked wrong below are wrong, and they are kept in the table so
-#: that the test says so out loud instead of hiding them.
+#: reading marked wrong below is wrong, and it is kept in the table so that the
+#: test says so out loud instead of hiding it.
 MEASURED_SPELLINGS = {
     "Brietto": "Crystal Prieto",
     "Brito": "Crystal Prieto",
