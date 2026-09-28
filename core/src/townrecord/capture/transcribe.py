@@ -271,6 +271,9 @@ class TranscribeAudio:
                 origin=LOCAL_SPEECH_TO_TEXT,
                 segments=segments,
                 provenance=provenance,
+                # What the write queues for this meeting is this job's child,
+                # so it takes after this job (spec 16.2).
+                job_origin=ctx.origin,
             )
         else:
             # The same audio transcribed again is the same artifact and so the

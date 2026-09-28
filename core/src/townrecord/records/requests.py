@@ -154,7 +154,11 @@ def request_minutes(
 
 
 def request_speakers(
-    conn: sqlite3.Connection, meeting_id: int, *, reason: str | None = None
+    conn: sqlite3.Connection,
+    meeting_id: int,
+    *,
+    reason: str | None = None,
+    origin: str = ORIGIN_MANUAL,
 ) -> int | None:
     """Put one meeting's speaker reading on the queue, or queue it first.
 
@@ -168,6 +172,11 @@ def request_speakers(
     seats come from the minutes, so the reading of a meeting's minutes asks for
     its speakers, and a meeting whose minutes were not found has no seats and
     nothing to ask for.
+
+    ``origin`` is how the caller that asked was asked for (spec 16.2), and the
+    reading takes after it: a speaker reading asked for by a scheduled run is
+    scheduled too. The caller that has a job in hand passes ``ctx.origin``, and
+    the caller with no job behind it leaves the default.
     """
     meeting = get_meeting(conn, meeting_id)
     if meeting is None:
@@ -183,6 +192,7 @@ def request_speakers(
         meeting_id,
         SpeakersRequest(meeting_id=meeting_id).as_payload(),
         reason or SPEAKERS_ASKED_FOR.format(meeting_id=meeting_id),
+        origin,
     )
 
 
