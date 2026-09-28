@@ -18,6 +18,8 @@ from townrecord.repo import (
     SEGMENT,
     get_video,
     insert_agenda_item,
+    insert_body,
+    insert_meeting,
     insert_record,
     insert_record_page,
     insert_segment,
@@ -311,3 +313,124 @@ def test_the_agenda_item_of_a_line_is_not_needed_to_search_it(
     assert excerpt_of(search(conn, "ordinance")) == [
         "The ordinance 2026-54 comes before us tonight."
     ]
+
+
+def test_a_word_in_many_windows_is_still_one_hit_per_mention(
+    conn: sqlite3.Connection, transcript: int
+) -> None:
+    """The answer is the mentions, in the order they were spoken.
+
+    Every third line holds the word and the lines around it do not, so each
+    mention sits in six windows of the index and a window holds one mention.
+    The lines are all the same text, so the ranking has nothing to separate
+    them by, and the order this pins is the order the windows are cut in and
+    nothing else.
+    """
+    for index in range(119):
+        insert_segment(
+            conn,
+            transcript_id=transcript,
+            start_ms=index * 1_000,
+            end_ms=index * 1_000 + 500,
+            text="the levy question" if index % 3 == 2 else "the meeting was called to order",
+        )
+
+    expected = [index * 1_000 for index in range(119) if index % 3 == 2]
+    hits = search(conn, "levy")
+
+    assert len(expected) == 39
+    assert [hit.start_ms for hit in hits] == expected
+    assert {hit.excerpt for hit in hits} == {"the levy question"}
+
+
+def test_a_word_in_many_windows_answers_a_filter_with_its_own_hits(
+    conn: sqlite3.Connection, area: Area, transcript: int, put_artifact: PutArtifact
+) -> None:
+    """A body filter picks from the whole index, not from the windows read first.
+
+    The body that is asked for holds three mentions. The body that is not holds
+    more windows than the limit reads candidates, and its lines hold the word
+    three times each, so they rank before anything else. An answer that
+    filtered the windows the limit kept would come back empty, because the
+    limit would have been spent on the other body.
+    """
+    for line in range(3):
+        insert_segment(
+            conn,
+            transcript_id=transcript,
+            start_ms=line * 10_000,
+            end_ms=line * 10_000 + 500,
+            text="the levy question",
+        )
+    other = insert_body(conn, jurisdiction_id=area.city, name="Planning Board")
+    other_meeting = insert_meeting(
+        conn,
+        body_id=other,
+        title="Planning Board Regular Session",
+        starts_at="2026-09-09T19:00:00-06:00",
+    )
+    other_video = insert_video(
+        conn,
+        source_id=area.channel,
+        meeting_id=other_meeting,
+        platform_video_id="v-0002",
+        title="Planning Board Regular Session",
+        is_primary=True,
+    )
+    other_transcript = insert_transcript(
+        conn,
+        video_id=other_video,
+        artifact_id=put_artifact("transcript", b"WEBVTT\n\n00:00:00.000 --> 00:00:05.000\n", "vtt"),
+        origin="publisher_captions",
+    )
+    for line in range(60):
+        insert_segment(
+            conn,
+            transcript_id=other_transcript,
+            start_ms=line * 1_000,
+            end_ms=line * 1_000 + 500,
+            text="the levy levy levy question",
+        )
+
+    # The body that is not asked for does hold the word, so the answer below is
+    # short because of the filter and not because there was nothing to find.
+    assert {hit.body_id for hit in search(conn, "levy", body=other, limit=4)} == {other}
+    assert [hit.body_id for hit in search(conn, "levy", body=area.body, limit=4)] == [area.body] * 3
+
+
+def test_the_lines_of_a_hit_are_read_for_the_windows_the_limit_kept(
+    conn: sqlite3.Connection, transcript: int
+) -> None:
+    """The match and the joins are two statements, and the joins come second.
+
+    One statement that matched and joined and then sorted before the limit
+    would pay the joins for every window that matched, which is 99.6 percent of
+    the cost of a common word (reports/SC1-search-scale.md). The cost is a
+    property of the statements rather than of the answer, so this reads the
+    statements: nothing that matches the window index may also join the table
+    of lines.
+    """
+    for index in range(30):
+        insert_segment(
+            conn,
+            transcript_id=transcript,
+            start_ms=index * 1_000,
+            end_ms=index * 1_000 + 500,
+            text="the levy question",
+        )
+
+    seen: list[str] = []
+    conn.set_trace_callback(seen.append)
+    try:
+        assert search(conn, "levy") != []
+    finally:
+        conn.set_trace_callback(None)
+
+    matching = [sql for sql in seen if "segment_window_search MATCH" in sql]
+    joined = [sql for sql in seen if "JOIN segments AS first_line" in sql]
+    assert matching, "the window index is what a search reads first"
+    assert joined, "the lines of a hit are read from the segments table"
+    for sql in matching:
+        assert "JOIN segments" not in sql
+    for sql in joined:
+        assert "segment_window_search MATCH" not in sql
