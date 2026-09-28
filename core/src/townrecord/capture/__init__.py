@@ -15,6 +15,12 @@ path.
 root the user chose, which is the one setting neither job can read for itself.
 `register_transcribe` wires the audio one, together with the paths of the two
 programs it runs out of the private runtime of spec 8.9.
+
+`register_recheck` wires the third job of this package, the recheck of spec 8.7.
+It shares the storage root with the capture, because it fetches into a folder
+beside the one the capture uses, and it is its own kind: a capture fetches for
+the first time and may fall back to audio, a recheck fetches again and may
+revise, and neither should be able to do the other's work by accident.
 """
 
 from __future__ import annotations
@@ -25,6 +31,13 @@ from ..jobs.registry import Registry, default_registry
 from . import transcribe
 from .command import JOB_KIND, LANE, CaptureFailed, Runner, rate_limit_marker
 from .job import CaptionCapture
+from .recheck import (
+    RECHECK_JOB_KIND,
+    CaptionRecheck,
+    next_recheck_at,
+    register_recheck,
+    request_recheck,
+)
 from .settings import CaptureSettings, TranscribeSettings
 from .store import insert_transcript_with_segments
 from .transcribe import TranscribeAudio
@@ -32,18 +45,23 @@ from .transcribe import TranscribeAudio
 __all__ = [
     "JOB_KIND",
     "LANE",
+    "RECHECK_JOB_KIND",
     "TRANSCRIBE_JOB_KIND",
     "TRANSCRIBE_LANE",
     "CaptionCapture",
+    "CaptionRecheck",
     "CaptureFailed",
     "CaptureSettings",
     "Runner",
     "TranscribeAudio",
     "TranscribeSettings",
     "insert_transcript_with_segments",
+    "next_recheck_at",
     "rate_limit_marker",
     "register",
+    "register_recheck",
     "register_transcribe",
+    "request_recheck",
 ]
 
 #: The kind and the lane of the transcription job (spec 8.5, 16.1). The kind is

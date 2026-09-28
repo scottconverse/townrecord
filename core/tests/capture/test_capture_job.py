@@ -105,6 +105,13 @@ def test_a_finished_video_is_captured_and_stored(
         # part of what the capture records about itself.
         "js_runtime": FALLBACK_RUNTIME,
         "player_client": "default",
+        # Spec 8.7: the two signals of the change test that are not the hash,
+        # kept here so the first recheck has a baseline to compare against. The
+        # fixture sidecar states a length and no revision time, which is what a
+        # real YouTube sidecar leaves: `revision_at` is None rather than a
+        # moment nothing stated.
+        "revision_at": None,
+        "duration_s": 7200.0,
     }
 
     stored = segments(conn, int(transcript["id"]))

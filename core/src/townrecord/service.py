@@ -31,7 +31,7 @@ import httpx
 
 from . import pacing, records
 from .capture import JOB_KIND as CAPTURE_JOB_KIND
-from .capture import TRANSCRIBE_JOB_KIND, register_transcribe
+from .capture import RECHECK_JOB_KIND, TRANSCRIBE_JOB_KIND, register_recheck, register_transcribe
 from .capture import register as register_capture
 from .capture.command import Runner as CaptureRunner
 from .capture.probe import capture_probe
@@ -69,6 +69,7 @@ KIND_MODULES: tuple[tuple[str, str], ...] = (
     (READ_SPEAKERS, "townrecord.records"),
     (CAPTURE_JOB_KIND, "townrecord.capture"),
     (TRANSCRIBE_JOB_KIND, "townrecord.capture"),
+    (RECHECK_JOB_KIND, "townrecord.capture"),
     (WATCH_CHANNEL_JOB_KIND, "townrecord.video.watch"),
     (RUNTIME_UPDATE_KIND, "townrecord.runtime"),
 )
@@ -263,6 +264,12 @@ def _register_handlers(
             runner=capture_runner,
             interpreter=interpreter,
             textflowkit_program=textflowkit,
+        ),
+        RECHECK_JOB_KIND: register_recheck(
+            storage_root=settings.storage_root,
+            registry=registry,
+            runner=capture_runner,
+            interpreter=interpreter,
         ),
         WATCH_CHANNEL_JOB_KIND: register_watch_channel(
             registry=registry,

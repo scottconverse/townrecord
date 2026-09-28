@@ -310,6 +310,19 @@ def segments_of(conn: sqlite3.Connection, transcript_id: int) -> list[Segment]:
     return [Segment.from_row(row) for row in rows]
 
 
+def segment_count(conn: sqlite3.Connection, transcript_id: int) -> int:
+    """Return how many timed lines a transcript has.
+
+    One number, read without loading the lines: the sentence a revision
+    carries says how much text the two versions hold, and a full meeting is
+    thousands of lines.
+    """
+    row = conn.execute(
+        "SELECT COUNT(*) AS count FROM segments WHERE transcript_id = ?", (transcript_id,)
+    ).fetchone()
+    return 0 if row is None else int(row["count"])
+
+
 def items_for_segments(conn: sqlite3.Connection, transcript_id: int) -> dict[int, AgendaItem]:
     """Return the agenda item each line of a transcript falls in (spec 10.2).
 
