@@ -38,11 +38,16 @@ class MovingClock:
 
     def __init__(self, start: datetime = PACE_START) -> None:
         self.now = start
+        #: Every sleep a caller took, in order. A test says a wait happened, or
+        #: that it did not, from this list and never from the wall clock: a
+        #: hold that must free the worker reads as an empty list here.
+        self.slept: list[float] = []
 
     def __call__(self) -> datetime:
         return self.now
 
     def sleep(self, seconds: float) -> None:
+        self.slept.append(seconds)
         self.now = self.now + timedelta(seconds=seconds)
 
 

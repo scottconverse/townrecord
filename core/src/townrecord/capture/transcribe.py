@@ -376,17 +376,19 @@ class TranscribeAudio:
         # Element 0 is the interpreter that runs `-m yt_dlp`: the private
         # runtime of spec 8.9, never whatever is on the user's PATH.
         argv[0] = str(self.ytdlp_interpreter)
+        # Spec 8.10: this command asks YouTube, so it waits on the process pace
+        # like a caption capture does, and the line announcing it comes after
+        # the wait, because a download that has not been allowed is not yet a
+        # download (spec 16.3). The ``--version`` ask above is a local program
+        # and is deliberately not paced: a runtime that waited would hold every
+        # YouTube job behind a text editor's startup.
+        pacing.pacer().wait(what=PACE_WHAT)
         logger.info(
             "Downloading the audio of video %s into %s (archive holds %s lines).",
             video.id,
             folder,
             written,
         )
-        # Spec 8.10: this command asks YouTube, so it waits on the process pace
-        # like a caption capture does. The ``--version`` ask above is a local
-        # program and is deliberately not paced: a runtime that waited would
-        # hold every YouTube job behind a text editor's startup.
-        pacing.pacer().wait(what=PACE_WHAT)
         ctx.heartbeat()
         result = self._run(argv, self.settings.download_timeout_s)
         if not result.ok:

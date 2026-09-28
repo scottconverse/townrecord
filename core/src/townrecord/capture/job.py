@@ -297,6 +297,14 @@ class CaptionCapture:
             resume=resume,
             js_runtime=self.javascript.argument,
         )
+        # Spec 8.10: the pace comes before the line that says a capture is
+        # starting. The live run of 2026-09-27 printed "Capturing video 10 ..."
+        # at 19:07:00, the same second a 900-second hold began, and that capture
+        # did not happen on that pass at all. A line that reads as a fact and is
+        # not one is spec 16.3's own failure. The first command of the spec 8.3
+        # ladder takes its slot here; the ladder's retries take theirs as they
+        # go, in `_attempt`.
+        pacing.pacer().wait(what=PACE_WHAT)
         logger.info(
             "Capturing video %s into %s (archive holds %s lines, resume=%s, js=%s).",
             video.id,
@@ -305,18 +313,22 @@ class CaptionCapture:
             resume,
             self.javascript.argument,
         )
-        return self._with_player_clients(ctx, video, argv)
+        return self._with_player_clients(ctx, video, argv, paced=True)
 
     def _with_player_clients(
-        self, ctx: JobContext, video: repo.Video, argv: Sequence[str]
+        self, ctx: JobContext, video: repo.Video, argv: Sequence[str], *, paced: bool = False
     ) -> Attempt:
         """Run the command, then one retry per player client after a bot check.
 
         Only a bot check goes round the ladder. A rate limit, any other failure
         and a run that worked all end it, because spec 8.3 asks for one retry
         per client and no more: the first client that answers is the answer.
+
+        ``paced`` says the caller has already taken the slot of the first
+        command, which is what ``_run`` does so the capture is announced only
+        once the pace allowed it.
         """
-        attempt = self._attempt(ctx, argv)
+        attempt = self._attempt(ctx, argv, paced=paced)
         if not self._needs_another_client(attempt.result):
             return attempt
         for client in command.PLAYER_CLIENTS:
@@ -330,7 +342,9 @@ class CaptionCapture:
                 return attempt
         return attempt
 
-    def _attempt(self, ctx: JobContext, argv: Sequence[str], client: str = "") -> Attempt:
+    def _attempt(
+        self, ctx: JobContext, argv: Sequence[str], client: str = "", *, paced: bool = False
+    ) -> Attempt:
         """Run one command and keep it together with the client it named.
 
         The command is a YouTube request, so it waits for the process pace
@@ -338,8 +352,12 @@ class CaptionCapture:
         the spec 8.3 ladder goes through, so a ladder of four commands is four
         waits rather than one: spacing only the first would still leave the
         three retries back to back, which is the burst that was refused.
+
+        ``paced`` says the caller already took that wait, which is how the first
+        command of the ladder is announced only after the pace allowed it.
         """
-        pacing.pacer().wait(what=PACE_WHAT)
+        if not paced:
+            pacing.pacer().wait(what=PACE_WHAT)
         ctx.heartbeat()
         result = command.run_capture(self.runner, argv, timeout_s=self.settings.process_timeout_s)
         return Attempt(result=result, player_client=client)

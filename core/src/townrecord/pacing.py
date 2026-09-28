@@ -52,6 +52,14 @@ get.
 Nothing here sleeps in a test: the clock and the sleeper are injected, and a
 test moves its own clock forward. :func:`default_sleep` is ``time.sleep`` and
 is the only thing in the module that waits on a real wall clock.
+
+Only a short wait is slept at all. Fifteen minutes is not a wait, it is a
+different answer, and a worker that sleeps it holds a lane for minutes over
+work it is not doing, which is what spec 16.1's lanes exist to prevent. A wait
+of more than one minimum gap therefore hands the job back to the queue with
+``run_after`` at the moment the hold lifts, so the worker is free at once, and a
+caller that is not running a job is refused plainly with :class:`PaceHeld`
+instead of being made to sit there (spec 16.3).
 """
 
 from __future__ import annotations
@@ -67,9 +75,10 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from .jobs.queue import utcnow
+from .jobs.queue import current_job, utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -199,6 +208,36 @@ def _write_json(path: Path, value: Any) -> None:
         raise
 
 
+class PaceHeld(RuntimeError):
+    """A request cannot go out yet and there is no job to hand back to the queue.
+
+    The pace is held for longer than a caller may wait: the 429 back-off, or a
+    queue of YouTube jobs ahead of this one. A job hands itself back to the
+    queue and frees its worker (spec 16.1). A caller that is not running a job,
+    which is a person at the command line, has nothing to hand back, so it is
+    told why and until when, in its own time (spec 16.3), rather than being made
+    to wait fifteen minutes with nothing on the screen.
+    """
+
+
+def local_time_text(moment: datetime, zone_name: str = "") -> str:
+    """Say a moment in the reader's own time, or in UTC when there is no zone.
+
+    The end of a hold is compared with a person's own clock, so a bare "12:15"
+    would be a time they cannot place (spec 16.3). A zone name this machine
+    cannot resolve falls back to UTC rather than guessing an offset, the way
+    :mod:`townrecord.schedule` reads the same name.
+    """
+    if zone_name:
+        try:
+            zone: ZoneInfo | None = ZoneInfo(zone_name)
+        except (ZoneInfoNotFoundError, ValueError):
+            zone = None
+        if zone is not None:
+            return f"{moment.astimezone(zone).strftime('%H:%M')} local time ({zone_name})"
+    return f"{moment.astimezone(UTC).strftime('%H:%M')} UTC"
+
+
 class Pacer:
     """One pace for every YouTube request the process makes (spec 8.10).
 
@@ -215,10 +254,14 @@ class Pacer:
         state_path: str | Path | None = None,
         clock: Clock = utcnow,
         sleep: Sleeper = default_sleep,
+        time_zone: str = "",
     ) -> None:
         self.settings = settings or PaceSettings()
         #: Where the next allowed time is written, or None to keep it in memory.
         self.state_path = None if state_path is None else Path(state_path)
+        #: The zone a person reads the end of a hold in (spec 16.3). Empty means
+        #: this machine's configuration names none, and the text says UTC.
+        self.time_zone = time_zone
         self._clock = clock
         self._sleep = sleep
         self._lock = threading.Lock()
@@ -234,6 +277,12 @@ class Pacer:
         happens outside the lock, and the time is read again when it is over:
         a 429 that another job hit while this one was waiting pushes the wait
         further out instead of being missed.
+
+        Only a wait of up to one minimum gap is slept here. That is the pace
+        doing its job and it costs the caller seconds. A longer one is not a
+        wait but a different answer, and sleeping it holds a worker for minutes
+        over work it is not doing (spec 16.1), so the job is handed back to the
+        queue instead.
         """
         waited = 0.0
         while True:
@@ -242,16 +291,53 @@ class Pacer:
                 if self._next_allowed is None or now >= self._next_allowed:
                     self._reserve(now, what)
                     return waited
-                delay = (self._next_allowed - now).total_seconds()
-                reason = self._reason
+                until = self._next_allowed
+                held = self._reason
+            delay = (until - now).total_seconds()
+            if delay > self.settings.minimum_gap_s:
+                self._hand_back(what=what, delay_s=delay, until=until, held=held)
             logger.info(
                 "Pacing YouTube: %.1f seconds before %s (the pace is held by %s).",
                 delay,
                 what,
-                reason or "the previous request",
+                held or "the previous request",
             )
             self._sleep(delay)
             waited += delay
+
+    def _hand_back(self, *, what: str, delay_s: float, until: datetime, held: str) -> NoReturn:
+        """Hand a job that cannot go out yet back to the queue, or refuse plainly.
+
+        The job is queued again with ``run_after`` at the moment the hold lifts,
+        which is what frees its worker at once (spec 16.1). A caller with no job
+        in hand, which is a person at the command line, has nothing to hand
+        back, so it is refused with the same sentence (spec 16.3). Never
+        returns.
+        """
+        reason = self._hold_reason(until=until, held=held)
+        logger.info(
+            "Pacing YouTube: %s waits %.1f seconds, so it goes back in the queue (%s)",
+            what,
+            delay_s,
+            reason,
+        )
+        job = current_job()
+        if job is None:
+            raise PaceHeld(reason)
+        job.defer(reason, run_after=until)
+
+    def _hold_reason(self, *, until: datetime, held: str) -> str:
+        """Say why a request cannot go out yet and when the hold ends (spec 16.3).
+
+        A person reads this in a job list, so it names the request that put the
+        hold there and the local time the hold ends, which is the one time they
+        can compare with their own clock.
+        """
+        when = local_time_text(until, self.time_zone)
+        held = " ".join(str(held).split())
+        if not held:
+            return f"YouTube is held until {when}."
+        return f"YouTube is held until {when}: {held}."
 
     def rate_limited(
         self, *, what: str, marker: str = "", delay_s: float | None = None
@@ -403,11 +489,13 @@ __all__ = [
     "RATE_LIMIT_MARKERS",
     "RATE_LIMIT_STATUS",
     "Clock",
+    "PaceHeld",
     "PaceSettings",
     "Pacer",
     "Sleeper",
     "default_sleep",
     "forget_pacer",
+    "local_time_text",
     "pacer",
     "rate_limit_marker",
     "stamp_text",

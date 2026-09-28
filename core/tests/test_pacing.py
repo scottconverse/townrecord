@@ -127,8 +127,19 @@ def test_a_rate_limit_holds_every_request_that_follows() -> None:
     assert "rate limited" in pace.held_by()
     assert "http error 429" in pace.held_by()
 
-    assert pace.wait(what="a status ask") == DEFAULT_RATE_LIMIT_BACKOFF_S
-    assert clock.slept == [DEFAULT_RATE_LIMIT_BACKOFF_S]
+    # Fifteen minutes is not a wait, it is a different answer. A caller with no
+    # job in hand has nothing to hand back to the queue, so it is told plainly
+    # instead of being made to sit there (spec 16.1, 16.3). The pacer's own
+    # name for that refusal is compared as text rather than imported, because
+    # the assertion above it has to fail as an AssertionError on the tree
+    # before this change and not as an ImportError (PROJECT-BRIEF rule 11b).
+    with pytest.raises(RuntimeError) as caught:
+        pace.wait(what="a status ask")
+
+    assert type(caught.value).__name__ == "PaceHeld"
+    assert "a caption capture was rate limited (http error 429)" in str(caught.value)
+    assert "until 12:15 UTC" in str(caught.value)
+    assert clock.slept == []
 
 
 def test_a_hold_is_never_shortened() -> None:
@@ -166,8 +177,14 @@ def test_the_hold_survives_a_restart(tmp_path: Path) -> None:
     assert written["version"] == PACE_VERSION
     assert written["next_allowed_at"] == stamp_text(START + timedelta(seconds=900))
 
-    assert restarted.wait(what="a status ask") == DEFAULT_RATE_LIMIT_BACKOFF_S
-    assert clock.slept == [DEFAULT_RATE_LIMIT_BACKOFF_S]
+    # The restarted process does not sleep the hold it inherited either, and it
+    # says how long is left the same way.
+    with pytest.raises(RuntimeError) as caught:
+        restarted.wait(what="a status ask")
+
+    assert type(caught.value).__name__ == "PaceHeld"
+    assert "until 12:15 UTC" in str(caught.value)
+    assert clock.slept == []
 
 
 def test_a_pace_file_that_cannot_be_read_is_ignored(tmp_path: Path) -> None:

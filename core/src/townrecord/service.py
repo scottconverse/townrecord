@@ -210,10 +210,15 @@ def _install_pacer(settings: Settings) -> pacing.Pacer:
     (spec 8.6), so a restart reads the hold a 429 left behind instead of
     walking straight back into it. The two numbers come from the environment
     (:meth:`townrecord.pacing.PaceSettings.from_env`).
+
+    The time zone is the user's own, because the sentence a deferred job
+    carries names the moment a hold ends, and a person reads the clock on the
+    wall rather than UTC (spec 16.3).
     """
     pace = pacing.Pacer(
         settings=pacing.PaceSettings.from_env(),
         state_path=settings.runtime_root / pacing.PACE_FILE_NAME,
+        time_zone=settings.time_zone,
     )
     pacing.use_pacer(pace)
     logger.info(

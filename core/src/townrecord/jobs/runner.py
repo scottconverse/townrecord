@@ -227,7 +227,12 @@ class Runner:
             return
         self._track(taken.job_id, taken.token, taken.lane)
         try:
-            handler(context)
+            # The job is in hand for the whole of the handler, so a wait it
+            # finds on its way through (the process pace of spec 8.10) can hand
+            # the job back to the queue instead of sleeping, and the worker is
+            # free at once (spec 16.1).
+            with queue.job_in_hand(context):
+                handler(context)
         except JobPaused as exc:
             # pause() already wrote the state and the reason.
             logger.info("Job %s paused: %s", taken.job_id, exc)
