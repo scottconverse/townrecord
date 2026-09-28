@@ -43,6 +43,8 @@ from typing import Any
 from .. import artifacts, proc, repo
 from ..captions import CaptionParseError
 from ..jobs import JobContext
+from ..runtime.javascript import JavaScriptRuntime
+from ..runtime.javascript import resolve as resolve_javascript
 from ..stt.audio import AudioRequest, AudioTrigger
 from ..stt.provenance import LOCAL_SPEECH_TO_TEXT, Provenance
 from ..stt.textflowkit import (
@@ -207,6 +209,11 @@ class TranscribeAudio:
     #: The TextFlowKit program to run: the console script of the runtime that
     #: tool owns (spec 8.9). None means the name, found on PATH.
     textflowkit_program: str | None = None
+    #: The JavaScript runtime the audio download is told to use (spec 8.3,
+    #: 8.9). None means it is resolved from the yt-dlp interpreter above: the
+    #: deno the private runtime installed beside yt-dlp when it is there, and
+    #: the bare fallback name when it is not.
+    javascript: JavaScriptRuntime | None = None
 
     def __post_init__(self) -> None:
         self.storage_root = Path(self.storage_root)
@@ -216,6 +223,8 @@ class TranscribeAudio:
             self.ytdlp_interpreter = sys.executable
         if self.textflowkit_program is None:
             self.textflowkit_program = TEXTFLOWKIT_PROGRAM
+        if self.javascript is None:
+            self.javascript = resolve_javascript(self.ytdlp_interpreter)
 
     def __call__(self, ctx: JobContext) -> None:
         video = self._video(ctx)
@@ -272,6 +281,7 @@ class TranscribeAudio:
                 "reason": reason,
                 "audio_sha256": digest,
                 "audio_path": audio_path.relative_to(self.storage_root).as_posix(),
+                "js_runtime": self.javascript.argument,
                 "model": provenance.model,
                 "tool_version": provenance.tool_version,
                 "device": provenance.device,
@@ -358,7 +368,7 @@ class TranscribeAudio:
             watch_url=command.watch_url(video.url, video.platform_video_id),
             trigger=trigger_from(ctx.payload),
         )
-        argv = request.argv(folder, archive_file)
+        argv = request.argv(folder, archive_file, js_runtime=self.javascript.argument)
         # Element 0 is the interpreter that runs `-m yt_dlp`: the private
         # runtime of spec 8.9, never whatever is on the user's PATH.
         argv[0] = str(self.ytdlp_interpreter)

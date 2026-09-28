@@ -14,14 +14,24 @@ from pathlib import Path
 
 import pytest
 
+from townrecord.runtime.javascript import FALLBACK_RUNTIME
 from townrecord.runtime.manager import (
     RuntimeInstallFailed,
     RuntimeManager,
     RuntimeToolMissing,
 )
 from townrecord.runtime.settings import TOOL_NAME, RuntimeSettings
+from townrecord.runtime.tools import JAVASCRIPT_COMPANION, program_in
 
-from .fakes import VENV_SPELLING, FakeUV, manager_for, venv_python
+from .fakes import (
+    VENV_SPELLING,
+    FakeUV,
+    installed,
+    make_venv,
+    manager_for,
+    venv_python,
+    write_installed,
+)
 
 
 def test_uv_is_run_as_an_argument_list_with_the_allow_listed_environment(app_root: Path) -> None:
@@ -31,7 +41,7 @@ def test_uv_is_run_as_an_argument_list_with_the_allow_listed_environment(app_roo
 
     venv = app_root / "runtimes" / TOOL_NAME / "2026.8.19"
     assert uv.calls[0]["argv"] == ["uv", "venv", str(venv)]
-    assert uv.pins_requested == ["yt-dlp==2026.8.19"]
+    assert uv.pins_requested == ["yt-dlp==2026.8.19", "deno==2.9.7"]
 
     env = uv.calls[0]["env"]
     # This is the whole bug: the allow-listed child environment has no APPDATA,
@@ -108,7 +118,7 @@ def test_the_system_python_is_never_the_one_installed_into(app_root: Path) -> No
     uv = FakeUV()
     result = manager_for(app_root, uv).install("2026.8.19")
     assert Path(result.python) != Path(sys.executable)
-    assert uv.pins_requested == ["yt-dlp==2026.8.19"]
+    assert uv.pins_requested == ["yt-dlp==2026.8.19", "deno==2.9.7"]
     assert all(sys.executable not in call["argv"] for call in uv.calls)
 
 
@@ -143,4 +153,47 @@ def test_a_venv_for_the_same_version_is_rebuilt_rather_than_reused(app_root: Pat
     stale.write_text("left over", encoding="utf-8")
     manager.install("2026.8.19")
     assert not stale.exists()
-    assert len(uv.pins_requested) == 2
+    assert len(uv.pins_requested) == 4
+
+
+def test_the_javascript_runtime_is_installed_beside_yt_dlp(app_root: Path) -> None:
+    """Spec 8.3, 8.9: the venv holds its own runtime, so no system Node is needed."""
+    uv = FakeUV()
+    result = manager_for(app_root, uv).install("2026.8.19")
+
+    venv = app_root / "runtimes" / TOOL_NAME / "2026.8.19"
+    deno = program_in(venv, JAVASCRIPT_COMPANION.program)
+    assert deno.is_file()
+    # Installed into the same venv as the tool, by the interpreter of that venv.
+    assert ["uv", "pip", "install", "--python", result.python, "deno==2.9.7"] in [
+        call["argv"] for call in uv.calls
+    ]
+    # And the value the capture passes to yt-dlp names that program by full path,
+    # because a bare name would send yt-dlp looking on the user's PATH.
+    assert result.javascript == f"deno:{deno}"
+
+
+def test_a_runtime_without_the_javascript_program_is_a_failed_install(app_root: Path) -> None:
+    """uv saying it worked is not the fact: the program has to be in the venv."""
+    uv = FakeUV(companion=False)
+    with pytest.raises(RuntimeInstallFailed) as caught:
+        manager_for(app_root, uv).install("2026.8.19")
+    assert "holds no deno program" in str(caught.value)
+    assert "Node is not needed" in str(caught.value)
+
+
+def test_the_active_runtime_answers_with_its_javascript_runtime(app_root: Path) -> None:
+    """The job asks the manager, and the manager answers from the venv it installed."""
+    make_venv(app_root, "2026.8.19", program=JAVASCRIPT_COMPANION.program)
+    write_installed(app_root, installed("2026.8.19", "2026.08.19"), None)
+    manager = manager_for(app_root, FakeUV())
+
+    venv = app_root / "runtimes" / TOOL_NAME / "2026.8.19"
+    assert manager.javascript() == f"deno:{program_in(venv, 'deno')}"
+
+
+def test_a_runtime_without_the_program_answers_with_the_bare_fallback(app_root: Path) -> None:
+    """An older runtime the user still has is not a reason to invent a path."""
+    make_venv(app_root, "2026.7.30")
+    write_installed(app_root, installed("2026.7.30", "2026.7.30"), None)
+    assert manager_for(app_root, FakeUV()).javascript() == FALLBACK_RUNTIME
