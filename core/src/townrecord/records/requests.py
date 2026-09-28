@@ -36,10 +36,22 @@ from ..jobs import ORIGIN_MANUAL, PAUSED, QUEUED, RUNNING, enqueue, requeue_paus
 from ..repo import (
     Record,
     get_meeting,
+    latest_transcript,
+    meeting_date,
     meetings_of_body,
     minutes_document,
+    officials_of,
+    primary_video,
 )
-from .portal import ALIGN_MEETING, PACKET_KIND, READ_MINUTES, AlignRequest, MinutesRequest
+from .portal import (
+    ALIGN_MEETING,
+    PACKET_KIND,
+    READ_MINUTES,
+    READ_SPEAKERS,
+    AlignRequest,
+    MinutesRequest,
+    SpeakersRequest,
+)
 
 #: Why an align job of a meeting that was listed again came back to the queue.
 SYNCED_AGAIN = "Meeting {meeting_id} was listed again by its portal, so the alignment runs again."
@@ -65,6 +77,17 @@ MINUTES_ASKED_FOR = (
 PACKET_READ = (
     "The pages of packet {record_id} of meeting {meeting_id} were read, and they may hold the "
     "minutes of an earlier session, so the reading runs now."
+)
+
+#: The reason a caller that names none of its own leaves on a speaker reading.
+SPEAKERS_ASKED_FOR = (
+    "The reading of who is speaking in meeting {meeting_id} was asked for again, so it runs now."
+)
+
+#: Why a speaker reading came back to the queue when a transcript was stored.
+SPEAKERS_TRANSCRIPT_STORED = (
+    "A transcript of video {video_id} of meeting {meeting_id} was stored, and meeting "
+    "{meeting_id} has seats, so its speakers are read now."
 )
 
 #: How many of the regular sessions before a packet's own are asked about. Spec
@@ -127,6 +150,39 @@ def request_minutes(
         MinutesRequest(meeting_id=meeting_id).as_payload(),
         reason or MINUTES_ASKED_FOR.format(meeting_id=meeting_id),
         origin,
+    )
+
+
+def request_speakers(
+    conn: sqlite3.Connection, meeting_id: int, *, reason: str | None = None
+) -> int | None:
+    """Put one meeting's speaker reading on the queue, or queue it first.
+
+    Nothing is asked for a meeting that cannot be read, and the two things that
+    stop it are the two the reading itself pauses on: a meeting whose video has
+    no transcript has no lines to label, and a meeting whose body has no seat on
+    the date of the meeting has nobody a line could be labelled as (spec 10.6).
+    A meeting that has both is the case this exists for.
+
+    A meeting with no seat yet is the common case rather than an error: the
+    seats come from the minutes, so the reading of a meeting's minutes asks for
+    its speakers, and a meeting whose minutes were not found has no seats and
+    nothing to ask for.
+    """
+    meeting = get_meeting(conn, meeting_id)
+    if meeting is None:
+        return None
+    video = primary_video(conn, meeting_id)
+    if video is None or latest_transcript(conn, video.id) is None:
+        return None
+    if not officials_of(conn, body_id=meeting.body_id, on=meeting_date(meeting)):
+        return None
+    return _request(
+        conn,
+        READ_SPEAKERS,
+        meeting_id,
+        SpeakersRequest(meeting_id=meeting_id).as_payload(),
+        reason or SPEAKERS_ASKED_FOR.format(meeting_id=meeting_id),
     )
 
 
@@ -235,9 +291,12 @@ __all__ = [
     "MINUTES_ASKED_FOR",
     "MINUTES_LOOKBACK",
     "PACKET_READ",
+    "SPEAKERS_ASKED_FOR",
+    "SPEAKERS_TRANSCRIPT_STORED",
     "SYNCED_AGAIN",
     "TRANSCRIPT_STORED",
     "request_alignment",
     "request_minutes",
     "request_minutes_of_packet",
+    "request_speakers",
 ]

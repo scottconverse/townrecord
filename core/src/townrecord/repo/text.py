@@ -87,6 +87,16 @@ def get_segment(conn: sqlite3.Connection, segment_id: int) -> Segment | None:
     return None if row is None else Segment.from_row(row)
 
 
+def set_segment_speaker(conn: sqlite3.Connection, segment_id: int, name: str | None) -> None:
+    """Write who is speaking on one line, or NULL when nobody was identified.
+
+    The raw caption text is never touched: spec 10.1 and 10.6 read it as
+    captioned, so a name that the captioner spelled wrongly stays as written and
+    the reading of who spoke goes here instead.
+    """
+    conn.execute("UPDATE segments SET speaker_label = ? WHERE id = ?", (name, segment_id))
+
+
 def insert_agenda_item(
     conn: sqlite3.Connection,
     *,

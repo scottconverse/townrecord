@@ -66,9 +66,12 @@ from ..repo import (
     record_pages,
     records_of_meeting,
     segments_of,
+    upsert_person,
+    upsert_seat,
 )
 from . import portal
 from .pages import own_footer, printed_footers
+from .requests import request_speakers
 
 #: The heading a draft minutes run starts under (spec 9.4).
 MINUTES_HEADING = "MINUTES"
@@ -495,6 +498,7 @@ def read_minutes(ctx: JobContext) -> None:
     clear_minutes_reading(ctx.conn, meeting.id, source_kinds=("minutes",))
     motions = _store_motions(ctx, meeting.id, packet, run)
     votes = _store_votes(ctx, motions, items_of(ctx.conn, meeting.id))
+    seats = _store_seats(ctx, meeting, run, motions)
     ctx.save_checkpoint(
         {
             "meeting_id": meeting.id,
@@ -505,8 +509,134 @@ def read_minutes(ctx: JobContext) -> None:
             "page_count": run.page_count,
             "motions": len(motions),
             "votes": votes,
+            "seats": seats,
         }
     )
+    # Spec 10.6: a meeting whose transcript is stored and whose seats are read
+    # is a meeting whose speakers can be read. Asking is safe to repeat, and a
+    # meeting whose video has no transcript yet is not asked for: the ask is
+    # what the capture lane repeats once a transcript of that video is stored.
+    request_speakers(ctx.conn, meeting.id)
+
+
+#: The office a seat is read as when the minutes print no title in front of the
+#: name. A council member is the ordinary case, and the minutes name the mayor
+#: and the mayor pro tem where they are one.
+COUNCIL_MEMBER = "Council Member"
+
+#: How many words of a name a printed title is read with. Three covers "Susie
+#: Hidalgo-Fahring" and stops a title from swallowing the rest of a sentence.
+_TITLE_NAME_WORDS = 3
+
+#: The offices the minutes print in front of a name, most specific first, with
+#: the spelling this project gives each one and the rank that decides which
+#: title wins when the pages print a name under two of them. A name printed as
+#: "Mayor Pro Tem" is not the mayor, so the longer title outranks the shorter
+#: one even though the pages may print both.
+_PRINTED_TITLES = (
+    ("mayor pro tem", "Mayor Pro Tem", 2),
+    ("mayor", "Mayor", 3),
+)
+
+#: A title in front of a name as the minutes print it. The alternation puts the
+#: longest title first for the same reason the list above does: "Mayor Pro Tem
+#: McCoy" begins with the words of "Mayor McCoy" and is not that title.
+_TITLE_BEFORE = re.compile(
+    r"\b(?P<title>mayor\s+pro\s+tem|mayor|council\s+member|councilmember|councilman|councilwoman)"
+    rf"\s+(?P<name>[A-Za-z][\w'’.\-]*(?:\s+[A-Za-z][\w'’.\-]*){{0,{_TITLE_NAME_WORDS - 1}}})",
+    re.IGNORECASE,
+)
+
+
+def _store_seats(
+    ctx: JobContext, meeting: Any, run: MinutesRun, motions: Sequence[StoredMotion]
+) -> int:
+    """Write the people and the seats a meeting's minutes name (spec 10.6).
+
+    The names come from the vote lists, and from nowhere else: a person is
+    written because the minutes of a meeting recorded their vote on it, so a
+    caption file that misspells a name can never create a person. Rule D holds
+    here as everywhere: the names are read out of the records, and nothing in
+    this file knows the name of any city's council.
+
+    The title is the most specific one the pages print in front of the name,
+    read from the same pages the motions came from. "Council Member" is the
+    default because it is what the lists are headed by, and a name the minutes
+    print a title in front of gets that title instead.
+
+    Returns how many names were written.
+    """
+    lines = [line for page in run.pages for line in page_lines(page.text)]
+    names: list[str] = []
+    for stored in motions:
+        for column in (stored.motion.approved, stored.motion.dissented, stored.motion.abstained):
+            names.extend(column)
+    ordered = list(dict.fromkeys(name for name in names if name))
+    if not ordered:
+        return 0
+
+    titles = _printed_titles(lines, ordered)
+    on = _meeting_date(meeting.starts_at).isoformat()
+    for name in ordered:
+        person_id = upsert_person(ctx.conn, name=name)
+        upsert_seat(
+            ctx.conn,
+            person_id=person_id,
+            body_id=meeting.body_id,
+            title=titles.get(name, COUNCIL_MEMBER),
+            on=on,
+        )
+    return len(ordered)
+
+
+def _printed_titles(lines: Sequence[str], names: Sequence[str]) -> dict[str, str]:
+    """The most specific title the minutes print in front of each name.
+
+    Only a title in front of the name itself counts. A heading that names
+    nobody is a title for nobody, and the roll call's "Council Members" heads a
+    list rather than naming a person, so the printed "Mayor Susie
+    Hidalgo-Fahring" and "Mayor Pro Tem McCoy" are the two titles a council
+    member can be lifted out of the default by.
+
+    A name is matched by its first word after the title or by the words of the
+    name itself, because the pages print "Mayor Susie Hidalgo-Fahring" and
+    "Mayor Pro Tem McCoy": the first names one person in full and the second
+    names another by surname.
+    """
+    printed_titles = {
+        spelled: (name_of_title, rank) for spelled, name_of_title, rank in _PRINTED_TITLES
+    }
+    best: dict[str, tuple[int, str]] = {}
+    for line in lines:
+        for match in _TITLE_BEFORE.finditer(line):
+            printed = " ".join(match.group("title").casefold().split())
+            words = match.group("name").split()
+            if not words or printed not in printed_titles:
+                continue
+            title, rank = printed_titles[printed]
+            for name in names:
+                if not _is_printed_name(name, words):
+                    continue
+                if name not in best or best[name][0] < rank:
+                    best[name] = (rank, title)
+    return {name: title for name, (_, title) in best.items()}
+
+
+def _is_printed_name(name: str, words: Sequence[str]) -> bool:
+    """Whether a name is the one a title was printed in front of.
+
+    The surname is the test, because that is what the pages repeat: a line that
+    prints "Council Member Kalkhofer noted" names the person the vote list
+    prints in full. The whole name is a test too, for a title in front of a
+    name whose first word is a first name, as "Mayor Susie Hidalgo-Fahring" is.
+    """
+    written = [word.strip(".,;:").casefold() for word in words]
+    known = [word.casefold() for word in name.split()]
+    if not written or not known:
+        return False
+    if written[0] == known[-1]:
+        return True
+    return " ".join(written[: len(known)]) == " ".join(known)
 
 
 def _store_motions(
