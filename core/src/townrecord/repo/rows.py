@@ -474,6 +474,85 @@ class SpeakerLabel(Row):
     created_at: str
 
 
+@dataclass(frozen=True)
+class CaptionCheck(Row):
+    """One recheck of one video's captions (spec 8.7).
+
+    ``changed`` with ``what_changed`` is what the check found: a change in one
+    of the three signals in the order the spec tests them, or nothing. The
+    ``observed_*`` columns are what the source said at that moment, so the next
+    check has a baseline even when the caption artifact is gone.
+    """
+
+    id: int
+    video_id: int
+    transcript_id: int
+    checked_at: str
+    changed: bool
+    what_changed: str | None
+    observed_sha256: str | None
+    observed_revision_at: str | None
+    observed_duration_s: float | None
+    note: str
+    created_at: str
+
+
+@dataclass(frozen=True)
+class ProvisionalCapture(Row):
+    """One video whose captions may still change, and its version in hand.
+
+    Not a table: it is the join of a video and the transcript the system is
+    reading (:func:`townrecord.repo.text.latest_transcript`) plus the moment of
+    its newest check. A caller shows its state word with
+    :func:`townrecord.capture.settle.state_of` and asks the queue for the next
+    check time, because neither is a column of this row.
+    """
+
+    video_id: int
+    platform_video_id: str
+    title: str | None
+    meeting_id: int | None
+    transcript_id: int
+    is_provisional: bool
+    settled_under_churn: bool
+    checked_at: str | None
+
+
+@dataclass(frozen=True)
+class ReviewItem(Row):
+    """One thing the user is asked to look at (spec 8.7).
+
+    ``subject`` is the identity of what the item is about, unique within its
+    kind, which is what makes "a revision raises one review item" a constraint
+    rather than a habit. ``sentence`` is stored whole because it is read whole.
+    """
+
+    id: int
+    kind: str
+    subject: str
+    meeting_id: int | None
+    video_id: int | None
+    sentence: str
+    created_at: str
+
+
+@dataclass(frozen=True)
+class RerunMark(Row):
+    """Work a revision put back in doubt (spec 8.7).
+
+    ``kind`` and ``row_id`` name a row of ``meeting_alignments``, ``motions`` or
+    ``speaker_labels``, and nothing about it is changed: the mark says it was
+    made from a transcript version that has been replaced.
+    """
+
+    id: int
+    kind: str
+    row_id: int
+    meeting_id: int
+    reason: str
+    created_at: str
+
+
 def _json_object(text: Any) -> dict[str, Any]:
     """Read a JSON object from a text column. Anything else is an empty one."""
     if not text:

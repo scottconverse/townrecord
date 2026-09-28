@@ -52,7 +52,7 @@ from typing import Any
 from .. import artifacts, pacing, proc, repo
 from ..captions import CaptionParseError
 from ..captions.parse import Segment, parse_srv3, parse_vtt
-from ..jobs import JobContext
+from ..jobs import ORIGIN_SCHEDULED, JobContext
 from ..runtime.javascript import JavaScriptRuntime
 from ..runtime.javascript import resolve as resolve_javascript
 from ..stt.audio import AudioTrigger
@@ -60,6 +60,7 @@ from ..video.youtube.readiness import READINESS_UNKNOWN, READINESS_WAITING_REASO
 from ..video.youtube.status import StatusAsker
 from . import archive, command, fallback, gate, limits, sidecar, work
 from .command import CaptureFailed
+from .requests import first_recheck_reason, request_recheck
 from .settings import CaptureSettings
 from .store import insert_transcript_with_segments
 
@@ -483,6 +484,14 @@ class CaptionCapture:
                 # another machine can be compared against what this one used.
                 "js_runtime": self.javascript.argument,
                 "player_client": attempt.player_client or command.DEFAULT_CLIENT,
+                # Spec 8.7: the two signals of the change test that are not the
+                # hash, as the source stated them. A recheck compares against the
+                # last check's own record of them, and this is the record it uses
+                # when the first recheck is the one doing the comparing. Without
+                # them the first check of every video would see the duration
+                # "change" from unstated to stated.
+                "revision_at": sidecar.revision_at(info),
+                "duration_s": sidecar.duration_s(info),
             },
         )
         info_artifact = artifacts.store(
@@ -498,7 +507,7 @@ class CaptionCapture:
             # The same bytes are already the transcript of this video, so this
             # run adds nothing: same artifact, same transcript, same lines.
             logger.info("Video %s already has this transcript (%s).", video.id, known.id)
-            return CAPTIONS_STATE
+            return self._after_capture(ctx, video, is_provisional=known.is_provisional)
         transcript_id = insert_transcript_with_segments(
             ctx.conn,
             video_id=video.id,
@@ -514,6 +523,28 @@ class CaptionCapture:
             origin,
             info_artifact.id,
         )
+        return self._after_capture(ctx, video, is_provisional=True)
+
+    def _after_capture(self, ctx: JobContext, video: repo.Video, *, is_provisional: bool) -> str:
+        """Ask for the first recheck of a capture that is still provisional.
+
+        Spec 8.7's window starts when the meeting's captions are stored, so the
+        storing is what puts the first recheck on the queue: nothing else in the
+        system knows a video has become worth watching. The ask is idempotent and
+        at most one recheck of a video waits, so a second capture of the same
+        video does not queue a second one.
+
+        A settled transcript is not asked for again: it stopped changing, and a
+        capture that stored the same bytes it already had has nothing to watch.
+        """
+        if is_provisional:
+            job_id = request_recheck(
+                ctx.conn,
+                video.id,
+                reason=first_recheck_reason(video.id),
+                origin=ORIGIN_SCHEDULED,
+            )
+            logger.info("Video %s: the captions are rechecked by job %s.", video.id, job_id)
         return CAPTIONS_STATE
 
     def _hand_off(

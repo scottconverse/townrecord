@@ -39,6 +39,8 @@ from pathlib import Path
 from typing import Any
 
 from . import network, serving
+from .capture.recheck import next_recheck_at
+from .capture.settle import state_of
 from .config import Settings
 from .db import connect as default_connect
 from .jobs import STATES, Clock, JobsSettings, utcnow
@@ -53,9 +55,10 @@ from .repo import (
     latest_runs,
     oldest_queued_at,
     paused_runs,
+    provisional_captures,
     running_before,
 )
-from .repo.rows import ScheduledRun, Source
+from .repo.rows import ProvisionalCapture, ScheduledRun, Source
 from .runtime import RuntimeManager, RuntimeNotInstalled, RuntimeSettings
 from .runtime.pointer import PointerUnreadable
 from .runtime.settings import TEXTFLOWKIT_TOOL, TOOL_NAME
@@ -95,7 +98,15 @@ class SourceHealth:
 
 @dataclass(frozen=True)
 class Capture:
-    """One body and its newest capture."""
+    """One body and its newest capture.
+
+    ``last_state`` is how the capture itself went -- pending, finished, failed
+    or skipped -- and ``last_caption_state`` is what spec 8.7 says about the
+    captions of that same video: provisional, settled, or settled under churn.
+    They are two different facts about one video and both are shown, because a
+    finished capture whose captions are still provisional is the ordinary case
+    for the first day and reads as a contradiction if only one of them is told.
+    """
 
     body_id: int
     body: str
@@ -105,6 +116,25 @@ class Capture:
     last_video: str | None
     last_state: str | None
     last_at: str | None
+    last_caption_state: str | None = None
+
+
+@dataclass(frozen=True)
+class Watching:
+    """One capture that may still change, and when it is looked at again.
+
+    Spec 8.7 gives a user two facts about a provisional capture: which state it
+    is in -- provisional, settled, or settled under churn -- and when the next
+    recheck is due. Both are here, and the next time is None when no recheck is
+    waiting, which is a fact worth showing rather than rounding off.
+    """
+
+    video_id: int
+    platform_video_id: str
+    title: str | None
+    state: str
+    checked_at: str | None
+    next_recheck_at: str | None
 
 
 @dataclass(frozen=True)
@@ -141,6 +171,7 @@ class Reading:
     oldest_queued_at: str | None = None
     sources: tuple[SourceHealth, ...] = ()
     captures: tuple[Capture, ...] = ()
+    watching: tuple[Watching, ...] = ()
     runs: tuple[Run, ...] = ()
     paused: tuple[Run, ...] = ()
 
@@ -168,6 +199,7 @@ class Status:
     oldest_queued_at: str | None
     sources: tuple[SourceHealth, ...]
     captures: tuple[Capture, ...]
+    watching: tuple[Watching, ...]
     tools: tuple[Tool, ...]
     runs: tuple[Run, ...]
     paused: tuple[Run, ...]
@@ -259,6 +291,7 @@ def collect(
         oldest_queued_at=reading.oldest_queued_at,
         sources=reading.sources,
         captures=reading.captures,
+        watching=reading.watching,
         tools=_tools(settings, runtime),
         runs=reading.runs,
         paused=reading.paused,
@@ -306,6 +339,7 @@ def _read(
             oldest_queued_at=oldest_queued_at(conn),
             sources=tuple(_source(row) for row in all_sources(conn)),
             captures=tuple(_capture(row) for row in captures_by_body(conn)),
+            watching=tuple(_watching(conn, row) for row in provisional_captures(conn, limit=limit)),
             runs=tuple(_run(row) for row in latest_runs(conn, limit)),
             paused=tuple(_run(row) for row in paused_runs(conn, limit)),
         )
@@ -349,6 +383,13 @@ def _source(row: Source) -> SourceHealth:
 
 
 def _capture(row: BodyCapture) -> Capture:
+    """One body's row, with the caption state word spelled out (spec 8.7)."""
+    captions = None
+    if row.last_is_provisional is not None:
+        captions = state_of(
+            is_provisional=row.last_is_provisional,
+            settled_under_churn=bool(row.last_settled_under_churn),
+        )
     return Capture(
         body_id=row.body_id,
         body=row.body,
@@ -358,6 +399,27 @@ def _capture(row: BodyCapture) -> Capture:
         last_video=row.last_video,
         last_state=row.last_state,
         last_at=row.last_at,
+        last_caption_state=captions,
+    )
+
+
+def _watching(conn: Any, row: ProvisionalCapture) -> Watching:
+    """Read one provisional capture's state word and its next recheck.
+
+    The state word comes from the rules of spec 8.7
+    (:func:`townrecord.capture.settle.state_of`) and the time from the queue,
+    because the queue is what holds it (spec 16.1). A provisional row that no
+    recheck is waiting for reports None rather than a made-up moment.
+    """
+    return Watching(
+        video_id=row.video_id,
+        platform_video_id=row.platform_video_id,
+        title=row.title,
+        state=state_of(
+            is_provisional=row.is_provisional, settled_under_churn=row.settled_under_churn
+        ),
+        checked_at=row.checked_at,
+        next_recheck_at=next_recheck_at(conn, row.video_id),
     )
 
 
@@ -430,6 +492,8 @@ def render(status: Status) -> str:
     lines.extend(_source_lines(status))
     lines.append("")
     lines.extend(_capture_lines(status))
+    lines.append("")
+    lines.extend(_watching_lines(status))
     lines.append("")
     lines.extend(_tool_lines(status))
     lines.append("")
@@ -527,11 +591,35 @@ def _capture_lines(status: Status) -> list[str]:
         if capture.last_video is None:
             lines.append(f"  {capture.body}: no videos yet")
             continue
+        captions = f", captions {capture.last_caption_state}" if capture.last_caption_state else ""
         lines.append(
             f"  {capture.body}: {capture.videos} video(s), {capture.pending} pending, "
             f"{capture.failed} without captions; newest {capture.last_video} "
-            f"({capture.last_state}) at {capture.last_at}"
+            f"({capture.last_state}{captions}) at {capture.last_at}"
         )
+    return lines
+
+
+def _watching_lines(status: Status) -> list[str]:
+    """Show the captures that may still change, and when they are looked at again.
+
+    A video the source has already revised is worth a line even though nothing is
+    wrong with it: the state word is the whole answer to "is this transcript
+    final", and a user asking that question is asking it about one video, not
+    about a count.
+    """
+    lines = ["Captions still being watched (spec 8.7)"]
+    if not status.watching:
+        lines.append("  no capture is provisional")
+        return lines
+    for item in status.watching:
+        seen = f", last checked {item.checked_at}" if item.checked_at else ""
+        due = (
+            f", next recheck {item.next_recheck_at}"
+            if item.next_recheck_at
+            else ", no recheck is waiting"
+        )
+        lines.append(f"  {item.platform_video_id}: {item.state}{seen}{due}")
     return lines
 
 
@@ -582,6 +670,7 @@ __all__ = [
     "SourceHealth",
     "Status",
     "Tool",
+    "Watching",
     "collect",
     "render",
 ]

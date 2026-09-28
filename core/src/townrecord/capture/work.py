@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -45,6 +46,21 @@ TRANSCRIPT_DIR_NAME = "textflowkit"
 #: command asks for opus (spec 8.5); the rest are here so a run that converted
 #: to something else is still found rather than reported as no audio at all.
 AUDIO_EXTENSIONS: tuple[str, ...] = ("opus", "ogg", "m4a", "webm", "mp3", "wav", "aac", "mka")
+
+#: The folder one recheck of a video downloads into (spec 8.7). It is a folder
+#: of its own under the video's work folder, and not the work folder itself, for
+#: two reasons. The capture's folder is what ``--continue`` resumes into, and a
+#: recheck's leftovers there would change what a resumed capture does. And the
+#: recheck has to read the source afresh, which the capture's own download
+#: archive prevents: the archive records that the video was captured, and yt-dlp
+#: skips a video the archive lists. So the recheck keeps its own folder, wipes
+#: it before each fetch, and passes an archive inside it that is always empty of
+#: this video.
+RECHECK_DIR_NAME = "recheck"
+
+#: The download archive a recheck passes. It lives inside the recheck folder,
+#: so wiping that folder empties it and the next fetch is never skipped.
+RECHECK_ARCHIVE_NAME = "recheck-archive.txt"
 
 
 class WorkFolderError(ValueError):
@@ -109,6 +125,25 @@ def audio_dir(storage_root: str | Path, platform_video_id: str) -> Path:
 def transcript_dir(storage_root: str | Path, platform_video_id: str) -> Path:
     """Return the folder a transcription of a video writes its JSON into."""
     return work_dir(storage_root, platform_video_id) / TRANSCRIPT_DIR_NAME
+
+
+def recheck_dir(storage_root: str | Path, platform_video_id: str) -> Path:
+    """Return the folder one recheck of a video downloads into (spec 8.7)."""
+    return work_dir(storage_root, platform_video_id) / RECHECK_DIR_NAME
+
+
+def fresh_recheck_dir(storage_root: str | Path, platform_video_id: str) -> Path:
+    """Empty the recheck folder of a video and return it, created.
+
+    Emptying is the point rather than a tidy-up. Each recheck has to read the
+    source as it is now, and a file left by the previous check would be read as
+    the answer to this one if the fetch wrote nothing.
+    """
+    folder = recheck_dir(storage_root, platform_video_id)
+    if folder.is_dir():
+        shutil.rmtree(folder)
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
 
 
 def audio_file(folder: str | Path) -> Path | None:
