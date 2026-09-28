@@ -401,9 +401,11 @@ def sync(db_path: Path, conn: sqlite3.Connection) -> Sync:
 __all__ = [
     "AGENDA_16805",
     "AGENDA_16805_PDF",
+    "AGENDA_16821",
     "ARCHIVED_2026",
     "BASE_URL",
     "CAPTIONS_16805",
+    "CAPTIONS_SEP22",
     "EVIDENCE_FOLDER",
     "FakePortal",
     "MEASURED_COUNTS",
