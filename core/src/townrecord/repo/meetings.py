@@ -8,6 +8,7 @@ as an artifact. A record never holds a path: it holds the artifact id.
 from __future__ import annotations
 
 import sqlite3
+from datetime import date
 
 from .rows import Meeting, Record, RecordPage, Video
 from .store import get, insert
@@ -51,6 +52,17 @@ def get_meeting(conn: sqlite3.Connection, meeting_id: int) -> Meeting | None:
     """Return the meeting, or None when there is no such row."""
     row = get(conn, "meetings", meeting_id)
     return None if row is None else Meeting.from_row(row)
+
+
+def meeting_date(meeting: Meeting) -> date:
+    """The local date one meeting is held on, from the first ten characters.
+
+    Spec 16.2: a meeting's date is the local date it was published with, and
+    nothing is converted to UTC. A meeting that started at 7 p.m. in Denver is
+    on that Denver day whatever the timestamp's offset says, so the offset is
+    never applied and never rewritten.
+    """
+    return date.fromisoformat(meeting.starts_at[:10])
 
 
 def meeting_by_portal_id(

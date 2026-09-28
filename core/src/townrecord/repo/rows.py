@@ -4,8 +4,9 @@ One dataclass per table, with the column names of the table. A row is data,
 not an object graph: it holds the foreign keys the table holds, and a reader
 joins what it needs.
 
-The tables are the ones of migration ``0005_core_model.sql``, and, for
-:class:`ScheduledRun`, of migration ``0012_schedule.sql``.
+The tables are the ones of migration ``0005_core_model.sql``, for
+:class:`ScheduledRun` of migration ``0012_schedule.sql``, and for
+:class:`SpeakerLabel` of migration ``0014_speakers.sql``.
 """
 
 from __future__ import annotations
@@ -418,6 +419,33 @@ class ScheduledRun(Row):
     state: str
     job_id: int | None
     reason: str | None
+    created_at: str
+
+
+@dataclass(frozen=True)
+class SpeakerLabel(Row):
+    """Who one run of lines was read as speaking (spec 10.6).
+
+    The run is the lines from one speaker change through the line before the
+    next. ``spoken_name`` is what the chair said, as the captioner spelled it,
+    and ``person_id`` is the official it was read as, or None for the
+    unidentified speaker whose best guess is ``candidate_person_id``.
+    """
+
+    id: int
+    meeting_id: int
+    transcript_id: int
+    start_segment_id: int
+    end_segment_id: int
+    spoken_name: str
+    title_kind: str
+    person_id: int | None
+    candidate_person_id: int | None
+    score: float
+    method: str
+    evidence: str
+    confirmed_by: str | None
+    conflict: str | None
     created_at: str
 
 
