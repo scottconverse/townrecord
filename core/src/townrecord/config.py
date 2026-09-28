@@ -16,6 +16,10 @@ DEFAULT_HOST = "127.0.0.1"
 #: The port the user can change in settings.
 DEFAULT_PORT = 8190
 
+#: The words that turn a setting on. Anything else, including an empty value, is
+#: off: a setting that is not written plainly is not a yes.
+TRUE_WORDS = frozenset({"1", "true", "yes", "on"})
+
 #: The local time the daily scan runs at (spec 16.2). The user chooses the
 #: time; this is the ordinary early-morning one they get until they do.
 DEFAULT_DAILY_TIME = time(6, 0)
@@ -61,6 +65,10 @@ class Settings:
 
     host: str = DEFAULT_HOST
     port: int = DEFAULT_PORT
+    #: True when the user has turned on serving on the local network (spec 13.1).
+    #: It is off until they say so, and an address that is not this machine alone
+    #: is refused while it is off.
+    allow_lan: bool = False
     db_path: Path = field(default_factory=default_db_path)
     storage_root: Path = field(default_factory=default_storage_root)
     #: The app-data root the private tool runtimes are installed under
@@ -89,6 +97,7 @@ class Settings:
         return cls(
             host=source.get("TOWNRECORD_HOST", "").strip() or DEFAULT_HOST,
             port=_port(source),
+            allow_lan=_flag(source, "TOWNRECORD_ALLOW_LAN"),
             db_path=Path(db_text) if db_text else default_db_path(),
             storage_root=Path(storage_text) if storage_text else default_storage_root(),
             runtime_root=Path(runtime_text) if runtime_text else default_runtime_root(),
@@ -96,6 +105,11 @@ class Settings:
             daily_time=_daily_time(source),
             test_video_url=source.get("TOWNRECORD_TEST_VIDEO", "").strip(),
         )
+
+
+def _flag(source: Mapping[str, str], name: str) -> bool:
+    """Read an on/off setting. Only the words in ``TRUE_WORDS`` are on."""
+    return source.get(name, "").strip().lower() in TRUE_WORDS
 
 
 def _port(source: Mapping[str, str]) -> int:

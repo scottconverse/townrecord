@@ -213,6 +213,19 @@ def set_capture_state(conn: sqlite3.Connection, video_id: int, state: str) -> No
     conn.execute("UPDATE videos SET capture_state = ? WHERE id = ?", (state, video_id))
 
 
+def set_readiness(conn: sqlite3.Connection, video_id: int, readiness: str) -> None:
+    """Say what a listing last read about a video's broadcast state (spec 8.2).
+
+    The four words are the ones the table accepts, and the table refuses
+    anything else, so a caller cannot write a word no read knows. What this
+    does not do is go backwards: a caller that has a reading less definite than
+    the one the row holds has learned nothing new, and it is the caller's
+    business to know that, because only it knows which listing the reading came
+    from.
+    """
+    conn.execute("UPDATE videos SET readiness = ? WHERE id = ?", (readiness, video_id))
+
+
 def videos_of_platform(conn: sqlite3.Connection, platform_video_id: str) -> list[Video]:
     """Return every video row with that platform id, oldest row first.
 

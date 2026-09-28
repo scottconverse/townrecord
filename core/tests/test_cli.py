@@ -9,6 +9,7 @@ address; nothing here reaches the network.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import socket
@@ -22,6 +23,7 @@ from typing import Any
 import httpx
 import pytest
 
+from townrecord import serving
 from townrecord.cli import EXIT_REFUSED, main
 
 #: The loopback address this file talks to, and the only host it uses.
@@ -129,9 +131,11 @@ def port() -> int:
     return chosen
 
 
-@pytest.fixture
-def served(tmp_path: Path, port: int) -> Iterator[tuple[str, str]]:
-    """A running `townrecord serve`, with a read token, and its stop."""
+@contextlib.contextmanager
+def a_running_service(
+    tmp_path: Path, port: int
+) -> Iterator[tuple[str, str, subprocess.Popen[str]]]:
+    """One `townrecord serve` of this test's own, with a read token, and its stop."""
     env = env_for(tmp_path, port)
     created = run_cli(env, "token", "create", "--name", "desk", "--scope", "read")
     assert created.returncode == 0, created.stderr
@@ -149,7 +153,7 @@ def served(tmp_path: Path, port: int) -> Iterator[tuple[str, str]]:
         )
     try:
         wait_for_serve(port, process, log)
-        yield f"http://{HOST}:{port}", token
+        yield f"http://{HOST}:{port}", token, process
     finally:
         process.terminate()
         try:
@@ -158,6 +162,13 @@ def served(tmp_path: Path, port: int) -> Iterator[tuple[str, str]]:
             process.kill()
             process.wait(timeout=STOP_TIMEOUT_S)
         assert wait_for_port_free(port), f"a process still holds port {port}"
+
+
+@pytest.fixture
+def served(tmp_path: Path, port: int) -> Iterator[tuple[str, str]]:
+    """A running `townrecord serve`, with a read token, and its stop."""
+    with a_running_service(tmp_path, port) as (base, token, _process):
+        yield base, token
 
 
 def test_serve_refuses_a_request_with_no_token(served: tuple[str, str]) -> None:
@@ -231,9 +242,64 @@ def test_status_prints_the_report_and_its_json(tmp_path: Path, port: int) -> Non
     as_json: dict[str, Any] = json.loads(run_cli(env, "status", "--json").stdout)
     assert as_json["db_present"] is True
     assert as_json["port"] == port
-    assert len(as_json["registered_kinds"]) == 9
+    assert len(as_json["registered_kinds"]) == 10
     assert as_json["jobs"] == []
     assert as_json["notes"] == []
+
+
+def test_status_reports_the_service_that_is_running_not_the_shell_that_asks(
+    tmp_path: Path, port: int
+) -> None:
+    """The live run of 2026-09-27: served on 8791 at 17:21, reported as 8190 and 06:00.
+
+    Both numbers in that report were true of the shell that asked and false of
+    the service that was running, and a person reading them had no way to tell
+    which they were being shown. So the report names the service it describes,
+    reports what the service runs with, and says so when there is none.
+    """
+    runtime = tmp_path / "runtime"
+    caller_port = free_port()
+    with a_running_service(tmp_path, port) as (_base, _token, _process):
+        written = serving.read(runtime)
+        assert written is not None
+        assert written.port == port
+        # The number written down is the serving process's own, never the asking
+        # shell's. It is not compared with the launcher's pid either: on this
+        # machine the venv's `python.exe` starts the interpreter as a child, so
+        # `Popen.pid` is the launcher and not the service.
+        #
+        # Nothing here asks whether a pid is alive: on Windows that question ends
+        # the process it is asked about, which is why the file is never probed.
+        assert written.pid != os.getpid()
+
+        # A shell whose own settings disagree with the running service in every
+        # way the live run's did: another port, another zone, another daily time.
+        caller = env_for(
+            tmp_path,
+            caller_port,
+            TOWNRECORD_TIME_ZONE="America/New_York",
+            TOWNRECORD_DAILY_TIME="17:21",
+        )
+        printed = run_cli(caller, "status")
+        assert printed.returncode == 0, printed.stderr
+        text = printed.stdout
+
+        assert f"running as process {written.pid}" in text
+        assert f"running as process {os.getpid()}" not in text
+        assert f"http://{HOST}:{port}" in text
+        assert "America/Denver, daily at 06:00 local time" in text
+        assert f"http://{HOST}:{caller_port}" not in text
+        assert "America/New_York" not in text
+        assert "17:21" not in text
+
+    # A service that is gone holds nothing (spec 16.1), so the same shell is told
+    # plainly that what it shows now is its own configuration (spec 16.3).
+    assert serving.is_running(runtime) is False
+    after = run_cli(env_for(tmp_path, caller_port), "status")
+    assert after.returncode == 0, after.stderr
+    assert "no service is running" in after.stdout
+    assert "configuration" in after.stdout
+    assert "America/Denver, daily at 06:00 local time" in after.stdout
 
 
 def test_the_console_script_entry_point_runs_in_process(
@@ -246,3 +312,41 @@ def test_the_console_script_entry_point_runs_in_process(
     assert main(["token", "create", "--name", "desk", "--scope", "read"]) == 0
     assert main(["token", "list"]) == 0
     assert main(["status"]) == 0
+
+
+# -- serving beyond this machine, as an option with a warning (spec 13.1) -----
+
+#: An address that is not this machine's and never can be: TEST-NET-1 of RFC
+#: 5737 is reserved for documentation. These tests bind nothing real and reach
+#: nothing; the address is what makes them fail fast at the socket, so no test
+#: here ever puts the API on a live network address.
+NETWORK_HOST = "192.0.2.1"
+
+
+def test_serve_refuses_a_network_address_until_the_setting_is_on(tmp_path: Path, port: int) -> None:
+    """Spec 13.1: serving beyond this machine is an option, and off means off."""
+    result = run_cli(env_for(tmp_path, port, TOWNRECORD_HOST=NETWORK_HOST), "serve")
+
+    assert result.returncode == EXIT_REFUSED
+    assert NETWORK_HOST in result.stderr
+    assert "TOWNRECORD_ALLOW_LAN" in result.stderr
+    # The refusal comes before any socket work and before anything is created, so
+    # a command that was not allowed to serve leaves nothing behind.
+    assert not (tmp_path / "townrecord.db").exists()
+    assert wait_for_port_free(port)
+
+
+def test_serve_warns_about_who_can_reach_it_once_the_setting_is_on(
+    tmp_path: Path, port: int
+) -> None:
+    """Spec 13.1: the option is turned on with a warning about who can reach it."""
+    env = env_for(tmp_path, port, TOWNRECORD_HOST=NETWORK_HOST, TOWNRECORD_ALLOW_LAN="1")
+    result = run_cli(env, "serve")
+
+    assert "Warning:" in result.stderr
+    assert f"{NETWORK_HOST}:{port}" in result.stderr
+    assert "local network" in result.stderr
+    assert "token" in result.stderr
+    # The warning is printed before the socket is attempted, and this address is
+    # not the machine's own, so this run ends at the bind with the port sentence.
+    assert "already in use" in result.stderr

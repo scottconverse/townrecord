@@ -13,7 +13,7 @@ import json
 import sqlite3
 from typing import Any
 
-from townrecord.jobs import DONE, FAILED, PAUSED, read_checkpoint
+from townrecord.jobs import DONE, FAILED, ORIGIN_SCHEDULED, PAUSED, read_checkpoint
 from townrecord.repo import (
     agenda_items,
     all_sources,
@@ -361,6 +361,9 @@ def test_each_compiled_document_becomes_one_heavy_download_job(
     downloads = sync.jobs_of_kind("download_record")
     assert [row["lane"] for row in downloads] == ["heavy", "heavy"]
     assert {row["state"] for row in downloads} == {"queued"}
+    assert {row["origin"] for row in downloads} == {"manual"}, (
+        "a sync a person queued makes a manual child"
+    )
     assert [json.loads(row["payload"]) for row in downloads] == [
         {
             "source_id": area.portal_id,
@@ -384,6 +387,34 @@ def test_each_compiled_document_becomes_one_heavy_download_job(
     assert checkpoint["documents_queued"] == 2
     assert checkpoint["html_agendas_read"] == 1
     assert any("Notice of Cancellation" in sentence for sentence in checkpoint["skipped"])
+
+
+def test_a_scheduled_sync_queues_children_the_schedule_asked_for(
+    area: Area, wired: FakePortal, sync: Sync
+) -> None:
+    """Spec 16.1: who asked for the parent asked for the children too.
+
+    The daily schedule queues this sync itself, and every job it makes is the
+    schedule's work and not a person's. A child left ``manual`` would tell the
+    user a download they never asked for was their own doing.
+    """
+    wired.meetings = [
+        meeting(
+            A_MEETING,
+            "2026-09-08T19:00:00",
+            "City Council Regular Session",
+            documents=(document(18613, 16805, 1, "Agenda"),),
+        )
+    ]
+    parent = sync.queue_sync(area.portal_id, origin=ORIGIN_SCHEDULED)
+    sync.lane("normal")
+
+    assert sync.job(parent)["origin"] == ORIGIN_SCHEDULED
+    downloads = sync.jobs_of_kind("download_record")
+    assert len(downloads) == 1
+    assert downloads[0]["origin"] == ORIGIN_SCHEDULED, (
+        "a child of a scheduled sync says the schedule asked for it"
+    )
 
 
 def test_the_html_agenda_is_read_here_and_its_items_are_stored(

@@ -228,22 +228,96 @@ def test_an_upcoming_video_goes_back_to_the_queue_with_a_reason(
     assert fake.calls == []
 
 
-def test_an_unknown_video_waits_for_its_metadata(
+def test_an_unknown_video_is_asked_and_then_captured(
     conn: sqlite3.Connection, storage_root: Path, video: int
 ) -> None:
-    """Spec 8.2: 'unknown' is waiting, not failing, and it is not called skipped."""
+    """Spec 8.2: a row nothing has decided is asked, written down, and captured."""
     clock = FakeClock()
     fake = FakeYtDlp()
+    conn.execute("UPDATE videos SET readiness = 'unknown' WHERE id = ?", (video,))
+    ctx = claimed_job(conn, video, clock)
+
+    capture(storage_root, fake)(ctx)
+
+    asks = fake.status_asks
+    assert len(asks) == 1, "the row was unknown, so exactly one status was asked for"
+    assert asks[0]["argv"][2] == "yt_dlp"
+    assert "--dump-single-json" in asks[0]["argv"], "the ask is spec 8.2's third step"
+    assert "--skip-download" not in asks[0]["argv"], "the ask is not the capture command"
+    assert asks[0]["argv"][-1].endswith(f"watch?v={PLATFORM_VIDEO_ID}")
+    assert len(fake.capture_calls) == 1, "the capture ran after the status was answered"
+    assert repo.get_video(conn, video).readiness == "finished", (
+        "the answer is written on the row, so the next run reads it instead of asking again"
+    )
+    assert transcripts(conn, video) != []
+
+
+def test_an_upcoming_video_is_not_asked_and_not_captured(
+    conn: sqlite3.Connection, storage_root: Path, video: int
+) -> None:
+    """A row that already carries a definite word is not asked again (spec 8.2)."""
+    clock = FakeClock()
+    fake = FakeYtDlp()
+    conn.execute("UPDATE videos SET readiness = 'upcoming' WHERE id = ?", (video,))
+    ctx = claimed_job(conn, video, clock)
+
+    with pytest.raises(JobDeferred):
+        capture(storage_root, fake)(ctx)
+
+    assert fake.status_asks == [], "upcoming is an answer, so nothing is asked"
+    assert fake.calls == []
+
+
+def test_a_video_whose_status_stays_unknown_defers_and_says_what_it_asked(
+    conn: sqlite3.Connection, storage_root: Path, video: int
+) -> None:
+    """An ask that decides nothing still defers, and the reason names every ask.
+
+    ``post_live`` is the answer that is honest and useless: the stream ended and
+    the recording is still being written, so there is nothing to download yet.
+    The job must not call that a capture and must not call it a failure, and the
+    user must be able to read which steps were asked and what each one said.
+    """
+    clock = FakeClock()
+    fake = FakeYtDlp(status={"id": PLATFORM_VIDEO_ID, "live_status": "post_live"})
     conn.execute("UPDATE videos SET readiness = 'unknown' WHERE id = ?", (video,))
     ctx = claimed_job(conn, video, clock)
 
     with pytest.raises(JobDeferred) as caught:
         capture(storage_root, fake)(ctx)
 
-    assert str(caught.value) == "waiting for status metadata (will retry)"
-    assert job_of(conn, ctx)["state"] == QUEUED
+    reason = str(caught.value)
+    assert reason.startswith("waiting for status metadata (will retry). Asked:")
+    assert "the official API: no API key was given" in reason
+    assert "the player endpoint status: not built here" in reason
+    assert "yt-dlp --dump-single-json: live_status=post_live" in reason
+    assert reason.endswith(".")
+    assert len(reason) < 300, "the reason is not truncated, so nothing asked is lost"
+    assert len(fake.status_asks) == 1
+    assert fake.capture_calls == [], "a video whose status is still unknown is not captured"
+    assert repo.get_video(conn, video).readiness == "unknown", (
+        "an ask that decided nothing does not overwrite what the row holds"
+    )
     assert repo.get_video(conn, video).capture_state == "pending"
-    assert fake.calls == []
+    assert job_of(conn, ctx)["state"] == QUEUED
+
+
+def test_a_status_ask_that_fails_says_so_and_still_defers(
+    conn: sqlite3.Connection, storage_root: Path, video: int
+) -> None:
+    """yt-dlp failing the ask is a reason, not a crash: the job waits and says why."""
+    clock = FakeClock()
+    fake = FakeYtDlp(status_returncode=1, status_stderr="ERROR: [youtube] abc123XYZ: nope\n")
+    conn.execute("UPDATE videos SET readiness = 'unknown' WHERE id = ?", (video,))
+    ctx = claimed_job(conn, video, clock)
+
+    with pytest.raises(JobDeferred) as caught:
+        capture(storage_root, fake)(ctx)
+
+    reason = str(caught.value)
+    assert "yt-dlp --dump-single-json: it exited 1: ERROR: [youtube] abc123XYZ: nope" in reason
+    assert fake.capture_calls == []
+    assert repo.get_video(conn, video).readiness == "unknown"
 
 
 def test_a_live_video_waits_and_is_counted_as_skipped(

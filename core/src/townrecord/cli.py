@@ -8,7 +8,11 @@ Four commands, and each one is a small piece of the same core:
     artifact storage root, the private runtime root -- comes from
     :class:`townrecord.config.Settings` and is never invented here; the port
     comes from the same place, and a port that is already in use is a plain
-    sentence naming the port and the setting to change. Ctrl+C, and the
+    sentence naming the port and the setting to change. The address is 127.0.0.1
+    unless the user has turned network serving on: another address is refused
+    before anything is created or bound, and once it is allowed the service says
+    who can reach it and that a token is still required (spec 13.1). Ctrl+C, and
+    the
     desktop shell's stop, end the workers cleanly: a job that was running
     keeps its checkpoint and is claimable again (spec 16.1).
 
@@ -20,7 +24,11 @@ Four commands, and each one is a small piece of the same core:
     What the service is actually doing, read from real content (spec 16.3):
     job counts by lane and state, sources and their health, the newest capture
     of every body, the active yt-dlp version, and the runs the schedule made or
-    could not make. It never answers "OK".
+    could not make. It never answers "OK", and it reports the service that is
+    running and not the settings of the shell that asked: when a service holds
+    the app-data root, its address, database, schedule and time zone are what
+    the report shows, and when none does the report says so and says that what
+    it shows is this shell's configuration.
 
 The API is started on a socket this module binds itself, so a busy port is
 reported before any worker starts rather than as a stack trace from inside
@@ -44,6 +52,7 @@ from pathlib import Path
 
 import uvicorn
 
+from . import network, serving
 from .api.app import create_app
 from .api.tokens import SCOPE_READ, SCOPE_READ_WRITE, create_token
 from .config import Settings
@@ -113,6 +122,16 @@ def _parser() -> argparse.ArgumentParser:
 def _serve(_args: argparse.Namespace) -> int:
     """Start the API, the job workers and the schedule, and run until stopped."""
     settings = Settings.from_env()
+    # The address is decided before anything is created or bound (spec 13.1): a
+    # service that was never allowed off the loopback interface leaves no
+    # database and no socket behind, and the sentence says which setting to set.
+    refusal = network.lan_refusal(settings.host, allow_lan=settings.allow_lan)
+    if refusal is not None:
+        print(refusal, file=sys.stderr)
+        return EXIT_REFUSED
+    warning = network.lan_warning(settings.host, settings.port, allow_lan=settings.allow_lan)
+    if warning is not None:
+        print(warning, file=sys.stderr, flush=True)
     _prepare_database(settings)
     service = build_service(settings)
     try:
@@ -123,6 +142,18 @@ def _serve(_args: argparse.Namespace) -> int:
         return EXIT_REFUSED
     server = uvicorn.Server(uvicorn.Config(app=create_app(settings), log_level="info"))
     service.start()
+    # Say what this service runs with, where another shell's `townrecord status`
+    # reads it (spec 16.3), and hold the claim on this app-data root for as long
+    # as it serves. It is taken once the socket is ours, so a refused port never
+    # claims a root it is not serving from.
+    claim = serving.record(
+        settings.runtime_root,
+        host=settings.host,
+        port=settings.port,
+        daily_time=settings.daily_time,
+        time_zone=settings.time_zone,
+        db_path=str(settings.db_path),
+    )
     print(
         f"TownRecord is serving at http://{settings.host}:{settings.port} "
         f"and running {len(service.registry.kinds())} job kinds.",
@@ -133,6 +164,7 @@ def _serve(_args: argparse.Namespace) -> int:
     except KeyboardInterrupt:  # a second Ctrl+C while the server is stopping
         print("TownRecord is stopping.", flush=True)
     finally:
+        serving.clear(claim)
         if not service.stop():
             print(
                 "A worker did not stop within its timeout. A job it was running keeps its "

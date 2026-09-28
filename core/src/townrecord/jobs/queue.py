@@ -21,7 +21,9 @@ import logging
 import secrets
 import sqlite3
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -106,12 +108,19 @@ class JobInterrupted(Exception):
     """Raised to put an unfinished job back in the queue with its checkpoint."""
 
 
-class JobDeferred(Exception):
+class JobDeferred(BaseException):
     """Raised by JobContext.defer, after the job is queued again with a delay.
 
     The job is not finished and it is not broken: something outside it has to
     change first. It goes back in the queue with `run_after` set and its
     checkpoint kept, so no work is lost (spec 8.2, 8.3).
+
+    It is a ``BaseException`` and not an ``Exception`` on purpose. A handler
+    that catches ``Exception`` deep inside itself to treat a failure as its own
+    (a channel listing, the probe of spec 8.9) would otherwise swallow the
+    deferral and turn a job that should wait into a job that failed, or into a
+    result it never got. Nothing catches this but the runner that owns the job,
+    which is where it belongs.
     """
 
 
@@ -144,6 +153,11 @@ class Claim:
     lane: str
     token: str
     attempts: int
+    #: How this job was asked for: ``manual`` by the user, ``scheduled`` by the
+    #: daily schedule (spec 16.2). A handler that enqueues work of its own
+    #: passes it on, so the child of a scheduled run is scheduled too rather
+    #: than being recorded as something the user asked for.
+    origin: str = ORIGIN_MANUAL
 
 
 def new_claim_token(worker_id: str) -> str:
@@ -221,7 +235,7 @@ def _next_startable(
     queued and the worker looks at the jobs behind it (spec 8.2, "retry later").
     """
     cursor = conn.execute(
-        "SELECT id, kind, payload, lane, attempts FROM jobs "
+        "SELECT id, kind, payload, lane, attempts, origin FROM jobs "
         "WHERE lane = ? AND state = ? AND (run_after IS NULL OR run_after <= ?) ORDER BY id",
         (lane, QUEUED, now),
     )
@@ -278,6 +292,7 @@ def claim(
         lane=str(row["lane"]),
         token=token,
         attempts=int(row["attempts"]),
+        origin=str(row["origin"] or ORIGIN_MANUAL),
     )
 
 
@@ -454,6 +469,33 @@ def requeue_stale(
     return stale
 
 
+#: The job this thread is running, so a wait deep inside a handler can find the
+#: job it should hand back to the queue instead of sleeping (spec 16.1). The
+#: runner sets it around the one call to the handler, and nothing else in the
+#: process needs to know: a caller outside a job reads None.
+_current_job: ContextVar[JobContext | None] = ContextVar("townrecord_current_job", default=None)
+
+
+def current_job() -> JobContext | None:
+    """Return the job running in this thread, or None when there is none."""
+    return _current_job.get()
+
+
+@contextmanager
+def job_in_hand(ctx: JobContext) -> Iterator[JobContext]:
+    """Say that ``ctx`` is the job running here, for the length of the block.
+
+    A handler is one call, and every request that a handler makes on its way
+    through the code is inside it, so the wait that cannot be waited out finds
+    the job that owns it and hands it back (spec 8.10, 16.1).
+    """
+    token = _current_job.set(ctx)
+    try:
+        yield ctx
+    finally:
+        _current_job.reset(token)
+
+
 @dataclass
 class JobContext:
     """What a handler gets: its payload, its checkpoint, and its claim.
@@ -470,6 +512,10 @@ class JobContext:
     claim_token: str
     clock: Clock = utcnow
     stop_event: threading.Event | None = field(default=None, repr=False)
+    #: How the job was asked for, so the work it enqueues is recorded the same
+    #: way (spec 16.2). The runner fills it from the claim, which read it from
+    #: the row; a test that builds a context by hand gets ``manual``.
+    origin: str = ORIGIN_MANUAL
 
     def checkpoint(self) -> Any:
         """Return the checkpoint saved by an earlier run, or None."""
@@ -491,16 +537,30 @@ class JobContext:
         """Record that the job cannot run now. Raises JobPaused and never returns."""
         pause(self.conn, self.job_id, self.claim_token, reason, clock=self.clock)
 
-    def defer(self, reason: str, *, delay_s: float) -> None:
+    def defer(
+        self,
+        reason: str,
+        *,
+        delay_s: float | None = None,
+        run_after: datetime | None = None,
+    ) -> None:
         """Queue this job again, no earlier than `delay_s` from now.
 
         The plain reason is kept in `last_error`, so the user can see why the
         job is waiting. Raises JobDeferred and never returns.
+
+        ``run_after`` is the moment itself, for a caller that already knows it.
+        The process pace knows it exactly (spec 8.10): it holds the next allowed
+        time, and handing that over is what keeps the job's own retry and the
+        hold lifting at the same moment instead of the same delay counted
+        twice. With both given, the moment wins.
         """
         text = " ".join(str(reason).split())[:MAX_REASON]
         if not text:
             raise ValueError("A deferred job needs a plain reason.")
-        run_after = self.clock() + timedelta(seconds=max(0.0, delay_s))
+        if run_after is None:
+            seconds = 0.0 if delay_s is None else max(0.0, delay_s)
+            run_after = self.clock() + timedelta(seconds=seconds)
         return_to_queue(
             self.conn,
             self.job_id,

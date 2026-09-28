@@ -34,7 +34,7 @@ from ..adapters.primegov import PrimeGovAdapter
 from ..align.identifiers import find_identifiers
 from ..config import Settings
 from ..jobs import JobContext, enqueue
-from ..repo import Body, Source, bodies, get_body, get_source
+from ..repo import BROKEN_AFTER_FAILURES, Body, Source, bodies, get_body, get_source
 
 #: The job kinds this package registers (spec 16.1). Their lanes are the ones
 #: the brief gives them: a packet is 60 to 170 MB, so fetching one is heavy, and
@@ -972,6 +972,11 @@ def enqueue_once(ctx: JobContext, kind: str, payload: Any) -> int | None:
     A finished job blocks nothing: a re-sync of the same window after a download
     failed has to be able to try again, and a paused job that could not run yet
     does not block the attempt either.
+
+    The new job carries the origin of the job that asked for it, so the children
+    of a scheduled sync are scheduled too and the user's own runs stay apart
+    from them (spec 16.2). It is not passed a lane: the registry knows the one
+    this kind runs in.
     """
     text = json.dumps(payload)
     row = ctx.conn.execute(
@@ -981,7 +986,7 @@ def enqueue_once(ctx: JobContext, kind: str, payload: Any) -> int | None:
     ).fetchone()
     if row is not None:
         return None
-    return enqueue(ctx.conn, kind, payload, clock=ctx.clock)
+    return enqueue(ctx.conn, kind, payload, origin=ctx.origin, clock=ctx.clock)
 
 
 def adapter_problem(exc: AdapterError) -> str:
@@ -991,3 +996,16 @@ def adapter_problem(exc: AdapterError) -> str:
     tells the coordinator more than the message alone does.
     """
     return f"{type(exc).__name__}: {exc}"
+
+
+def failure_sentence(source: Source, reason: str, failures: int) -> str:
+    """The plain sentence one failed listing is recorded with (spec 7.3).
+
+    The count of failures in a row is what makes the source broken, so the
+    sentence carries it, and the two readers of a source's health -- the portal
+    sync and the channel watch -- say the same thing about it.
+    """
+    sentence = f"{reason} Source {source.id} has now failed {failures} time(s) in a row."
+    if failures >= BROKEN_AFTER_FAILURES:
+        return f"{sentence} It is broken."
+    return sentence

@@ -21,7 +21,7 @@ import sys
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from townrecord import proc
+from townrecord import pacing, proc
 from townrecord.runtime.javascript import FALLBACK_RUNTIME, resolve
 from townrecord.video.youtube.listing import (
     SOURCE_YTDLP,
@@ -38,6 +38,10 @@ YTDLP_PLAYLIST_END = 50
 
 #: The two channel tabs, in the order they are tried.
 YTDLP_TABS: tuple[str, ...] = ("/streams", "/videos")
+
+#: What reading one tab is called in the process pace's own log line
+#: (:mod:`townrecord.pacing`). Two tabs are two requests, so it is two waits.
+PACE_WHAT = "a channel listing"
 
 #: Seconds. A listing is a small read; this is not a download.
 YTDLP_TIMEOUT_S = 60
@@ -115,6 +119,9 @@ class YtdlpFlatLister:
         reasons: list[str] = []
         for tab in YTDLP_TABS:
             argv = ytdlp_argv(self.interpreter, channel_url, tab, js_runtime=self.js_runtime)
+            # Spec 8.10: each tab is its own YouTube request, so each one waits
+            # its turn rather than the pair going out together.
+            pacing.pacer().wait(what=PACE_WHAT)
             try:
                 result = self.runner(argv, timeout_s=self.timeout_s, env=proc.allowed_environment())
             except proc.ProcessTimedOut as exc:

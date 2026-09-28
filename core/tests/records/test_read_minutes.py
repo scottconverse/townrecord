@@ -39,7 +39,7 @@ from pypdf import PdfReader
 
 from townrecord.artifacts import store
 from townrecord.captions import parse_srv3
-from townrecord.jobs import DONE, PAUSED, read_checkpoint
+from townrecord.jobs import DONE, ORIGIN_SCHEDULED, PAUSED, read_checkpoint
 from townrecord.records.minutes import (
     EXPECTED_IN,
     FROM_VIDEO,
@@ -62,6 +62,7 @@ from townrecord.records.portal import (
     identifiers_of,
 )
 from townrecord.repo import (
+    READ_MINUTES_KIND,
     RecordPage,
     Segment,
     Vote,
@@ -806,6 +807,17 @@ def test_the_missing_minutes_sentence_is_the_plain_wording() -> None:
     assert FROM_VIDEO == "from video; minutes not yet available"
 
 
+def test_the_queue_spells_the_reading_job_the_same_way_as_the_repo_layer() -> None:
+    """The record layer names the job kind without importing the record layer.
+
+    ``repo.motions`` reads the paused rows of the reading job to find the
+    sentence saying where a meeting's minutes are expected, and it cannot import
+    ``records.portal`` for the kind without a cycle. It spells the kind itself,
+    so this is what stops the two spellings drifting apart.
+    """
+    assert READ_MINUTES_KIND == READ_MINUTES
+
+
 def test_the_next_session_s_packet_is_not_there_yet(
     area: Area, wired: FakePortal, sync: Sync
 ) -> None:
@@ -897,6 +909,48 @@ def test_reading_a_packet_queues_the_reading_of_the_minutes_it_may_hold(
     asked = sync.jobs_of_kind(READ_MINUTES)
     assert len(asked) == 1, "the packet's own reading queued one reading, for the session before it"
     assert asked[0]["payload"] == f'{{"meeting_id": {earlier}}}'
+
+
+def test_a_scheduled_packet_reading_queues_a_scheduled_minutes_reading(
+    area: Area, wired: FakePortal, sync: Sync, storage_root: Path
+) -> None:
+    """The child says who asked for the parent (spec 16.2).
+
+    ``origin`` is how a person tells work the daily schedule started from work
+    they asked for themselves, and a reading the schedule started is the same
+    work all the way down: the packet reading of spec 9.4 queues the minutes
+    reading, so a scheduled packet reading must not queue a manual one.
+    """
+    earlier = a_meeting(sync, area)
+    later = a_meeting(sync, area, starts_at=SEPT_22)
+    artifact = store(
+        sync.conn,
+        storage_root,
+        "packet",
+        a_pdf_of_pages(
+            [
+                ["AGENDA", "City Council Regular Session", "September 22, 2026", "Page 1"],
+                ["ORDINANCE 2026-58", "Page 2"],
+            ]
+        ),
+        "pdf",
+    )
+    record_id = insert_record(
+        sync.conn,
+        meeting_id=later,
+        kind=PACKET_KIND,
+        artifact_id=artifact.id,
+        source_id=area.portal_id,
+    )
+
+    job_id = sync.queue("extract_pages", {"record_id": record_id}, origin=ORIGIN_SCHEDULED)
+    sync.lane("heavy")
+
+    assert sync.job(job_id)["state"] == DONE
+    assert sync.job(job_id)["origin"] == ORIGIN_SCHEDULED
+    asked = sync.jobs_of_kind(READ_MINUTES)
+    assert len(asked) == 1
+    assert asked[0]["origin"] == ORIGIN_SCHEDULED, "the child took after the parent"
 
     sync.lane("normal")
 

@@ -1,6 +1,7 @@
 """The daily schedule (spec 16.2, 8.9).
 
-One ``sync_primegov`` per accepted portal source per local day, the daily
+One ``sync_primegov`` per accepted portal source per local day, one
+``watch_channel`` per accepted video channel source per local day, the daily
 yt-dlp check, a paused run with a plain reason when a run cannot happen, and a
 clock the tests move across the daylight saving change of 2026-11-01 in
 America/Denver. Nothing here reaches the network: the schedule enqueues, and
@@ -9,6 +10,7 @@ these tests read the queue.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import time as wall_clock
 from collections.abc import Callable
@@ -22,6 +24,7 @@ import pytest
 from townrecord.jobs import ORIGIN_MANUAL, ORIGIN_SCHEDULED, QUEUED, Registry, enqueue
 from townrecord.records import register_jobs
 from townrecord.repo import (
+    all_sources,
     insert_body,
     insert_jurisdiction,
     insert_source,
@@ -32,10 +35,12 @@ from townrecord.schedule import (
     NO_ZONE_REASON,
     TASK_RUNTIME_UPDATE,
     TASK_SYNC,
+    TASK_WATCH,
     Scheduler,
     source_subject,
     tool_subject,
 )
+from townrecord.video import watch
 
 DENVER = "America/Denver"
 
@@ -51,6 +56,9 @@ AFTER_THE_CHANGE = "2026-11-01T13:30:00+00:00"  # 06:30 MST on the 1st
 
 #: A test video, so the daily update check is not the thing under test here.
 TEST_VIDEO = "https://videos.test.invalid/watch/known-video"
+
+#: The channel a test source names. Not a real city's channel (rule D).
+CHANNEL_URL = "https://www.youtube.com/channel/UCtest000000000000000000"
 
 
 class FakeClock:
@@ -98,6 +106,30 @@ def add_portal(
     )
 
 
+def add_channel(
+    conn: sqlite3.Connection,
+    *,
+    name: str = "Longmont",
+    origin: str = CHANNEL_URL,
+    status: str = "accepted",
+) -> int:
+    """Store one video channel source and return its id.
+
+    The origin is the channel the watch reads, and nothing else (rule D): the
+    schedule only decides whether the day is owed a watch, never which channel.
+    """
+    jurisdiction = insert_jurisdiction(conn, type="city", name=name)
+    return insert_source(
+        conn,
+        jurisdiction_id=jurisdiction,
+        type="video_channel",
+        origin=origin,
+        suggested_by="discovery",
+        reason="The city's own channel is where its meetings are posted.",
+        status=status,
+    )
+
+
 def build(
     db_path: Path, clock: FakeClock, *, time_zone: str = DENVER, test_video_url: str = TEST_VIDEO
 ) -> Scheduler:
@@ -126,6 +158,10 @@ def wait_for(predicate: Callable[[], bool], timeout: float = 5.0) -> bool:
 
 def sync_jobs(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute("SELECT * FROM jobs WHERE kind = ? ORDER BY id", (TASK_SYNC,)).fetchall()
+
+
+def watch_jobs(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute("SELECT * FROM jobs WHERE kind = ? ORDER BY id", (TASK_WATCH,)).fetchall()
 
 
 def update_jobs(conn: sqlite3.Connection) -> list[sqlite3.Row]:
@@ -202,6 +238,75 @@ def test_two_sources_get_one_sync_each_per_local_day(
         for row in conn.execute("SELECT subject FROM schedule_runs WHERE task = ?", (TASK_SYNC,))
     }
     assert subjects == {source_subject(first), source_subject(second)}
+
+
+def test_one_watch_per_channel_source_per_local_day(
+    db_path: Path, conn: sqlite3.Connection, clock: FakeClock
+) -> None:
+    """Spec 16.2: every accepted video channel is owed one watch a day.
+
+    A channel and a portal are two different sources, so a city that has both
+    is owed both runs, and neither is counted against the other.
+    """
+    city = add_channel(conn, name="Longmont")
+    neighbour = add_channel(conn, name="Boulder", origin="https://www.youtube.com/@boulder")
+    add_portal(conn, name="Loveland", origin="https://portal.test.invalid")
+    scheduler = build(db_path, clock)
+
+    first = scheduler.tick()
+    jobs = watch_jobs(conn)
+    assert len(jobs) == 2
+    assert {job["state"] for job in jobs} == {QUEUED}
+    assert {job["origin"] for job in jobs} == {ORIGIN_SCHEDULED}
+    assert [job["lane"] for job in jobs] == ["normal", "normal"]
+    assert {json.loads(job["payload"])["source_id"] for job in jobs} == {city, neighbour}
+    assert {job["id"] for job in jobs} <= set(first)
+
+    runs = conn.execute(
+        "SELECT subject, local_date, state FROM schedule_runs WHERE task = ? ORDER BY id",
+        (TASK_WATCH,),
+    ).fetchall()
+    assert [(row["subject"], row["local_date"], row["state"]) for row in runs] == [
+        (source_subject(city), "2026-10-31", "enqueued"),
+        (source_subject(neighbour), "2026-10-31", "enqueued"),
+    ]
+
+    # The same local day is not owed a second watch, however often it is asked.
+    assert scheduler.tick() == ()
+    assert len(watch_jobs(conn)) == 2
+
+
+def test_a_channel_the_watch_would_refuse_pauses_with_the_watchs_own_reason(
+    db_path: Path, conn: sqlite3.Connection, clock: FakeClock
+) -> None:
+    """The reason before the run is the reason the job itself would give.
+
+    A channel source with no origin at all is owed no watch, and the sentence
+    recorded is :func:`townrecord.video.watch.refusal_for`'s, so what the user
+    reads the day it pauses is what the job would have said.
+    """
+    nowhere = add_channel(conn, name="Nowhere", origin=" ")
+    scheduler = build(db_path, clock)
+
+    scheduler.tick()
+    assert watch_jobs(conn) == []
+    assert sync_jobs(conn) == []
+    row = conn.execute(
+        "SELECT * FROM schedule_runs WHERE task = ? AND subject = ?",
+        (TASK_WATCH, source_subject(nowhere)),
+    ).fetchone()
+    assert row["state"] == "paused"
+    assert row["job_id"] is None
+    assert row["reason"] == watch.refusal_for(conn, all_sources(conn)[0])
+    assert row["reason"] != NO_ORIGIN_REASON.format(source_id=nowhere)
+    assert "no origin" in row["reason"]
+
+    scheduler.tick()
+    again = conn.execute(
+        "SELECT COUNT(*) AS n FROM schedule_runs WHERE state = 'paused' AND task = ?",
+        (TASK_WATCH,),
+    ).fetchone()
+    assert again["n"] == 1
 
 
 def test_the_daily_update_check_runs_once_with_a_test_video(

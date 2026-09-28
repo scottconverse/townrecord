@@ -29,13 +29,21 @@ from fastapi.responses import FileResponse, Response
 
 from .. import artifacts
 from ..repo import (
+    VOTE_SOURCE_KINDS,
     AgendaItem,
+    Motion,
+    Vote,
     agenda_items,
+    citation_sha256,
+    find_votes,
     get_body,
+    get_citation,
     get_meeting,
     items_for_segments,
     latest_transcript,
     meetings_of_body,
+    minutes_expectation,
+    motions_of_item,
     primary_video,
     search,
     segments_of,
@@ -48,11 +56,13 @@ from .models import (
     AgendaItemWithVotes,
     AreaOut,
     BodyOut,
+    CitationVerifyOut,
     DocumentOut,
     JurisdictionNode,
     JurisdictionOut,
     MeetingDetail,
     MeetingSummary,
+    MotionOut,
     RecordOut,
     RecordPageOut,
     SearchCitationOut,
@@ -63,6 +73,8 @@ from .models import (
     TranscriptOut,
     VideoOut,
     VoteOut,
+    VotesResponse,
+    VoteWithContext,
 )
 
 router = APIRouter(prefix="/v1", tags=["read"])
@@ -94,6 +106,37 @@ _MINUTES = "minutes"
 
 #: The shapes a transcript is published in (spec 13.2).
 TRANSCRIPT_FORMATS = ("json", "vtt", "txt")
+
+#: What each source a vote can come from is called in the reader's words. The
+#: transcript label is the sentence the reading job leaves behind, spelled the
+#: same way so a reader meets one wording and not two; a test pins it to the
+#: constant the job itself writes.
+SOURCE_LABELS: dict[str, str] = {
+    "structured": "a structured record",
+    "minutes": "the minutes",
+    "packet": "the meeting packet",
+    "transcript": "from video; minutes not yet available",
+}
+
+#: The unknown case, for a source kind added after this map was written.
+UNKNOWN_SOURCE_LABEL = "an unnamed source"
+
+
+def source_label(source_kind: str) -> str:
+    """Return the plain name of a vote's source."""
+    return SOURCE_LABELS.get(source_kind, UNKNOWN_SOURCE_LABEL)
+
+
+def vote_precedence(source_kind: str) -> int:
+    """Return the spec 10.4 rank of a source kind, 0 strongest.
+
+    An unknown kind ranks below every known one, so a source added later never
+    displaces the ones whose order the spec fixes.
+    """
+    try:
+        return VOTE_SOURCE_KINDS.index(source_kind)
+    except ValueError:
+        return len(VOTE_SOURCE_KINDS)
 
 
 def not_found(message: str) -> HTTPException:
@@ -236,19 +279,49 @@ def _item_out(item: AgendaItem) -> AgendaItemOut:
     )
 
 
+def _vote_out(vote: Vote) -> VoteOut:
+    """Shape one vote for the answer, with its source named in plain words."""
+    return VoteOut(
+        id=vote.id,
+        result=vote.result,
+        source_kind=vote.source_kind,
+        source_label=source_label(vote.source_kind),
+        precedence=vote_precedence(vote.source_kind),
+        evidence=vote.evidence,
+        tally=vote.tally,
+        motion_id=vote.motion_id,
+        citation_id=vote.citation_id,
+    )
+
+
+def _motion_out(motion: Motion) -> MotionOut:
+    """Shape one motion for the answer, names and tally as the minutes printed them."""
+    return MotionOut(
+        id=motion.id,
+        meeting_id=motion.meeting_id,
+        record_id=motion.record_id,
+        page_number=motion.page_number,
+        ordinal=motion.ordinal,
+        mover=motion.mover,
+        seconder=motion.seconder,
+        text=motion.text,
+        result=motion.result,
+        outcome=motion.outcome,
+        approved=list(motion.approved),
+        dissented=list(motion.dissented),
+        abstained=list(motion.abstained),
+        tally=motion.tally,
+        evidence=motion.evidence,
+        citation_id=motion.citation_id,
+    )
+
+
 def _item_with_votes(conn: sqlite3.Connection, item: AgendaItem) -> AgendaItemWithVotes:
+    """One item with its votes and the motions made on it."""
     return AgendaItemWithVotes(
         **_item_out(item).model_dump(),
-        votes=[
-            VoteOut(
-                id=vote.id,
-                result=vote.result,
-                source_kind=vote.source_kind,
-                evidence=vote.evidence,
-                tally=vote.tally,
-            )
-            for vote in votes_of_item(conn, item.id)
-        ],
+        votes=[_vote_out(vote) for vote in votes_of_item(conn, item.id)],
+        motions=[_motion_out(motion) for motion in motions_of_item(conn, item.id)],
     )
 
 
@@ -268,7 +341,13 @@ def _notes_for(
     if not documents:
         notes.append("No documents are stored for this meeting yet.")
     elif not any(document.kind == _MINUTES for document in documents):
-        notes.append("No minutes are stored for this meeting yet.")
+        # The reading job searched and paused with its reason on its own row.
+        # That sentence says where the minutes are expected, which is more than
+        # the fact that they are not stored, so it is the one a reader gets
+        # (spec 10.4). With no such row there is nothing more to say.
+        notes.append(
+            minutes_expectation(conn, meeting_id) or "No minutes are stored for this meeting yet."
+        )
     if not videos:
         notes.append("No recording is listed for this meeting yet.")
     elif not any(video.transcript_id is not None for video in videos):
@@ -712,3 +791,136 @@ def get_search(
             for hit in hits
         ],
     )
+
+
+@router.get(
+    "/votes",
+    response_model=VotesResponse,
+    summary="The votes of the area, strongest source first",
+)
+def get_votes(
+    conn: sqlite3.Connection = Depends(get_connection),
+    body: Annotated[int | None, Query(description="A body id.")] = None,
+    identifier: Annotated[
+        str | None,
+        Query(description="An agenda item identifier, by key or by value."),
+    ] = None,
+    date_from: Annotated[
+        str | None,
+        Query(alias="from", description="Earliest meeting date, inclusive, as YYYY-MM-DD."),
+    ] = None,
+    date_to: Annotated[
+        str | None,
+        Query(alias="to", description="Latest meeting date, inclusive, as YYYY-MM-DD."),
+    ] = None,
+) -> VotesResponse:
+    """Return the votes an area holds, newest meeting first (spec 13.2).
+
+    Every filter is optional and they narrow together. Where two sources
+    disagree about an item, both are returned and neither is picked, in the
+    spec 10.4 order, so the caller sees the disagreement instead of a winner
+    chosen for them (rule E).
+
+    A vote that came off the video is labelled with the sentence the reading
+    job leaves, and it carries no tally: a mention in speech is not a count
+    (spec 10.4).
+    """
+    if body is not None and get_body(conn, body) is None:
+        raise not_found(f"There is no body {body}.")
+    rows = find_votes(
+        conn,
+        body_id=body,
+        identifier=identifier,
+        from_date=date_from,
+        to_date=date_to,
+    )
+    return VotesResponse(
+        count=len(rows),
+        votes=[
+            VoteWithContext(
+                **_vote_out(row.vote).model_dump(),
+                agenda_item_id=row.agenda_item_id,
+                item_number=row.item_number,
+                item_title=row.item_title,
+                identifiers=row.identifiers,
+                meeting_id=row.meeting_id,
+                meeting_title=row.meeting_title,
+                starts_at=row.starts_at,
+                body_id=row.body_id,
+                body_name=row.body_name,
+            )
+            for row in rows
+        ],
+    )
+
+
+@router.get(
+    "/citations/{citation_id}/verify",
+    response_model=CitationVerifyOut,
+    summary="Whether a citation still rests on the bytes it points at",
+)
+def get_citation_verify(
+    request: Request,
+    citation_id: int,
+    conn: sqlite3.Connection = Depends(get_connection),
+) -> CitationVerifyOut:
+    """Recompute the cited artifact's hash and say whether it still matches.
+
+    The hash is read from the artifact row and never from the citation, and the
+    file is hashed again here, so a citation to a file that was written over is
+    caught rather than answered with the hash it was created with (spec 10.5).
+
+    The page or the moment the citation points at comes back with the answer,
+    so a caller can go and look at it without a second request.
+    """
+    citation = get_citation(conn, citation_id)
+    if citation is None:
+        raise not_found(f"There is no citation {citation_id}.")
+    claimed = citation_sha256(conn, citation_id)
+    if claimed is None:
+        raise not_found(
+            f"Citation {citation_id} points at artifact {citation.artifact_id}, "
+            f"which is not in the database."
+        )
+    root = _storage_root(request)
+    artifact = artifacts.get(conn, citation.artifact_id, root)
+    computed: str | None = None
+    reason = ""
+    if artifact is None:
+        reason = f"The artifact {citation.artifact_id} is not in the database."
+    else:
+        path = (root / artifact.rel_path).resolve()
+        if not path.is_relative_to(root.resolve()):
+            reason = f"Artifact {artifact.id} is stored outside the storage root."
+        elif not path.is_file():
+            reason = f"The file for artifact {artifact.id} ({artifact.rel_path}) is missing."
+        else:
+            computed = artifacts.hash_file(path)
+            if computed != claimed:
+                reason = (
+                    "The file no longer matches the hash the citation was made with: "
+                    f"it is now {computed}."
+                )
+    return CitationVerifyOut(
+        citation_id=citation.id,
+        kind=citation.kind,
+        matches=reason == "",
+        artifact_sha256=claimed,
+        computed_sha256=computed,
+        reason=reason,
+        excerpt=citation.excerpt,
+        meeting_id=(
+            None if citation.record_id is None else _record_meeting(conn, citation.record_id)
+        ),
+        record_id=citation.record_id,
+        video_id=citation.video_id,
+        page_number=citation.page_number,
+        start_ms=citation.start_ms,
+        end_ms=citation.end_ms,
+    )
+
+
+def _record_meeting(conn: sqlite3.Connection, record_id: int) -> int | None:
+    """Return the meeting a document belongs to, or None when the row is gone."""
+    row = conn.execute("SELECT meeting_id FROM records WHERE id = ?", (record_id,)).fetchone()
+    return None if row is None else int(row["meeting_id"])

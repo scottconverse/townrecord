@@ -32,7 +32,7 @@ from __future__ import annotations
 import json
 import sqlite3
 
-from ..jobs import PAUSED, QUEUED, RUNNING, enqueue, requeue_paused
+from ..jobs import ORIGIN_MANUAL, PAUSED, QUEUED, RUNNING, enqueue, requeue_paused
 from ..repo import (
     Record,
     get_meeting,
@@ -98,7 +98,11 @@ MINUTES_LOOKBACK = 3
 
 
 def request_alignment(
-    conn: sqlite3.Connection, meeting_id: int, *, reason: str | None = None
+    conn: sqlite3.Connection,
+    meeting_id: int,
+    *,
+    reason: str | None = None,
+    origin: str = ORIGIN_MANUAL,
 ) -> int | None:
     """Put one meeting's alignment back on the queue, or queue it for the first time.
 
@@ -119,11 +123,16 @@ def request_alignment(
         meeting_id,
         AlignRequest(meeting_id=meeting_id, source_id=meeting.portal_source_id).as_payload(),
         reason or ASKED_FOR.format(meeting_id=meeting_id),
+        origin,
     )
 
 
 def request_minutes(
-    conn: sqlite3.Connection, meeting_id: int, *, reason: str | None = None
+    conn: sqlite3.Connection,
+    meeting_id: int,
+    *,
+    reason: str | None = None,
+    origin: str = ORIGIN_MANUAL,
 ) -> int | None:
     """Put one meeting's minutes reading back on the queue, or queue it first.
 
@@ -140,6 +149,7 @@ def request_minutes(
         meeting_id,
         MinutesRequest(meeting_id=meeting_id).as_payload(),
         reason or MINUTES_ASKED_FOR.format(meeting_id=meeting_id),
+        origin,
     )
 
 
@@ -176,7 +186,9 @@ def request_speakers(
     )
 
 
-def request_minutes_of_packet(conn: sqlite3.Connection, record: Record) -> list[int]:
+def request_minutes_of_packet(
+    conn: sqlite3.Connection, record: Record, *, origin: str = ORIGIN_MANUAL
+) -> list[int]:
     """Ask for the minutes that a packet whose pages were just read may hold.
 
     Spec 9.4: a session's draft minutes sit in the next regular session's packet,
@@ -184,6 +196,11 @@ def request_minutes_of_packet(conn: sqlite3.Connection, record: Record) -> list[
     session that is is not written on the packet, so the few regular sessions
     before it are asked about, and one whose minutes have already been found is
     skipped: the reading for it would only write the same rows again.
+
+    ``origin`` is who asked for the reading of the packet, and every reading
+    this queues takes after it (spec 16.2): a packet the daily schedule read
+    queues a scheduled reading, not a manual one. The caller that has a job in
+    hand passes ``ctx.origin``.
 
     Returns the ids of the jobs that were made ready, which is empty for a record
     that is not a packet and for a packet none of whose earlier sessions need a
@@ -210,6 +227,7 @@ def request_minutes_of_packet(conn: sqlite3.Connection, record: Record) -> list[
             conn,
             other.id,
             reason=PACKET_READ.format(record_id=record.id, meeting_id=meeting.id),
+            origin=origin,
         )
         if job_id is not None:
             asked.append(job_id)
@@ -222,6 +240,7 @@ def _request(
     meeting_id: int,
     payload: dict[str, object],
     reason: str,
+    origin: str = ORIGIN_MANUAL,
 ) -> int | None:
     """Make one meeting's job of one kind ready, or say there is nothing to do.
 
@@ -239,7 +258,7 @@ def _request(
         requeue_paused(conn, job_id, reason=reason)
         return job_id
 
-    return enqueue(conn, kind, payload)
+    return enqueue(conn, kind, payload, origin=origin)
 
 
 def _jobs_of(conn: sqlite3.Connection, kind: str, meeting_id: int) -> list[sqlite3.Row]:

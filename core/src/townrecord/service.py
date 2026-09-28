@@ -29,7 +29,7 @@ from typing import Any
 
 import httpx
 
-from . import records
+from . import pacing, records
 from .capture import JOB_KIND as CAPTURE_JOB_KIND
 from .capture import TRANSCRIBE_JOB_KIND, register_transcribe
 from .capture import register as register_capture
@@ -51,6 +51,9 @@ from .runtime import RuntimeManager, RuntimeNotInstalled, RuntimeSettings
 from .runtime import register as register_runtime_update
 from .runtime.settings import TEXTFLOWKIT_TOOL, TOOL_NAME
 from .schedule import Scheduler
+from .video.watch import JOB_KIND as WATCH_CHANNEL_JOB_KIND
+from .video.watch import register as register_watch_channel
+from .video.watch import service_ladder
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +69,7 @@ KIND_MODULES: tuple[tuple[str, str], ...] = (
     (READ_SPEAKERS, "townrecord.records"),
     (CAPTURE_JOB_KIND, "townrecord.capture"),
     (TRANSCRIBE_JOB_KIND, "townrecord.capture"),
+    (WATCH_CHANNEL_JOB_KIND, "townrecord.video.watch"),
     (RUNTIME_UPDATE_KIND, "townrecord.runtime"),
 )
 
@@ -103,6 +107,11 @@ class Service:
     #: The one HTTP client the runtime update job uses. It is closed with the
     #: service so the process does not leave a connection pool behind.
     client: httpx.Client | None = None
+    #: The one pace every YouTube request of this process waits on (spec 8.10).
+    #: It is installed process-wide by ``build_service`` and taken away again
+    #: by ``close``, so a process that ran a service does not keep its state
+    #: file open behind the next one.
+    pacer: pacing.Pacer | None = None
 
     def start(self) -> None:
         """Start the job workers and the daily schedule."""
@@ -126,6 +135,10 @@ class Service:
         if self.client is not None:
             self.client.close()
             self.client = None
+        # The process pace is the service's, so the service gives it back. A
+        # pace somebody else installed is left alone (:func:`pacing.forget_pacer`).
+        if pacing.forget_pacer(self.pacer):
+            self.pacer = None
 
 
 def build_service(
@@ -181,6 +194,7 @@ def build_service(
     logger.info(
         "TownRecord wired %s job kinds: %s.", len(registry.kinds()), ", ".join(registry.kinds())
     )
+    pace = _install_pacer(settings)
     return Service(
         settings=settings,
         registry=registry,
@@ -188,7 +202,40 @@ def build_service(
         scheduler=scheduler,
         handlers=handlers,
         client=real_client,
+        pacer=pace,
     )
+
+
+def _install_pacer(settings: Settings) -> pacing.Pacer:
+    """Build the one pace for this process and install it (spec 8.10).
+
+    Every handler asks :func:`townrecord.pacing.pacer` for the pace rather than
+    being handed one, so installing it here is what makes one service mean one
+    pace: a capture, a status ask, a feed read and an audio download all wait
+    on the same next-allowed time, whatever lane or worker they run on.
+
+    The state file lives beside the runtime pointer under the app-data root
+    (spec 8.6), so a restart reads the hold a 429 left behind instead of
+    walking straight back into it. The two numbers come from the environment
+    (:meth:`townrecord.pacing.PaceSettings.from_env`).
+
+    The time zone is the user's own, because the sentence a deferred job
+    carries names the moment a hold ends, and a person reads the clock on the
+    wall rather than UTC (spec 16.3).
+    """
+    pace = pacing.Pacer(
+        settings=pacing.PaceSettings.from_env(),
+        state_path=settings.runtime_root / pacing.PACE_FILE_NAME,
+        time_zone=settings.time_zone,
+    )
+    pacing.use_pacer(pace)
+    logger.info(
+        "YouTube requests are paced %.1fs apart, with a %.0fs hold after HTTP 429 (%s).",
+        pace.settings.minimum_gap_s,
+        pace.settings.rate_limit_backoff_s,
+        pace.state_path,
+    )
+    return pace
 
 
 def _register_handlers(
@@ -216,6 +263,10 @@ def _register_handlers(
             runner=capture_runner,
             interpreter=interpreter,
             textflowkit_program=textflowkit,
+        ),
+        WATCH_CHANNEL_JOB_KIND: register_watch_channel(
+            registry=registry,
+            ladder=service_ladder(client=client, interpreter=interpreter),
         ),
         RUNTIME_UPDATE_KIND: register_runtime_update(
             root=settings.runtime_root,

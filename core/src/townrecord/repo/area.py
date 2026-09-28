@@ -291,11 +291,19 @@ def insert_source(
     reason: str,
     status: str = "suggested",
     body_id: int | None = None,
+    settings: str = "{}",
 ) -> int:
     """Store one source suggestion and return its id (spec 6.2).
 
     The person who suggested it and the reason are required by the schema, so
     a suggestion can never be stored without them.
+
+    ``settings`` is the source's own configuration as JSON text (migration
+    0013): the classifier's keywords and skip seeds of spec 7.2 step 6 live
+    here rather than in the code, because a city's own words are not every
+    city's words (rule D). The default is the empty object, which is the
+    honest answer for a source nobody has configured: the built-in seeds are
+    then used, and the watch records that it did so.
     """
     return insert(
         conn,
@@ -308,6 +316,7 @@ def insert_source(
             "status": status,
             "suggested_by": suggested_by,
             "reason": reason,
+            "settings": settings,
         },
     )
 

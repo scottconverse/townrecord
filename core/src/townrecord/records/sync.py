@@ -29,7 +29,7 @@ from typing import Any
 from ..adapters.base import AdapterError, Document
 from ..adapters.base import Meeting as ListedMeeting
 from ..jobs import JobContext
-from ..repo import BROKEN_AFTER_FAILURES, Source, record_source_failure, record_source_success
+from ..repo import Source, record_source_failure, record_source_success
 from . import portal
 
 
@@ -113,7 +113,7 @@ def sync_primegov(ctx: JobContext) -> None:
     except AdapterError as exc:
         reason = portal.adapter_problem(exc)
         failures = record_source_failure(ctx.conn, source.id, reason)
-        raise portal.SyncRefused(_failure_sentence(source, reason, failures)) from exc
+        raise portal.SyncRefused(portal.failure_sentence(source, reason, failures)) from exc
     record_source_success(ctx.conn, source.id)
 
     tally = _Tally()
@@ -121,14 +121,6 @@ def sync_primegov(ctx: JobContext) -> None:
         ctx.heartbeat()
         _sync_meeting(ctx, source, meeting, tally)
     ctx.save_checkpoint(tally.as_checkpoint(request, source))
-
-
-def _failure_sentence(source: Source, reason: str, failures: int) -> str:
-    """One sentence for a failed listing, naming the count and the status."""
-    sentence = f"{reason} Source {source.id} has now failed {failures} time(s) in a row."
-    if failures >= BROKEN_AFTER_FAILURES:
-        return f"{sentence} It is broken."
-    return sentence
 
 
 def _sync_meeting(ctx: JobContext, source: Source, listed: ListedMeeting, tally: _Tally) -> None:
@@ -364,5 +356,5 @@ def _queue_alignment(ctx: JobContext, meeting_id: int, source: Source, tally: _T
     if primary_video(ctx.conn, meeting_id) is None:
         return
     reason = SYNCED_AGAIN.format(meeting_id=meeting_id)
-    if request_alignment(ctx.conn, meeting_id, reason=reason) is not None:
+    if request_alignment(ctx.conn, meeting_id, reason=reason, origin=ctx.origin) is not None:
         tally.alignments_queued += 1

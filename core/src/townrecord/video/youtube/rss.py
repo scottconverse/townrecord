@@ -18,9 +18,14 @@ import xml.etree.ElementTree as ET
 
 import httpx
 
+from townrecord import pacing
 from townrecord.video.youtube.listing import SOURCE_RSS, VideoError, VideoListing
 
 RSS_FEED_URL = "https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
+
+#: What a feed read is called in the process pace's own log line
+#: (:mod:`townrecord.pacing`). The feed is a YouTube request like any other.
+PACE_WHAT = "the channel feed"
 
 #: Every YouTube channel id starts with this, in the form the API uses.
 FEED_CHANNEL_ID_PREFIX = "UC"
@@ -59,11 +64,18 @@ class RssLister:
         if not channel_id:
             raise VideoError("the public feed needs a channel id, and none was given")
         url = self.feed_url(channel_id)
+        # Spec 8.10: reading a feed is a YouTube request, so it takes its turn
+        # in the process pace beside the captures and the status asks.
+        pacing.pacer().wait(what=PACE_WHAT)
         try:
             response = self.client.get(url)
         except httpx.HTTPError as exc:
             raise VideoError(f"the YouTube feed could not be reached: {exc}") from exc
         if response.status_code != 200:
+            if response.status_code == pacing.RATE_LIMIT_STATUS:
+                # A feed answered 429 is the same answer as a capture answered
+                # 429: the address is being held, so every YouTube job waits.
+                pacing.pacer().rate_limited(what=PACE_WHAT, marker="HTTP 429")
             raise VideoError(f"the YouTube feed answered HTTP {response.status_code} for {url}")
         return self.parse_feed(response.content)
 

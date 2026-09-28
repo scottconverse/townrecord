@@ -40,7 +40,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .. import artifacts, proc, repo
+from .. import artifacts, pacing, proc, repo
 from ..captions import CaptionParseError
 from ..jobs import JobContext
 from ..runtime.javascript import JavaScriptRuntime
@@ -79,6 +79,10 @@ TRANSCRIPT_SUFFIX = ".json"
 
 #: The reason recorded when the download finished but wrote no audio file.
 NO_AUDIO_FILE = "yt-dlp finished without writing an audio file."
+
+#: What an audio download is called in the process pace's own log line
+#: (:mod:`townrecord.pacing`).
+PACE_WHAT = "an audio download"
 
 #: The reason recorded when the transcriber wrote no transcript file.
 NO_TRANSCRIPT_FILE = "TextFlowKit finished without writing a transcript file."
@@ -372,6 +376,13 @@ class TranscribeAudio:
         # Element 0 is the interpreter that runs `-m yt_dlp`: the private
         # runtime of spec 8.9, never whatever is on the user's PATH.
         argv[0] = str(self.ytdlp_interpreter)
+        # Spec 8.10: this command asks YouTube, so it waits on the process pace
+        # like a caption capture does, and the line announcing it comes after
+        # the wait, because a download that has not been allowed is not yet a
+        # download (spec 16.3). The ``--version`` ask above is a local program
+        # and is deliberately not paced: a runtime that waited would hold every
+        # YouTube job behind a text editor's startup.
+        pacing.pacer().wait(what=PACE_WHAT)
         logger.info(
             "Downloading the audio of video %s into %s (archive holds %s lines).",
             video.id,
@@ -386,6 +397,11 @@ class TranscribeAudio:
                 # Spec 8.3: a rate limit is a paced retry on a later pass, and
                 # it is never a reason to fetch anything else.
                 logger.warning("The audio download was rate limited (%s).", marker)
+                # The hold is the address's: a 429 on the audio path holds the
+                # caption path too, which is what one pace for the process means.
+                pacing.pacer().rate_limited(
+                    what=PACE_WHAT, marker=marker, delay_s=self.settings.rate_limit_retry_s
+                )
                 ctx.defer(
                     f"rate limited by YouTube ({marker}), will retry later",
                     delay_s=self.settings.rate_limit_retry_s,

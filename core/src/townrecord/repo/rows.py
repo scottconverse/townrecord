@@ -98,6 +98,10 @@ class Source(Row):
     last_error: str | None
     last_checked_at: str | None
     created_at: str
+    #: The settings this source carries of its own, as JSON text (migration
+    #: 0013). ``"{}"`` means it has none, and the reader falls back to the
+    #: built-in seeds rather than inventing a setting (rule D).
+    settings: str = "{}"
 
 
 @dataclass(frozen=True)
@@ -316,6 +320,27 @@ class MeetingAlignment(Row):
         values["offset_accepted"] = bool(row["offset_accepted"])
         values["anchors"] = _json_list(row["anchors"])
         return cls(**values)
+
+
+@dataclass(frozen=True)
+class VoteContext(Row):
+    """One vote with the item, the meeting and the body it belongs to.
+
+    A list of votes read across meetings has to say where each one came from,
+    and a caller reading it has no id in hand to look the rest up by. The join
+    is therefore done once, here, rather than once per row by every caller.
+    """
+
+    vote: Vote
+    agenda_item_id: int
+    item_number: str
+    item_title: str
+    identifiers: dict[str, Any]
+    meeting_id: int
+    meeting_title: str | None
+    starts_at: str
+    body_id: int
+    body_name: str
 
 
 @dataclass(frozen=True)

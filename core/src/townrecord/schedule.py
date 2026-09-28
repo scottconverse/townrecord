@@ -1,10 +1,11 @@
 """The daily schedule (spec 16.2, 8.9).
 
 The service runs a schedule of its own: one ``sync_primegov`` per portal source
-the user accepted, once per local day, at a local time the user chose in the
-area's time zone, plus the daily ``runtime_update`` check of spec 8.9. This
-module is that schedule and nothing else. It does not run a job and it does not
-fetch anything: it enqueues, and the jobs system of spec 16.1 does the work.
+the user accepted and one ``watch_channel`` per accepted video channel source,
+once per local day each, at a local time the user chose in the area's time zone,
+plus the daily ``runtime_update`` check of spec 8.9. This module is that
+schedule and nothing else. It does not run a job and it does not fetch anything:
+it enqueues, and the jobs system of spec 16.1 does the work.
 
 Three rules are what the code is built around.
 
@@ -14,21 +15,22 @@ under a UNIQUE key of task, subject and local date (migration 0012). A service
 that restarts ten times in one morning still syncs the morning once, and a run
 at 22:00 in Denver belongs to that Denver day rather than to tomorrow in UTC.
 
-**A run that cannot happen pauses, and says why.** An accepted portal source
-with no origin and a yt-dlp check with no test video are each recorded as a
-paused run carrying a plain sentence (spec 16.2, 16.3). A paused run holds the
-day: it is that day's record, so the same refusal is not written again on every
-tick, and the next local day tries again. A user who fixes the cause runs the
-sync by hand, which is what a job's origin is for.
+**A run that cannot happen pauses, and says why.** An accepted source with no
+origin and a yt-dlp check with no test video are each recorded as a paused run
+carrying a plain sentence (spec 16.2, 16.3). A paused run holds the day: it is
+that day's record, so the same refusal is not written again on every tick, and
+the next local day tries again. A user who fixes the cause runs the job by hand,
+which is what a job's origin is for.
 
-What a day is owed is one sync per portal source the user accepted (spec 16.2
-says "per body"; the job is per source, so the source is the subject). A
-suggested source has not been accepted yet and a rejected one was turned down,
-and neither is a run that cannot happen: no run is owed for them, so none is
-recorded and none is skipped silently either -- ``townrecord status`` lists
-every source with its status, which is where the user reads that they are not
-being synced. A source that answers with failures is ``broken`` and **is**
-still a run: the sync is how a broken source recovers (spec 7.3).
+What a day is owed is one run per source the user accepted, one of each kind:
+a portal source is synced, a channel source is watched (spec 16.2 says "per
+body"; the job is per source, so the source is the subject). A suggested source
+has not been accepted yet and a rejected one was turned down, and neither is a
+run that cannot happen: no run is owed for them, so none is recorded and none is
+skipped silently either -- ``townrecord status`` lists every source with its
+status, which is where the user reads that they are not being watched or synced.
+A source that answers with failures is ``broken`` and **is** still a run: the
+listing is how a broken source recovers (spec 7.3).
 
 **Time is injected.** The clock is a field of this object, so a test moves it
 across a daylight saving change and watches one run per local day come out.
@@ -59,6 +61,7 @@ from .records.portal import (
     MEETING_PORTAL,
     SYNC_PRIMEGOV,
     SYNCABLE_STATUSES,
+    VIDEO_CHANNEL,
     SyncRefused,
     syncable_source,
 )
@@ -66,11 +69,14 @@ from .repo import all_sources, record_enqueued_run, record_paused_run, run_for
 from .repo.rows import Source
 from .runtime.job import JOB_KIND as RUNTIME_UPDATE_KIND
 from .runtime.settings import TOOL_NAME
+from .video.watch import JOB_KIND as WATCH_CHANNEL_KIND
+from .video.watch import refusal_for as watch_refusal
 
 logger = logging.getLogger(__name__)
 
 #: The tasks the schedule knows. They are the job kinds it enqueues.
 TASK_SYNC = SYNC_PRIMEGOV
+TASK_WATCH = WATCH_CHANNEL_KIND
 TASK_RUNTIME_UPDATE = RUNTIME_UPDATE_KIND
 
 #: The zone the schedule counts days in when the user has not named one. It is
@@ -263,22 +269,33 @@ class Scheduler:
     def _plan(self, conn: sqlite3.Connection) -> Iterator[Planned]:
         """Yield every run a day is owed, with why it cannot happen when it cannot.
 
-        One sync per meeting portal source that may be synced, then the yt-dlp
-        update check. The subjects are what "once per local day" is counted by.
+        One sync per meeting portal source that may be synced, one watch per
+        video channel source that may be watched, then the yt-dlp update check.
+        The subjects are what "once per local day" is counted by.
 
         A source the user has not accepted, or has rejected, is not yielded at
         all: no run is owed for it, so there is nothing to pause and nothing to
-        skip. Its status is what ``townrecord status`` shows.
+        skip. Its status is what ``townrecord status`` shows. A source is a
+        portal or a channel, so it is one kind of run or the other and never
+        both.
         """
         for source in all_sources(conn):
-            if source.type != MEETING_PORTAL or source.status not in SYNCABLE_STATUSES:
+            if source.status not in SYNCABLE_STATUSES:
                 continue
-            yield (
-                TASK_SYNC,
-                source_subject(source.id),
-                self._sync_refusal(conn, source),
-                {"source_id": source.id},
-            )
+            if source.type == MEETING_PORTAL:
+                yield (
+                    TASK_SYNC,
+                    source_subject(source.id),
+                    self._sync_refusal(conn, source),
+                    {"source_id": source.id},
+                )
+            elif source.type == VIDEO_CHANNEL:
+                yield (
+                    TASK_WATCH,
+                    source_subject(source.id),
+                    watch_refusal(conn, source),
+                    {"source_id": source.id},
+                )
         yield (
             TASK_RUNTIME_UPDATE,
             tool_subject(TOOL_NAME),
@@ -367,6 +384,7 @@ __all__ = [
     "NO_ZONE_REASON",
     "TASK_RUNTIME_UPDATE",
     "TASK_SYNC",
+    "TASK_WATCH",
     "UNCONFIGURED_ZONE",
     "Connect",
     "DueDay",

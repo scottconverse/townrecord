@@ -12,6 +12,18 @@ is reported as missing, with the setting that would supply it, because a health
 page that quietly rounds "no time zone is set" up to "OK" is the page spec 16.3
 exists to forbid.
 
+The subject of the report is the service that is running and not the shell that
+asked. A service writes down what it runs with (``serving``), and this reads
+that: on 2026-09-27 a service served on 8791 at 17:21 and ``townrecord status``
+from another shell printed 8190 and 06:00, each number true of the caller and
+false of the service. When no service is running the report says so, and says
+that what it shows is this shell's configuration.
+
+The address is part of that subject, and so is who can reach it. A report of a
+service on an address beyond this machine warns about it, and a shell whose
+configuration would be refused says which setting to turn on rather than warning
+about an exposure that cannot happen yet (spec 13.1).
+
 The API's own ``/v1/health`` route stays a small liveness answer: it is a
 different question (is this process answering?) and other routes' tests pin its
 body. ``townrecord status`` is the content the brief asks for.
@@ -26,6 +38,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
+from . import network, serving
 from .config import Settings
 from .db import connect as default_connect
 from .jobs import STATES, Clock, JobsSettings, utcnow
@@ -158,6 +171,17 @@ class Status:
     tools: tuple[Tool, ...]
     runs: tuple[Run, ...]
     paused: tuple[Run, ...]
+    #: The service that is running on this app-data root, when one is. Everything
+    #: above it describes that service when it is here and this shell's settings
+    #: when it is not; ``service`` is what tells the two apart.
+    service: serving.Served | None = None
+    #: True when a service holds the lock but wrote nothing this report can read.
+    #: Rare, and reported rather than rounded down to "nothing is running".
+    service_locked: bool = False
+    #: What a person must be told about the address above (spec 13.1): who can
+    #: reach it, or that serving there is not allowed yet. Empty when the address
+    #: is this machine alone, which is the default and needs no warning.
+    warnings: tuple[str, ...] = field(default=())
     notes: tuple[str, ...] = field(default=())
 
 
@@ -171,12 +195,33 @@ def collect(
     kinds: Sequence[str] | None = None,
     limit: int = DEFAULT_LIMIT,
 ) -> Status:
-    """Read what the service would show, from the real content of its files."""
+    """Read what the service would show, from the real content of its files.
+
+    A service that is running is the subject of the report, and the settings of
+    the shell that asked are not: on 2026-09-27 a service served on 8791 at 17:21
+    while ``townrecord status`` from another shell printed 8190 and 06:00, both
+    true of the caller and false of the service. So the address, the database,
+    the schedule and the time zone come from what the running service wrote down
+    whenever there is one to read, and from the settings only when there is not.
+    """
     jobs = jobs_settings or JobsSettings()
     runtime = runtime_settings or RuntimeSettings()
     registered = tuple(kinds) if kinds is not None else _registered_kinds()
     notes: list[str] = []
+    root = Path(settings.runtime_root)
+    locked = serving.is_running(root)
+    served = serving.read(root) if locked else None
+    host, port = settings.host, settings.port
+    time_zone, daily_time = settings.time_zone, settings.daily_time.strftime("%H:%M")
     db_path = Path(settings.db_path)
+    #: A service that is running on an address beyond this machine was allowed to
+    #: serve there when it started, whatever the setting of the shell that asks
+    #: says now: the report is about the service and not about its caller.
+    allowed = settings.allow_lan or served is not None
+    if served is not None:
+        host, port = served.host, served.port
+        time_zone, daily_time = served.time_zone, served.daily_time
+        db_path = Path(served.db_path)
     present = db_path.is_file()
     reading = Reading()
     if present:
@@ -196,15 +241,15 @@ def collect(
         )
     return Status(
         version=settings.version,
-        api=f"http://{settings.host}:{settings.port}",
-        host=settings.host,
-        port=settings.port,
+        api=f"http://{host}:{port}",
+        host=host,
+        port=port,
         db_path=str(db_path),
         db_present=present,
         storage_root=str(settings.storage_root),
         runtime_root=str(settings.runtime_root),
-        time_zone=settings.time_zone,
-        daily_time=settings.daily_time.strftime("%H:%M"),
+        time_zone=time_zone,
+        daily_time=daily_time,
         lane_limits=tuple(sorted(jobs.lane_limits.items())),
         kind_limits=tuple(sorted(jobs.kind_limits.items())),
         registered_kinds=registered,
@@ -217,8 +262,26 @@ def collect(
         tools=_tools(settings, runtime),
         runs=reading.runs,
         paused=reading.paused,
+        service=served,
+        service_locked=locked and served is None,
+        warnings=_warnings(host, port, allowed),
         notes=tuple(notes),
     )
+
+
+def _warnings(host: str, port: int, allowed: bool) -> tuple[str, ...]:
+    """Say what a person must be told about this address, and nothing else.
+
+    A loopback address is the default and carries no warning. An address the
+    network can reach carries the warning about who can reach it once the option
+    is on, or the sentence ``serve`` refuses it with while the option is off: the
+    two cannot both be true, and neither is invented here (spec 13.1).
+    """
+    texts = (
+        network.lan_warning(host, port, allow_lan=allowed),
+        network.lan_refusal(host, allow_lan=allowed),
+    )
+    return tuple(text for text in texts if text is not None)
 
 
 def _read(
@@ -354,11 +417,13 @@ def _registered_kinds() -> tuple[str, ...]:
 def render(status: Status) -> str:
     """Write the report the way ``townrecord status`` prints it."""
     lines = [f"TownRecord {status.version}"]
+    lines.append(f"  Service    {_service_line(status)}")
     lines.append(f"  API        {status.api} (a token is required on every route)")
     lines.append(f"  Database   {_database_line(status)}")
     lines.append(f"  Storage    {status.storage_root}")
     lines.append(f"  Runtimes   {status.runtime_root}")
     lines.append(f"  Schedule   {_schedule_line(status)}")
+    lines.extend(status.warnings)
     lines.append("")
     lines.extend(_job_lines(status))
     lines.append("")
@@ -373,6 +438,29 @@ def render(status: Status) -> str:
         lines.append("")
         lines.append(f"Note: {note}")
     return "\n".join(lines)
+
+
+def _service_line(status: Status) -> str:
+    """Say which service the lines below describe, or that none is running.
+
+    The process id is printed for a person to read and is never acted on: on
+    Windows, asking whether a process id is alive is a call that ends it.
+    """
+    if status.service is not None:
+        return (
+            f"running as process {status.service.pid} at {status.service.api} since "
+            f"{status.service.started_at} (the values below are the ones it runs with)"
+        )
+    if status.service_locked:
+        return (
+            f"a service holds the lock on {status.runtime_root} but wrote nothing this "
+            "report can read, so the values below are this shell's configuration, not a "
+            "running server"
+        )
+    return (
+        "no service is running, so the address, the schedule and the time zone below are "
+        "this shell's configuration, not a running server"
+    )
 
 
 def _database_line(status: Status) -> str:

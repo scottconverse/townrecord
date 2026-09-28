@@ -6,6 +6,11 @@ lists are data, not code: a user can change what counts as a meeting without
 a new release, and both recorded channels can be re-checked against the
 lists at any time.
 
+The seed lists name no city (rule D). A phrase that belongs to one area, such
+as a program named after the city it covers, is that source's setting in
+``sources.settings`` (migration 0013); a source with no settings of its own is
+read by the neutral words below and nothing else.
+
 Matching is on word boundaries, so ``Commission`` does not match
 ``Commissioners`` and ``Council`` does not match ``Councilwoman``. That cuts
 both ways and the misses are known: a title that renames or misspells a body
@@ -21,7 +26,10 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-#: The bodies and session words a Longmont meeting title usually carries.
+#: The bodies and session words a meeting title usually carries, in any area.
+#:
+#: Nothing here names a city or a program: these are the neutral seeds, and the
+#: words that belong to one area are that source's settings (migration 0013).
 DEFAULT_MEETING_KEYWORDS: tuple[str, ...] = (
     "City Council",
     "Planning and Zoning",
@@ -35,13 +43,13 @@ DEFAULT_MEETING_KEYWORDS: tuple[str, ...] = (
 #: Titles that carry a keyword but are not meetings anyone attends as one.
 #:
 #: A neighborhood meeting is a developer's open house, not a public body; the
-#: weekly round-up, the sports tournament and the city news show are programs
-#: about the city rather than the city at work.
+#: weekly round-up and the sports tournament are programs about the area rather
+#: than the area at work. Both are neutral. A program named after one city, such
+#: as "This is Longmont", is that source's own skip phrase and not a seed.
 DEFAULT_SKIP_TITLES: tuple[str, ...] = (
     "This Week in Council",
     "Neighborhood Meeting",
     "Esports",
-    "This is Longmont",
 )
 
 

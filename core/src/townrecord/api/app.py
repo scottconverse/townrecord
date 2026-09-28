@@ -13,11 +13,11 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from ..config import Settings
 from ..db import connect, migrate
-from . import read
+from . import docs_assets, read
 from .auth import require_token
 
 DESCRIPTION = "Local API for TownRecord. Every request needs a bearer token."
@@ -74,14 +74,48 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         """Return the OpenAPI description of this API."""
         return JSONResponse(app.openapi())
 
+    @app.get(
+        f"{docs_assets.PREFIX}/{{name}}",
+        include_in_schema=False,
+        dependencies=[Depends(require_token)],
+    )
+    def docs_asset(name: str) -> FileResponse:
+        """Return one file the API browser is made of, from this machine.
+
+        It is a route and not a mount, so the request runs the token check like
+        every other one (spec 13.1, decision 10 rule 2). Only the names the page
+        loads are served, and each is served from the package's own directory.
+        """
+        if not docs_assets.is_served(name):
+            raise read.not_found(f"There is no docs asset named {name!r}.")
+        path = docs_assets.asset_path(name)
+        if path is None:
+            raise read.not_found(
+                f"The docs asset {name!r} is missing from the installed "
+                f"{docs_assets.PACKAGE} package."
+            )
+        return FileResponse(path, media_type=docs_assets.ASSETS[name])
+
     @app.get("/docs", include_in_schema=False, dependencies=[Depends(require_token)])
     def swagger_ui() -> HTMLResponse:
-        """Return the API browser."""
-        return get_swagger_ui_html(openapi_url="/openapi.json", title=f"{app.title} docs")
+        """Return the API browser, with its files served from this machine."""
+        return get_swagger_ui_html(
+            openapi_url="/openapi.json",
+            title=f"{app.title} docs",
+            swagger_js_url=docs_assets.SWAGGER_JS,
+            swagger_css_url=docs_assets.SWAGGER_CSS,
+            swagger_favicon_url=docs_assets.FAVICON,
+        )
 
     @app.get("/redoc", include_in_schema=False, dependencies=[Depends(require_token)])
     def redoc_page() -> HTMLResponse:
-        """Return the reference page."""
-        return get_redoc_html(openapi_url="/openapi.json", title=f"{app.title} reference")
+        """Return the reference page, with its file served from this machine."""
+        return get_redoc_html(
+            openapi_url="/openapi.json",
+            title=f"{app.title} reference",
+            redoc_js_url=docs_assets.REDOC_JS,
+            redoc_favicon_url=docs_assets.FAVICON,
+            with_google_fonts=False,
+        )
 
     return app

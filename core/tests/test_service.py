@@ -20,6 +20,7 @@ from pathlib import Path
 
 import pytest
 
+from townrecord import pacing
 from townrecord.capture import JOB_KIND as CAPTURE_JOB_KIND
 from townrecord.capture import LANE as CAPTURE_LANE
 from townrecord.capture import TRANSCRIBE_JOB_KIND
@@ -36,6 +37,7 @@ from townrecord.records import (
 )
 from townrecord.runtime import JOB_KIND as RUNTIME_UPDATE_KIND
 from townrecord.service import KIND_MODULES, build_service, kinds
+from townrecord.video.watch import JOB_KIND as WATCH_CHANNEL_JOB_KIND
 
 #: Every job kind that exists, spelled out. A new kind has to be added here as
 #: well as to the service, and that is the point: the list is the spec's, not
@@ -49,6 +51,7 @@ EXPECTED_KINDS = (
     READ_SPEAKERS,
     CAPTURE_JOB_KIND,
     TRANSCRIBE_JOB_KIND,
+    WATCH_CHANNEL_JOB_KIND,
     RUNTIME_UPDATE_KIND,
 )
 
@@ -88,7 +91,7 @@ def test_every_job_kind_that_exists_is_registered(settings: Settings) -> None:
 
     assert service.registry.kinds() == tuple(sorted(EXPECTED_KINDS))
     assert set(service.registry.kinds()) == set(kinds())
-    assert len(kinds()) == len(EXPECTED_KINDS) == 9
+    assert len(kinds()) == len(EXPECTED_KINDS) == 10
 
     # Each kind is a name the module the service says registers it really
     # declares, so KIND_MODULES is a fact and not a comment.
@@ -168,3 +171,21 @@ def test_the_service_closes_what_it_opened(settings: Settings) -> None:
     service.close()
     assert service.client is None
     service.close()  # closing twice is not an error
+
+
+def test_the_service_installs_one_pace_for_the_whole_process(settings: Settings) -> None:
+    """One service, one pace, one state file, whatever job asks (spec 8.10).
+
+    Every handler asks :func:`townrecord.pacing.pacer` rather than being handed
+    a pace, so this install is what makes a capture on the normal lane and a
+    transcription on the heavy lane wait for each other.
+    """
+    service = build_service(settings, clock=lambda: BEFORE_THE_DAY)
+
+    installed = pacing.pacer()
+    assert installed is service.pacer
+    assert installed.state_path == settings.runtime_root / pacing.PACE_FILE_NAME
+    assert installed.settings.minimum_gap_s == pacing.DEFAULT_MINIMUM_GAP_S
+
+    service.close()
+    assert pacing.forget_pacer(installed) is False, "the service kept its pace after closing"
