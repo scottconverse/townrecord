@@ -17,11 +17,12 @@ from townrecord.db import applied_versions, connect, discover, migrate, split_st
 #: motions of the minutes (spec 10.4), 0012 is the schedule's record of one
 #: run per task, subject and local day (spec 16.2), 0013 is the classifier
 #: settings of one source (spec 7.2 step 6, rule D), 0014 is who is speaking
-#: (spec 10.6) and 0017 is the caption rechecks, the review items they raise
-#: and the rerun marks a revision leaves (spec 8.7). 0015 and 0016 are not
-#: here: they are reserved for the other lane, and a gap in a version list is
-#: not a migration.
-SHIPPED_VERSIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 17]
+#: (spec 10.6), 0016 is the AI provider registry, the per-task model setting
+#: and the usage ledger (spec 11.1, 11.4, 11.6, 11.8), and 0017 is the caption
+#: rechecks, the review items they raise and the rerun marks a revision leaves
+#: (spec 8.7). 0015 is not written yet. This list is exact on purpose, so a
+#: number that ships without an entry here fails rather than passes quietly.
+SHIPPED_VERSIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17]
 
 
 def table_names(conn: sqlite3.Connection) -> set[str]:
