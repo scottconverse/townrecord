@@ -7,6 +7,10 @@ requires-python = ">=3.12"
 license = "Apache-2.0"
 dependencies = [
     "fastapi>=0.115",
+    # The API browser has to work on a machine with no network (spec 17), so
+    # the Swagger UI and ReDoc assets are served from this package's own files
+    # rather than from a CDN. Pinned: the bytes are the ones the tests hash.
+    "fastapi-offline==1.7.7",
     "httpx>=0.28.1",
     "pypdf>=6.19.0",
     "tzdata>=2025.1",

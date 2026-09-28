@@ -28,6 +28,11 @@ from .store import get, insert
 #: same job over the same items.
 READING_SOURCE_KINDS: tuple[str, ...] = ("minutes", "transcript")
 
+#: The job kind that reads a meeting's minutes, spelled here because the record
+#: layer is above this one and importing it would be a cycle. It is pinned to
+#: the kind the queue is given by a test, so the two cannot drift apart.
+READ_MINUTES_KIND = "read_minutes"
+
 
 def insert_minutes_document(
     conn: sqlite3.Connection,
@@ -64,6 +69,29 @@ def minutes_document(conn: sqlite3.Connection, meeting_id: int) -> MinutesDocume
         "SELECT * FROM minutes_documents WHERE meeting_id = ? ORDER BY id LIMIT 1", (meeting_id,)
     ).fetchone()
     return None if row is None else MinutesDocument.from_row(row)
+
+
+def minutes_expectation(conn: sqlite3.Connection, meeting_id: int) -> str | None:
+    """Return the plain sentence saying where this meeting's minutes are, or None.
+
+    When the reading job searched and did not find them it paused with its
+    reason on its own row (spec 10.4), and that sentence is the answer: it says
+    where the minutes are expected rather than only that they are missing. None
+    means no reading has paused over this meeting, so there is nothing to say
+    beyond the fact that the minutes are not stored.
+
+    A paused job is read, never a finished one: a job that failed says the
+    reading broke, which is a different fact from minutes that are not out yet.
+    """
+    row = conn.execute(
+        "SELECT last_error FROM jobs WHERE kind = ? AND state = ? AND json_valid(payload) "
+        "AND json_extract(payload, '$.meeting_id') = ? ORDER BY id DESC LIMIT 1",
+        (READ_MINUTES_KIND, "paused", meeting_id),
+    ).fetchone()
+    if row is None or row["last_error"] is None:
+        return None
+    text = str(row["last_error"]).strip()
+    return text or None
 
 
 def insert_motion(

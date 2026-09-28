@@ -12,6 +12,7 @@ store wrote, and its hash is the hash in its name.
 from __future__ import annotations
 
 import hashlib
+import re
 import sqlite3
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -23,22 +24,30 @@ from fastapi.testclient import TestClient
 
 from tests.conftest import TEST_VERSION
 from townrecord import artifacts
+from townrecord.api import docs_assets
 from townrecord.api.app import create_app
 from townrecord.api.tokens import SCOPE_READ, create_token
 from townrecord.captions import parse_vtt
 from townrecord.config import Settings
 from townrecord.db import connect, migrate
+from townrecord.jobs import JobPaused, claim, enqueue, pause
+from townrecord.records.minutes import FROM_VIDEO
+from townrecord.records.portal import READ_MINUTES
 from townrecord.repo import (
     insert_agenda_item,
     insert_body,
     insert_jurisdiction,
     insert_meeting,
+    insert_motion,
+    insert_motion_item,
     insert_record,
+    insert_record_citation,
     insert_record_page,
     insert_segment,
     insert_source,
     insert_transcript,
     insert_video,
+    insert_video_citation,
     insert_vote,
 )
 
@@ -55,6 +64,12 @@ SPEECH = "The ordinance 2026-54 comes before us tonight."
 #: this line is the one that says whether the renderer escaped its text.
 URL_LINE = "The packet is at <https://longmont.invalid/agenda> & the clerk has copies."
 
+#: What the video says about the item the minutes say passed. The two sources
+#: disagree on purpose (spec 10.4): the API returns both and picks neither. The
+#: line carries neither the word "ordinance" nor the number 2026-54, so the
+#: search tests' own counts stay about what they were about.
+VOTE_LINE = "The second reading fails on a roll call vote."
+
 
 @dataclass(frozen=True)
 class Seeded:
@@ -69,8 +84,12 @@ class Seeded:
     video: int
     record: int
     document_sha256: str
+    document_rel_path: str
     aligned_item: int
     loose_item: int
+    motion: int
+    page_citation: int
+    video_citation: int
     token: str
 
 
@@ -141,7 +160,9 @@ def _seed(conn: sqlite3.Connection, storage_root: Path) -> Seeded:
         "01:06:18.000 --> 01:06:25.000\n"
         f"<v Mayor>{SPEECH}</v>\n\n"
         "01:06:25.000 --> 01:06:30.000\n"
-        f"<v Clerk>{URL_LINE}</v>\n"
+        f"<v Clerk>{URL_LINE}</v>\n\n"
+        "01:06:30.000 --> 01:06:38.000\n"
+        f"{VOTE_LINE}\n"
     ).encode()
     transcript_artifact = artifacts.store(conn, storage_root, "transcript", caption_bytes, "vtt")
     transcript = insert_transcript(
@@ -172,6 +193,13 @@ def _seed(conn: sqlite3.Connection, storage_root: Path) -> Seeded:
         end_ms=3_990_000,
         text=URL_LINE,
     )
+    insert_segment(
+        conn,
+        transcript_id=transcript,
+        start_ms=3_990_000,
+        end_ms=3_998_000,
+        text=VOTE_LINE,
+    )
 
     document = artifacts.store(conn, storage_root, "document", MINUTES, "pdf")
     record = insert_record(
@@ -200,6 +228,51 @@ def _seed(conn: sqlite3.Connection, storage_root: Path) -> Seeded:
         end_ms=4_000_000,
         alignment_method="html_video_times",
     )
+    # The citation both the vote and the motion rest on: the page of the packet
+    # the minutes were read out of (spec 10.4, 10.5).
+    page_citation = insert_record_citation(
+        conn,
+        record_id=record,
+        source_id=portal,
+        artifact_id=document.id,
+        excerpt="Adopted on first reading by a voice vote.",
+        page_number=1,
+    )
+    vote_citation = insert_video_citation(
+        conn,
+        video_id=video,
+        transcript_id=transcript,
+        artifact_id=transcript_artifact.id,
+        excerpt=VOTE_LINE,
+        start_ms=3_990_000,
+        end_ms=3_998_000,
+    )
+    # The motion the vote's outcome came out of is written first, because the
+    # vote names it (spec 10.4): the minutes record the motion, and the vote is
+    # the count that carried it.
+    motion = insert_motion(
+        conn,
+        meeting_id=meeting,
+        record_id=record,
+        page_number=1,
+        ordinal=1,
+        mover="Mayor",
+        seconder="Council Member Vasquez",
+        text="Move Ordinance 2026-54 for second reading and adoption.",
+        result="passed",
+        outcome="adopted",
+        evidence="Adopted on first reading by a voice vote.",
+        approved=["Mayor", "Council Member Vasquez"],
+        tally={"yes": 7, "no": 0},
+        citation_id=page_citation,
+    )
+    insert_motion_item(
+        conn,
+        motion_id=motion,
+        agenda_item_id=aligned_item,
+        link_kind="item_number",
+        evidence="The minutes name item 9A.",
+    )
     insert_vote(
         conn,
         agenda_item_id=aligned_item,
@@ -207,6 +280,18 @@ def _seed(conn: sqlite3.Connection, storage_root: Path) -> Seeded:
         source_kind="minutes",
         evidence="Adopted on first reading by a voice vote.",
         tally={"yes": 7, "no": 0},
+        motion_id=motion,
+        citation_id=page_citation,
+    )
+    # The video disagrees with the minutes, and a transcript vote is never a
+    # tally: the schema refuses one (spec 10.4).
+    insert_vote(
+        conn,
+        agenda_item_id=aligned_item,
+        result="failed",
+        source_kind="transcript",
+        evidence=VOTE_LINE,
+        citation_id=vote_citation,
     )
     loose_item = insert_agenda_item(
         conn,
@@ -216,6 +301,26 @@ def _seed(conn: sqlite3.Connection, storage_root: Path) -> Seeded:
         alignment_method="none",
         alignment_reason="The recording ends before this item.",
     )
+    # The silent meeting's minutes were searched for and were not there yet.
+    # The job row carries the plain sentence saying where they are expected,
+    # and the record it points at is the packet they are expected in.
+    packet_bytes = b"%PDF-1.4\n% Longmont City Council packet, November 5 2026\n%%EOF\n"
+    packet = artifacts.store(conn, storage_root, "document", packet_bytes, "pdf")
+    insert_record(
+        conn,
+        meeting_id=silent_meeting,
+        kind="packet",
+        artifact_id=packet.id,
+        source_id=portal,
+        title="Packet of November 5, 2026",
+        page_count=1,
+    )
+    expected = f"The minutes of meeting {silent_meeting} are expected in the November 5 packet."
+    job = enqueue(conn, READ_MINUTES, {"meeting_id": silent_meeting})
+    taken = claim(conn, "normal", "seed-1")
+    assert taken is not None and taken.job_id == job
+    with pytest.raises(JobPaused):
+        pause(conn, taken.job_id, taken.token, expected)
     conn.commit()
     return Seeded(
         county=county,
@@ -227,8 +332,12 @@ def _seed(conn: sqlite3.Connection, storage_root: Path) -> Seeded:
         video=video,
         record=record,
         document_sha256=document.sha256,
+        document_rel_path=document.rel_path,
         aligned_item=aligned_item,
         loose_item=loose_item,
+        motion=motion,
+        page_citation=page_citation,
+        video_citation=vote_citation,
         token=create_token(conn, "reader", SCOPE_READ),
     )
 
@@ -303,9 +412,12 @@ EXPECTED_PATHS = {
     "/v1/records/1/file",
     "/v1/records/1/pages/1",
     "/v1/search",
+    "/v1/votes",
+    "/v1/citations/1/verify",
     "/docs",
     "/redoc",
     "/openapi.json",
+    "/docs-assets/1",
 }
 
 
@@ -408,8 +520,33 @@ def test_one_meeting_holds_its_items_its_votes_and_its_notes(
     assert aligned["end_ms"] == 4_000_000
     assert aligned["alignment_method"] == "html_video_times"
     assert aligned["identifiers"] == {"ordinance": "2026-54"}
-    assert [vote["result"] for vote in aligned["votes"]] == ["passed"]
+    # The minutes and the video disagree about this item. Both are returned and
+    # neither is picked: the minutes outweigh the video, and the order says so
+    # (spec 10.4).
+    assert [vote["result"] for vote in aligned["votes"]] == ["passed", "failed"]
     assert aligned["votes"][0]["tally"] == {"yes": 7, "no": 0}
+    assert aligned["votes"][0]["source_label"] == "the minutes"
+    assert aligned["votes"][0]["citation_id"] == seeded.page_citation
+    # A transcript vote carries the label the reading job leaves and never a
+    # tally: there is no counted vote in a line of speech (spec 10.4).
+    assert aligned["votes"][1]["source_label"] == FROM_VIDEO
+    assert aligned["votes"][1]["tally"] is None
+    assert aligned["votes"][1]["evidence"] == VOTE_LINE
+    assert aligned["votes"][1]["citation_id"] == seeded.video_citation
+    # The item carries the motion its outcome came out of, with the movers and
+    # the names the minutes printed.
+    assert [motion["id"] for motion in aligned["motions"]] == [seeded.motion]
+    moved = aligned["motions"][0]
+    assert moved["mover"] == "Mayor"
+    assert moved["seconder"] == "Council Member Vasquez"
+    assert moved["result"] == "passed"
+    assert moved["outcome"] == "adopted"
+    assert moved["approved"] == ["Mayor", "Council Member Vasquez"]
+    assert moved["dissented"] == []
+    assert moved["abstained"] == []
+    assert moved["tally"] == {"yes": 7, "no": 0}
+    assert moved["page_number"] == 1
+    assert moved["citation_id"] == seeded.page_citation
     # The untimed item says why it has no time, in plain words.
     assert body["notes"] == [
         "Item 12 has no time in the recording: The recording ends before this item."
@@ -480,6 +617,7 @@ def test_the_transcript_holds_the_times_the_speakers_and_the_item(
         "Good evening, everyone.",
         SPEECH,
         URL_LINE,
+        VOTE_LINE,
     ]
     mayor = body["segments"][1]
     assert mayor["start_ms"] == 3_978_000
@@ -506,10 +644,11 @@ def test_the_vtt_transcript_parses_back_to_the_same_times_and_the_same_text(
     assert [(one.start_ms, one.text) for one in parsed] == [
         (one["start_ms"], one["text"]) for one in expected
     ]
-    # The voice markup came off on the way back in, and the text of the last
+    # The voice markup came off on the way back in, and the text of the link
     # line is the text that went in: the link and the ampersand are characters
     # in a line of speech, not markup.
-    assert parsed[-1].text == URL_LINE
+    assert parsed[2].text == URL_LINE
+    assert parsed[-1].text == VOTE_LINE
 
 
 def test_the_text_transcript_holds_the_times_and_the_speakers(
@@ -673,6 +812,8 @@ def test_the_openapi_description_documents_the_read_routes(
         "/v1/records/{record_id}/file",
         "/v1/records/{record_id}/pages/{page_number}",
         "/v1/search",
+        "/v1/votes",
+        "/v1/citations/{citation_id}/verify",
     ):
         assert path in schema["paths"], path
     components = schema["components"]["schemas"]
@@ -686,8 +827,216 @@ def test_the_openapi_description_documents_the_read_routes(
         "SearchResults",
         "SearchHitOut",
         "SearchCitationOut",
+        "MotionOut",
+        "VoteWithContext",
+        "VotesResponse",
+        "CitationVerifyOut",
     ):
         assert model in components, model
     assert components["SearchHitOut"]["properties"]["citation"]["$ref"].endswith(
         "/SearchCitationOut"
     )
+
+
+# -- the votes of an area (spec 13.2, 10.4) ------------------------------------
+
+
+def test_the_votes_of_a_body_carry_their_source_and_their_precedence(
+    api: tuple[TestClient, Seeded], headers: dict[str, str]
+) -> None:
+    """Both sources come back, in precedence order, and none of them is picked."""
+    client, seeded = api
+    body = client.get("/v1/votes", params={"body": seeded.body}, headers=headers).json()
+
+    assert body["count"] == len(body["votes"]) == 2
+    minutes, transcript = body["votes"]
+    assert minutes["source_kind"] == "minutes"
+    assert minutes["precedence"] == 1
+    assert minutes["result"] == "passed"
+    assert minutes["tally"] == {"yes": 7, "no": 0}
+    assert minutes["agenda_item_id"] == seeded.aligned_item
+    assert minutes["item_number"] == "9A"
+    assert minutes["identifiers"] == {"ordinance": "2026-54"}
+    assert minutes["meeting_id"] == seeded.meeting
+    assert minutes["meeting_title"] == "City Council Regular Session"
+    assert minutes["starts_at"] == "2026-09-08T19:00:00-06:00"
+    assert minutes["body_id"] == seeded.body
+    assert minutes["body_name"] == "City Council"
+    assert minutes["motion_id"] == seeded.motion
+    assert transcript["source_kind"] == "transcript"
+    assert transcript["precedence"] == 3
+    assert transcript["source_label"] == FROM_VIDEO
+    assert transcript["tally"] is None
+    assert transcript["evidence"] == VOTE_LINE
+
+
+def test_the_transcript_label_is_the_one_the_reading_job_leaves(
+    api: tuple[TestClient, Seeded], headers: dict[str, str]
+) -> None:
+    """The label the API prints is the sentence the reading job writes, not a copy.
+
+    The string is pinned here against the module that owns it, so a second copy
+    of the sentence in the API cannot drift away from the job's own words.
+    """
+    client, seeded = api
+    body = client.get("/v1/votes", params={"body": seeded.body}, headers=headers).json()
+    labels = {vote["source_kind"]: vote["source_label"] for vote in body["votes"]}
+
+    assert labels["transcript"] == FROM_VIDEO
+
+
+def test_the_votes_can_be_narrowed_by_identifier_and_by_date(
+    api: tuple[TestClient, Seeded], headers: dict[str, str]
+) -> None:
+    client, seeded = api
+    url = "/v1/votes"
+
+    def count(**params: object) -> int:
+        response = client.get(url, params={"body": seeded.body, **params}, headers=headers)
+        assert response.status_code == 200, response.text
+        return response.json()["count"]
+
+    assert count() == 2
+    assert count(identifier="2026-54") == 2
+    assert count(identifier="2026-77") == 0
+    assert count(**{"from": "2026-09-08", "to": "2026-09-08"}) == 2
+    assert count(**{"from": "2026-09-09"}) == 0
+
+
+def test_an_unknown_body_on_the_votes_is_a_404_with_a_plain_message(
+    api: tuple[TestClient, Seeded], headers: dict[str, str]
+) -> None:
+    client, _ = api
+    response = client.get("/v1/votes", params={"body": 9999}, headers=headers)
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "There is no body 9999."
+
+
+def test_the_items_of_a_meeting_carry_the_motions_of_each_item(
+    api: tuple[TestClient, Seeded], headers: dict[str, str]
+) -> None:
+    client, seeded = api
+    items = client.get(f"/v1/meetings/{seeded.meeting}/items", headers=headers).json()
+
+    assert [item["id"] for item in items] == [seeded.aligned_item, seeded.loose_item]
+    assert [motion["id"] for motion in items[0]["motions"]] == [seeded.motion]
+    assert items[0]["motions"][0]["text"] == (
+        "Move Ordinance 2026-54 for second reading and adoption."
+    )
+    assert items[1]["motions"] == []
+
+
+def test_a_meeting_whose_minutes_are_not_read_yet_says_where_they_are_expected(
+    api: tuple[TestClient, Seeded], headers: dict[str, str]
+) -> None:
+    """The sentence is the one the reading job left when it paused (spec 10.4)."""
+    client, seeded = api
+    body = client.get(f"/v1/meetings/{seeded.silent_meeting}", headers=headers).json()
+
+    assert (
+        f"The minutes of meeting {seeded.silent_meeting} are expected "
+        "in the November 5 packet." in body["notes"]
+    )
+    assert "No minutes are stored for this meeting yet." not in body["notes"]
+
+
+# -- citations verify against the bytes they point at (spec 10.5) --------------
+
+
+def test_a_page_citation_verifies_against_the_bytes_it_points_at(
+    api: tuple[TestClient, Seeded], headers: dict[str, str]
+) -> None:
+    client, seeded = api
+    url = f"/v1/citations/{seeded.page_citation}/verify"
+    body = client.get(url, headers=headers).json()
+
+    assert body["kind"] == "record"
+    assert body["matches"] is True
+    assert body["artifact_sha256"] == seeded.document_sha256
+    assert body["computed_sha256"] == seeded.document_sha256
+    assert body["record_id"] == seeded.record
+    assert body["page_number"] == 1
+    assert body["video_id"] is None
+    assert body["start_ms"] is None
+    assert body["excerpt"] == "Adopted on first reading by a voice vote."
+    assert body["reason"] == ""
+
+
+def test_a_video_citation_verifies_and_names_the_moment(
+    api: tuple[TestClient, Seeded], headers: dict[str, str]
+) -> None:
+    client, seeded = api
+    url = f"/v1/citations/{seeded.video_citation}/verify"
+    body = client.get(url, headers=headers).json()
+
+    assert body["kind"] == "video"
+    assert body["matches"] is True
+    assert body["video_id"] == seeded.video
+    assert body["start_ms"] == 3_990_000
+    assert body["end_ms"] == 3_998_000
+    assert body["page_number"] is None
+    assert body["excerpt"] == VOTE_LINE
+
+
+def test_a_citation_whose_artifact_changed_no_longer_matches(
+    api: tuple[TestClient, Seeded], headers: dict[str, str], api_storage_root: Path
+) -> None:
+    """The hash is recomputed from the bytes, so a changed file is caught."""
+    client, seeded = api
+    (api_storage_root / seeded.document_rel_path).write_bytes(b"%PDF-1.4\n% written over\n%%EOF\n")
+    body = client.get(f"/v1/citations/{seeded.page_citation}/verify", headers=headers).json()
+
+    assert body["matches"] is False
+    assert body["artifact_sha256"] == seeded.document_sha256
+    assert body["computed_sha256"] != seeded.document_sha256
+    assert "no longer matches" in body["reason"]
+
+
+def test_an_unknown_citation_is_a_404_with_a_plain_message(
+    api: tuple[TestClient, Seeded], headers: dict[str, str]
+) -> None:
+    client, _ = api
+    response = client.get("/v1/citations/9999/verify", headers=headers)
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "There is no citation 9999."
+
+
+# -- the pages work with no network (spec 17, decision 10) ---------------------
+
+
+def test_the_api_browser_loads_nothing_from_another_host(
+    api: tuple[TestClient, Seeded], headers: dict[str, str]
+) -> None:
+    """A machine with no network still has its API browser (spec 17)."""
+    client, _ = api
+
+    for path in ("/docs", "/redoc"):
+        response = client.get(path, headers=headers)
+        assert response.status_code == 200, path
+        sources = re.findall(r'(?:src|href)="([^"]+)"', response.text)
+        assert sources, path
+        for source in sources:
+            assert "://" not in source, f"{path} loads {source}"
+            assert not source.startswith("//"), f"{path} loads {source}"
+
+
+def test_the_browser_assets_are_served_here_and_behind_the_token(
+    api: tuple[TestClient, Seeded], headers: dict[str, str]
+) -> None:
+    """Every file the page loads is served here, and only to a caller with a token."""
+    client, _ = api
+    html = client.get("/docs", headers=headers).text
+    sources = re.findall(r'(?:src|href)="([^"]+)"', html)
+
+    for source in sources:
+        response = client.get(source, headers=headers)
+        assert response.status_code == 200, source
+        assert response.headers["content-type"].startswith(("text/", "image/")), source
+        # The bytes are the ones the pin claims, so a package build that ships
+        # something else is caught here rather than trusted.
+        name = source.rsplit("/", 1)[-1]
+        assert hashlib.sha256(response.content).hexdigest() == docs_assets.SHA256[name], name
+
+    assert client.get(sources[0]).status_code == 401

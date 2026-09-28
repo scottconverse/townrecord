@@ -32,6 +32,7 @@ from .area import (
 from .evidence import (
     VOTE_SOURCE_KINDS,
     citation_sha256,
+    find_votes,
     get_citation,
     get_vote,
     insert_record_citation,
@@ -81,6 +82,7 @@ from .motions import (
     insert_motion,
     insert_motion_item,
     minutes_document,
+    minutes_expectation,
     motion_items_of,
     motions_of_item,
     motions_of_meeting,
@@ -105,6 +107,7 @@ from .rows import (
     Transcript,
     Video,
     Vote,
+    VoteContext,
 )
 from .schedule import (
     ENQUEUED,
@@ -182,6 +185,7 @@ __all__ = [
     "Transcript",
     "Video",
     "Vote",
+    "VoteContext",
     "add_overlap",
     "agenda_item_by_number",
     "agenda_items",
@@ -191,6 +195,7 @@ __all__ = [
     "captures_by_body",
     "citation_sha256",
     "clear_minutes_reading",
+    "find_votes",
     "delete_record_pages",
     "get_motion",
     "get_agenda_item",
@@ -237,6 +242,7 @@ __all__ = [
     "meeting_by_portal_id",
     "meetings_of_body",
     "minutes_document",
+    "minutes_expectation",
     "motion_items_of",
     "motions_of_item",
     "motions_of_meeting",
