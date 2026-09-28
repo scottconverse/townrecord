@@ -20,7 +20,11 @@ Four commands, and each one is a small piece of the same core:
     What the service is actually doing, read from real content (spec 16.3):
     job counts by lane and state, sources and their health, the newest capture
     of every body, the active yt-dlp version, and the runs the schedule made or
-    could not make. It never answers "OK".
+    could not make. It never answers "OK", and it reports the service that is
+    running and not the settings of the shell that asked: when a service holds
+    the app-data root, its address, database, schedule and time zone are what
+    the report shows, and when none does the report says so and says that what
+    it shows is this shell's configuration.
 
 The API is started on a socket this module binds itself, so a busy port is
 reported before any worker starts rather than as a stack trace from inside
@@ -44,6 +48,7 @@ from pathlib import Path
 
 import uvicorn
 
+from . import serving
 from .api.app import create_app
 from .api.tokens import SCOPE_READ, SCOPE_READ_WRITE, create_token
 from .config import Settings
@@ -123,6 +128,18 @@ def _serve(_args: argparse.Namespace) -> int:
         return EXIT_REFUSED
     server = uvicorn.Server(uvicorn.Config(app=create_app(settings), log_level="info"))
     service.start()
+    # Say what this service runs with, where another shell's `townrecord status`
+    # reads it (spec 16.3), and hold the claim on this app-data root for as long
+    # as it serves. It is taken once the socket is ours, so a refused port never
+    # claims a root it is not serving from.
+    claim = serving.record(
+        settings.runtime_root,
+        host=settings.host,
+        port=settings.port,
+        daily_time=settings.daily_time,
+        time_zone=settings.time_zone,
+        db_path=str(settings.db_path),
+    )
     print(
         f"TownRecord is serving at http://{settings.host}:{settings.port} "
         f"and running {len(service.registry.kinds())} job kinds.",
@@ -133,6 +150,7 @@ def _serve(_args: argparse.Namespace) -> int:
     except KeyboardInterrupt:  # a second Ctrl+C while the server is stopping
         print("TownRecord is stopping.", flush=True)
     finally:
+        serving.clear(claim)
         if not service.stop():
             print(
                 "A worker did not stop within its timeout. A job it was running keeps its "

@@ -20,6 +20,7 @@ from pathlib import Path
 
 import pytest
 
+from townrecord import pacing
 from townrecord.capture import JOB_KIND as CAPTURE_JOB_KIND
 from townrecord.capture import LANE as CAPTURE_LANE
 from townrecord.capture import TRANSCRIBE_JOB_KIND
@@ -168,3 +169,21 @@ def test_the_service_closes_what_it_opened(settings: Settings) -> None:
     service.close()
     assert service.client is None
     service.close()  # closing twice is not an error
+
+
+def test_the_service_installs_one_pace_for_the_whole_process(settings: Settings) -> None:
+    """One service, one pace, one state file, whatever job asks (spec 8.10).
+
+    Every handler asks :func:`townrecord.pacing.pacer` rather than being handed
+    a pace, so this install is what makes a capture on the normal lane and a
+    transcription on the heavy lane wait for each other.
+    """
+    service = build_service(settings, clock=lambda: BEFORE_THE_DAY)
+
+    installed = pacing.pacer()
+    assert installed is service.pacer
+    assert installed.state_path == settings.runtime_root / pacing.PACE_FILE_NAME
+    assert installed.settings.minimum_gap_s == pacing.DEFAULT_MINIMUM_GAP_S
+
+    service.close()
+    assert pacing.forget_pacer(installed) is False, "the service kept its pace after closing"

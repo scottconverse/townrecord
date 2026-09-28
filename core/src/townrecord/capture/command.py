@@ -12,6 +12,8 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from .. import proc
+from ..pacing import RATE_LIMIT_MARKERS as RATE_LIMIT_MARKERS
+from ..pacing import rate_limit_marker as rate_limit_marker
 from ..runtime.javascript import FALLBACK_RUNTIME
 
 #: The job kind this module builds the command for.
@@ -28,16 +30,10 @@ WATCH_URL = "https://www.youtube.com/watch?v={platform_video_id}"
 SRV3 = "srv3"
 VTT = "vtt"
 
-#: What yt-dlp says when YouTube rate limits it. The wording is not fixed by
-#: anything, so the check is a case-insensitive search for any of these and the
-#: one that matched is kept for the user. The coordinator compares this list
-#: against a real 429 the first time one is seen.
-RATE_LIMIT_MARKERS: tuple[str, ...] = (
-    "http error 429",
-    "http 429",
-    "429 too many requests",
-    "too many requests",
-)
+#: What yt-dlp says when YouTube rate limits it, and the reader that finds it.
+#: Both live in :mod:`townrecord.pacing` and are re-exported here (the names
+#: above), because the status ask and the channel listing of ``video`` detect a
+#: 429 too and neither should have to import the capture layer to do it.
 
 #: What YouTube answers when it wants the machine to prove it is not a robot.
 #: Tested 2026-09-27 from a machine with no JavaScript runtime: this sentence
@@ -75,19 +71,6 @@ def watch_url(url: str | None, platform_video_id: str) -> str:
     """Return the watch address of a video: the listed one, else the canonical one."""
     text = (url or "").strip()
     return text or WATCH_URL.format(platform_video_id=platform_video_id)
-
-
-def rate_limit_marker(stderr: str | None) -> str | None:
-    """Return the text that says YouTube rate limited us, or None.
-
-    Matching is case-insensitive, and the matched needle is returned so the
-    reason the user reads quotes what yt-dlp actually printed.
-    """
-    text = (stderr or "").lower()
-    for marker in RATE_LIMIT_MARKERS:
-        if marker in text:
-            return marker
-    return None
 
 
 def bot_check_marker(stderr: str | None) -> str | None:

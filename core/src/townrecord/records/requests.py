@@ -130,7 +130,9 @@ def request_minutes(
     )
 
 
-def request_minutes_of_packet(conn: sqlite3.Connection, record: Record) -> list[int]:
+def request_minutes_of_packet(
+    conn: sqlite3.Connection, record: Record, *, origin: str = ORIGIN_MANUAL
+) -> list[int]:
     """Ask for the minutes that a packet whose pages were just read may hold.
 
     Spec 9.4: a session's draft minutes sit in the next regular session's packet,
@@ -138,6 +140,11 @@ def request_minutes_of_packet(conn: sqlite3.Connection, record: Record) -> list[
     session that is is not written on the packet, so the few regular sessions
     before it are asked about, and one whose minutes have already been found is
     skipped: the reading for it would only write the same rows again.
+
+    ``origin`` is who asked for the reading of the packet, and every reading
+    this queues takes after it (spec 16.2): a packet the daily schedule read
+    queues a scheduled reading, not a manual one. The caller that has a job in
+    hand passes ``ctx.origin``.
 
     Returns the ids of the jobs that were made ready, which is empty for a record
     that is not a packet and for a packet none of whose earlier sessions need a
@@ -164,6 +171,7 @@ def request_minutes_of_packet(conn: sqlite3.Connection, record: Record) -> list[
             conn,
             other.id,
             reason=PACKET_READ.format(record_id=record.id, meeting_id=meeting.id),
+            origin=origin,
         )
         if job_id is not None:
             asked.append(job_id)

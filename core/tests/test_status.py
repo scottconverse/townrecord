@@ -8,12 +8,16 @@ run that could not happen and the sentence that says why.
 
 from __future__ import annotations
 
+import json
 import re
 import sqlite3
+from datetime import UTC, datetime
+from datetime import time as clock_time
 from pathlib import Path
 
 import pytest
 
+from townrecord import serving
 from townrecord.config import Settings
 from townrecord.jobs import QUEUED, RUNNING, Registry, claim, enqueue
 from townrecord.records import DOWNLOAD_RECORD, SYNC_PRIMEGOV, register_jobs
@@ -29,6 +33,10 @@ from townrecord.repo import (
 )
 from townrecord.schedule import NO_TEST_VIDEO_REASON, source_subject, tool_subject
 from townrecord.status import collect, render
+
+#: A moment the tests hold the clock at, so no line of a report carries the
+#: wall clock's own time and a test can ask what is not in the text.
+STARTED = datetime(2026, 9, 27, 23, 21, 0, tzinfo=UTC)
 
 
 @pytest.fixture
@@ -104,6 +112,8 @@ def test_it_says_when_there_is_no_database_yet(settings: Settings) -> None:
     assert "not created yet" in text
     assert "no time zone is set" not in text  # Denver is set, and it is shown
     assert re.search(r"\bOK\b", text) is None
+    # Asking what is running is a read: it leaves no folder a service never made.
+    assert not settings.runtime_root.exists()
 
 
 def test_it_reports_jobs_by_state_and_lane(settings: Settings, conn: sqlite3.Connection) -> None:
@@ -258,3 +268,83 @@ def test_the_report_is_never_just_ok(settings: Settings, conn: sqlite3.Connectio
     assert "America/Denver, daily at 06:00 local time" in text
     for heading in ("Jobs (", "Sources", "Captures (", "Tools", "Scheduled runs ("):
         assert heading in text
+
+
+# -- a running service, and the shell that asks about it ----------------------
+
+
+def test_it_reports_the_running_service_not_the_caller_s_settings(
+    settings: Settings, conn: sqlite3.Connection
+) -> None:
+    """The live run of 2026-09-27: served on 8791 at 17:21, reported as 8190 at 06:00.
+
+    Each number the report gave was true of the shell that asked and false of the
+    service that was running, which is spec 16.3's own failure: content that
+    reads as a fact and is not one.
+    """
+    build_area(conn)
+    claim = serving.record(
+        settings.runtime_root,
+        host="127.0.0.1",
+        port=8791,
+        daily_time=clock_time(17, 21),
+        time_zone="America/New_York",
+        db_path=str(settings.db_path),
+        pid=4321,
+        clock=lambda: STARTED,
+    )
+    try:
+        report = collect(settings, clock=lambda: STARTED)
+        text = render(report)
+    finally:
+        serving.clear(claim)
+
+    assert "running as process 4321" in text
+    assert "http://127.0.0.1:8791" in text
+    assert "America/New_York, daily at 17:21 local time" in text
+    assert "127.0.0.1:8190" not in text
+    assert "daily at 06:00" not in text
+
+    assert report.service is not None
+    assert report.service.pid == 4321
+    assert report.port == 8791
+    assert report.time_zone == "America/New_York"
+    assert report.daily_time == "17:21"
+
+
+def test_it_says_plainly_when_no_service_is_running(
+    settings: Settings, conn: sqlite3.Connection
+) -> None:
+    """What the report shows then is this shell's configuration, and it says so.
+
+    The service file is left behind on purpose: a service that was killed leaves
+    one, and it must not read as a service that is still there.
+    """
+    build_area(conn)
+    settings.runtime_root.mkdir(parents=True, exist_ok=True)
+    (settings.runtime_root / serving.SERVICE_FILE_NAME).write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "pid": 4321,
+                "host": "127.0.0.1",
+                "port": 8791,
+                "daily_time": "17:21",
+                "time_zone": "America/New_York",
+                "db_path": str(settings.db_path),
+                "started_at": "2026-09-27T23:21:00.000000Z",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    report = collect(settings, clock=lambda: STARTED)
+    text = render(report)
+
+    assert "no service is running" in text
+    assert "configuration" in text
+    assert "8791" not in text
+    assert "17:21" not in text
+    assert "America/Denver, daily at 06:00 local time" in text
+
+    assert report.service is None

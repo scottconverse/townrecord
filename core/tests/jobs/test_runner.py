@@ -12,6 +12,7 @@ from townrecord.jobs import (
     DONE,
     FAILED,
     QUEUED,
+    RUNNING,
     JobContext,
     JobsSettings,
     Registry,
@@ -290,6 +291,84 @@ def test_a_handler_that_lost_its_claim_cannot_close_the_job(
     row = get(conn, job_id)
     assert row["state"] == "running"
     assert str(row["claim_token"]).startswith("worker-other")
+
+
+def test_a_job_left_running_by_a_hard_stop_goes_back_on_the_timeout(
+    db_path: Path, conn: sqlite3.Connection
+) -> None:
+    """A process that dies hard leaves its job `running`; the timeout gives it back.
+
+    A kill is not a shutdown: nothing of the killed process runs, so the job it
+    was running keeps the `running` state and stops sending heartbeats, and
+    nothing it owns will ever move it again. The heartbeat timeout is the only
+    thing that does (spec 16.1). This test measures both halves of that: with
+    the timeout still ahead the job is left exactly as the kill left it, and
+    once the timeout is behind it the next runner claims the job and the handler
+    is handed the checkpoint the dead run wrote.
+    """
+    gone = threading.Event()
+    started = threading.Event()
+
+    def the_run_that_dies(ctx: JobContext) -> None:
+        ctx.save_checkpoint({"pages": 40, "of": 120})
+        started.set()
+        gone.wait(timeout=30.0)  # the process is killed here, and never wakes
+
+    first_registry = Registry()
+    first_registry.register("extract_pages", the_run_that_dies, lane="heavy")
+    first = Runner(db_path, registry=first_registry)
+    job_id = enqueue(conn, "extract_pages", {"record_id": 7}, lane="heavy")
+
+    # `run_once` is the claim path without a lane loop or a heartbeat thread, so
+    # the job it takes has exactly what a killed process leaves behind: a claim,
+    # a checkpoint, and a heartbeat that stops where it is.
+    thread = threading.Thread(target=lambda: first.run_once("heavy"), daemon=True)
+    thread.start()
+    assert started.wait(timeout=5.0), "the first runner never started the job"
+
+    left = get(conn, job_id)
+    assert left["state"] == RUNNING
+    assert left["claim_token"] is not None
+    assert left["checkpoint"] is not None
+
+    # The heartbeat has just been written, so the default timeout of 300s leaves
+    # the job alone: this is the job the live run of 2026-09-27 found, and it
+    # would have stayed exactly there for five minutes.
+    assert requeue_stale(conn) == []
+    assert get(conn, job_id)["state"] == RUNNING
+
+    resumed: list[object] = []
+
+    def the_next_run(ctx: JobContext) -> None:
+        resumed.append(ctx.checkpoint())
+
+    second_registry = Registry()
+    second_registry.register("extract_pages", the_next_run, lane="heavy")
+    second = Runner(
+        db_path,
+        registry=second_registry,
+        settings=JobsSettings(
+            heartbeat_timeout=0.2,
+            heartbeat_interval=0.05,
+            reclaim_interval=0.02,
+            poll_interval=0.02,
+        ),
+    )
+    second.start()
+    try:
+        assert wait_for(lambda: get(conn, job_id)["state"] == DONE, timeout=15.0), (
+            f"the job the killed run left behind was never claimed again: {dict(get(conn, job_id))}"
+        )
+    finally:
+        assert second.stop(timeout=5.0) is True
+        gone.set()
+        thread.join(timeout=5.0)
+
+    assert resumed == [{"pages": 40, "of": 120}], "the next run did not read the checkpoint"
+    row = get(conn, job_id)
+    assert row["attempts"] == 1, "the lost run was not counted"
+    assert row["claim_token"] is None
+    assert row["last_error"] is None
 
 
 def test_two_runners_share_the_queue_without_double_work(
