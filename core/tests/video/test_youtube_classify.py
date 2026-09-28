@@ -4,6 +4,10 @@ Both recorded feeds are listed below, every title with its verdict, in feed
 order. The keyword list and the skip list are data, so the tests check that a
 caller can replace them and that the seed lists themselves are unchanged.
 
+The seed lists name no city (rule D): a word that belongs to one area is that
+source's setting (migration 0013), and a source with no settings of its own is
+read by the neutral words alone.
+
 Three titles are known misses and are named as such at the bottom of the file.
 They are recorded, not hidden: the classifier matches phrases with word
 boundaries, so a title that renames or misspells a body falls through.
@@ -74,6 +78,18 @@ PUBLIC_MEDIA_TITLES: tuple[tuple[str, bool], ...] = (
 CITY_MEETINGS = 8
 PUBLIC_MEDIA_MEETINGS = 9
 
+#: The program named after the city it covers: the city feed's own news show,
+#: which a person would not call a meeting.
+PROGRAM_TITLE = next(title for title, _ in CITY_TITLES if "This is Longmont" in title)
+
+#: What the City of Longmont channel carries in its own settings (migration
+#: 0013): the neutral seeds plus the program named after the city. A source's
+#: own setting replaces the list, so this holds the whole list and not one word.
+LONGMONT_SETTINGS: dict[str, list[str]] = {
+    "meeting_keywords": [*DEFAULT_MEETING_KEYWORDS],
+    "meeting_skip_titles": [*DEFAULT_SKIP_TITLES, "This is Longmont"],
+}
+
 
 def classifier(**kwargs: object) -> MeetingClassifier:
     return MeetingClassifier(**kwargs)  # type: ignore[arg-type]
@@ -93,9 +109,46 @@ def test_the_seed_lists_are_the_documented_ones() -> None:
         "This Week in Council",
         "Neighborhood Meeting",
         "Esports",
-        "This is Longmont",
     )
     assert isinstance(DEFAULT_MEETING_KEYWORDS, tuple), "a constant no caller can edit in place"
+
+
+def test_no_seed_names_a_city() -> None:
+    """Rule D: the built-in lists are neutral, and a city's words are its source's.
+
+    "This is Longmont" was the last city-specific seed: a program named after the
+    area it covers. It is that source's setting now (migration 0013), so a source
+    with no settings of its own is read by words that hold no city name.
+    """
+    assert "This is Longmont" not in DEFAULT_SKIP_TITLES
+    for phrase in (*DEFAULT_MEETING_KEYWORDS, *DEFAULT_SKIP_TITLES):
+        assert "Longmont" not in phrase, phrase
+
+
+def test_the_city_source_reads_its_feed_the_same_way_with_its_own_settings(
+    city_rss: bytes,
+) -> None:
+    """The city words are that source's settings, and the count does not move."""
+    lister = RssLister(offline_client())
+    assert [video.title for video in lister.parse_feed(city_rss)] == [
+        title for title, _ in CITY_TITLES
+    ]
+
+    # With no settings of its own, the feed is read by the neutral lists, and the
+    # news show falls through rather than being skipped by a word only it needs.
+    neutral = classifier().verdict(PROGRAM_TITLE)
+    assert neutral.is_meeting is False
+    assert neutral.matched_skips == ()
+    assert neutral.reason == "Not read as a meeting: no keyword matched."
+
+    city = MeetingClassifier.from_settings(LONGMONT_SETTINGS)
+    meetings = city.filter_meetings(lister.parse_feed(city_rss))
+    assert len(meetings) == CITY_MEETINGS == 8
+    assert [video.title for video in meetings] == [title for title, ok in CITY_TITLES if ok]
+
+    verdict = city.verdict(PROGRAM_TITLE)
+    assert verdict.is_meeting is False
+    assert verdict.matched_skips == ("This is Longmont",)
 
 
 @pytest.mark.parametrize(("title", "expected"), CITY_TITLES)

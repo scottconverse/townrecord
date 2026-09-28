@@ -121,13 +121,98 @@ class MeetingSummary(BaseModel):
 
 
 class VoteOut(BaseModel):
-    """A result on an item, with the evidence it rests on (spec 10.4)."""
+    """A result on an item, with the evidence it rests on (spec 10.4).
+
+    ``source_label`` is the plain name of the source in the reader's words, and
+    for a transcript vote it is the sentence the reading job leaves: the minutes
+    are not there yet and the vote came off the video. ``precedence`` is the
+    spec 10.4 order, 0 strongest. ``motion_id`` names the motion the outcome
+    came out of, and ``citation_id`` the citation it rests on.
+    """
 
     id: int
     result: str
     source_kind: str
+    source_label: str
+    precedence: int
     evidence: str
     tally: dict[str, Any] | None = None
+    motion_id: int | None = None
+    citation_id: int | None = None
+
+
+class MotionOut(BaseModel):
+    """One motion a meeting's minutes record (spec 10.4).
+
+    The names are the ones the minutes printed, so an empty list is a list
+    nobody was named in rather than one nobody read. ``page_number`` and
+    ``citation_id`` say which page of which document the motion rests on.
+    """
+
+    id: int
+    meeting_id: int
+    record_id: int
+    page_number: int
+    ordinal: int
+    mover: str
+    seconder: str
+    text: str
+    result: str
+    outcome: str
+    approved: list[str] = Field(default_factory=list)
+    dissented: list[str] = Field(default_factory=list)
+    abstained: list[str] = Field(default_factory=list)
+    tally: dict[str, Any] | None = None
+    evidence: str
+    citation_id: int | None = None
+
+
+class VoteWithContext(VoteOut):
+    """A vote with the item, the meeting and the body it was recorded on.
+
+    A list read across meetings has to say where each vote came from, and the
+    caller has no id to look the rest up by.
+    """
+
+    agenda_item_id: int
+    item_number: str
+    item_title: str
+    identifiers: dict[str, Any] = Field(default_factory=dict)
+    meeting_id: int
+    meeting_title: str | None = None
+    starts_at: str
+    body_id: int
+    body_name: str
+
+
+class VotesResponse(BaseModel):
+    """The votes one area holds that match what was asked for."""
+
+    count: int
+    votes: list[VoteWithContext] = Field(default_factory=list)
+
+
+class CitationVerifyOut(BaseModel):
+    """Whether a citation still rests on the bytes it points at (spec 10.5).
+
+    ``artifact_sha256`` is the hash the citation was made with and
+    ``computed_sha256`` the hash of the file as it is now. ``matches`` is the
+    comparison, and ``reason`` says in plain words why not when it does not.
+    """
+
+    citation_id: int
+    kind: str
+    matches: bool
+    artifact_sha256: str
+    computed_sha256: str | None = None
+    reason: str = ""
+    excerpt: str
+    meeting_id: int | None = None
+    record_id: int | None = None
+    video_id: int | None = None
+    page_number: int | None = None
+    start_ms: int | None = None
+    end_ms: int | None = None
 
 
 class AgendaItemOut(BaseModel):
@@ -149,9 +234,15 @@ class AgendaItemOut(BaseModel):
 
 
 class AgendaItemWithVotes(AgendaItemOut):
-    """An agenda item and the votes recorded on it, strongest source first."""
+    """An agenda item, the votes recorded on it, and the motions made on it.
+
+    The votes are strongest source first (spec 10.4). The motions are in the
+    order they were moved, and the last one is the motion the item's outcome
+    came out of.
+    """
 
     votes: list[VoteOut] = Field(default_factory=list)
+    motions: list[MotionOut] = Field(default_factory=list)
 
 
 class MeetingDetail(BaseModel):

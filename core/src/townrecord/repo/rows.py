@@ -322,6 +322,27 @@ class MeetingAlignment(Row):
 
 
 @dataclass(frozen=True)
+class VoteContext(Row):
+    """One vote with the item, the meeting and the body it belongs to.
+
+    A list of votes read across meetings has to say where each one came from,
+    and a caller reading it has no id in hand to look the rest up by. The join
+    is therefore done once, here, rather than once per row by every caller.
+    """
+
+    vote: Vote
+    agenda_item_id: int
+    item_number: str
+    item_title: str
+    identifiers: dict[str, Any]
+    meeting_id: int
+    meeting_title: str | None
+    starts_at: str
+    body_id: int
+    body_name: str
+
+
+@dataclass(frozen=True)
 class MinutesDocument(Row):
     """Where the minutes of one meeting were read from (spec 9.4).
 

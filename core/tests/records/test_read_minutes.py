@@ -62,6 +62,7 @@ from townrecord.records.portal import (
     identifiers_of,
 )
 from townrecord.repo import (
+    READ_MINUTES_KIND,
     RecordPage,
     Segment,
     Vote,
@@ -804,6 +805,17 @@ def test_the_missing_minutes_sentence_is_the_plain_wording() -> None:
     """
     assert NOT_AVAILABLE == "not available: no official minutes document yet"
     assert FROM_VIDEO == "from video; minutes not yet available"
+
+
+def test_the_queue_spells_the_reading_job_the_same_way_as_the_repo_layer() -> None:
+    """The record layer names the job kind without importing the record layer.
+
+    ``repo.motions`` reads the paused rows of the reading job to find the
+    sentence saying where a meeting's minutes are expected, and it cannot import
+    ``records.portal`` for the kind without a cycle. It spells the kind itself,
+    so this is what stops the two spellings drifting apart.
+    """
+    assert READ_MINUTES_KIND == READ_MINUTES
 
 
 def test_the_next_session_s_packet_is_not_there_yet(
