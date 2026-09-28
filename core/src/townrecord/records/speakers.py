@@ -71,19 +71,24 @@ METHOD = "jaro_winkler_phonetic"
 
 #: How close a spoken name has to be to an official to be written as that
 #: person's name. Measured over the spellings of the real Longmont captions
-#: (the September 8, 2026 regular session): the worst true reading of an
-#: official is "Brietto" for Prieto at 0.722, and the closest wrong reading is
-#: "Marcy" for McCoy at 0.800 where the right answer "Marsing" scores 0.907.
-#: The cutoff sits above the first of those and below the second, so every
-#: reading that was right in that transcript passed it.
+#: (the September 8, 2026 regular session): the lowest score any correct
+#: reading of that transcript reached is 0.7222 ("Brietto" for Prieto), so the
+#: cutoff sits just under it and refuses nothing that was right there. A wrong
+#: reading above it is the margin's business and not the cutoff's: "Marcy"
+#: scores 0.800 for McCoy and 0.9067 for the Marsing the room meant, and no
+#: single cutoff separates those two.
 CUTOFF = 0.72
 
 #: How far ahead of the runner-up the best score has to be. A cutoff alone
 #: cannot tell a wrong reading from a right one when two officials of one body
-#: sound alike, which is the normal case on a council: a score of 0.76 for the
-#: wrong McCoy is above the cutoff and is still not a reading. Five hundredths
-#: is the smallest margin that separated every true reading in that transcript
-#: from the official it was confused with.
+#: sound alike, which is the normal case on a council: on that transcript a
+#: score of 0.76 for McCoy sat 0.01 ahead of Crist and is not a reading. Over
+#: the same spellings, the reading the margin refuses is ahead by 0.0447 at
+#: most ("Calcoffer" for Kalkhofer, with Prieto at 0.7775 behind it), and the
+#: reading it comes closest to refusing is ahead by 0.0889 ("Coloffer" for the
+#: same official, with 0.6444 behind it). Five hundredths sits between those
+#: two gaps: above every reading the margin refuses, below the narrowest one
+#: it keeps.
 MARGIN = 0.05
 
 #: Which title the chair used, as the row records it. The mayor pro tem is not
