@@ -661,10 +661,13 @@ MEASURED_SCORES = {
     "Prom": 0.8222,  # cleared both bars and is wrong
 }
 
-#: The two readings of the recorded meeting that are wrong, named here so the
-#: report and the test agree about them. The captioner writes "Prom." for
-#: "Mayor Pro Tem", and the reading of the chair's summary takes the words after
-#: the title "Mayor" as a name.
+#: The reading of the recorded meeting that is wrong, named here so the report
+#: and the test agree about it. The captioner writes "Prom." for "Mayor Pro
+#: Tem", and the reading of the chair's summary takes the words after the title
+#: "Mayor" as a name, so one run of Crystal Prieto's lines carries the name of
+#: the Mayor Pro Tem. It clears both bars, which is why the score and not just
+#: the cutoff is what tells a reader to look: 0.8222, the same score "Calcoffer"
+#: got and was refused for, held back there by a closer runner-up.
 MEASURED_WRONG = ("Prom",)
 
 
