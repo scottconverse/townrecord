@@ -75,6 +75,7 @@ from .meetings import (
     videos_of_platform,
 )
 from .motions import (
+    READ_MINUTES_KIND,
     READING_SOURCE_KINDS,
     clear_minutes_reading,
     get_motion,
@@ -154,6 +155,7 @@ __all__ = [
     "ALIGNMENT_METHODS",
     "BROKEN_AFTER_FAILURES",
     "CAPTURE_STATES",
+    "READ_MINUTES_KIND",
     "READING_SOURCE_KINDS",
     "ENQUEUED",
     "FAILED_CAPTURE_STATES",
