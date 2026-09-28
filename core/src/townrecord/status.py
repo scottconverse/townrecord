@@ -19,6 +19,11 @@ from another shell printed 8190 and 06:00, each number true of the caller and
 false of the service. When no service is running the report says so, and says
 that what it shows is this shell's configuration.
 
+The address is part of that subject, and so is who can reach it. A report of a
+service on an address beyond this machine warns about it, and a shell whose
+configuration would be refused says which setting to turn on rather than warning
+about an exposure that cannot happen yet (spec 13.1).
+
 The API's own ``/v1/health`` route stays a small liveness answer: it is a
 different question (is this process answering?) and other routes' tests pin its
 body. ``townrecord status`` is the content the brief asks for.
@@ -33,7 +38,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
-from . import serving
+from . import network, serving
 from .config import Settings
 from .db import connect as default_connect
 from .jobs import STATES, Clock, JobsSettings, utcnow
@@ -173,6 +178,10 @@ class Status:
     #: True when a service holds the lock but wrote nothing this report can read.
     #: Rare, and reported rather than rounded down to "nothing is running".
     service_locked: bool = False
+    #: What a person must be told about the address above (spec 13.1): who can
+    #: reach it, or that serving there is not allowed yet. Empty when the address
+    #: is this machine alone, which is the default and needs no warning.
+    warnings: tuple[str, ...] = field(default=())
     notes: tuple[str, ...] = field(default=())
 
 
@@ -205,6 +214,10 @@ def collect(
     host, port = settings.host, settings.port
     time_zone, daily_time = settings.time_zone, settings.daily_time.strftime("%H:%M")
     db_path = Path(settings.db_path)
+    #: A service that is running on an address beyond this machine was allowed to
+    #: serve there when it started, whatever the setting of the shell that asks
+    #: says now: the report is about the service and not about its caller.
+    allowed = settings.allow_lan or served is not None
     if served is not None:
         host, port = served.host, served.port
         time_zone, daily_time = served.time_zone, served.daily_time
@@ -251,8 +264,24 @@ def collect(
         paused=reading.paused,
         service=served,
         service_locked=locked and served is None,
+        warnings=_warnings(host, port, allowed),
         notes=tuple(notes),
     )
+
+
+def _warnings(host: str, port: int, allowed: bool) -> tuple[str, ...]:
+    """Say what a person must be told about this address, and nothing else.
+
+    A loopback address is the default and carries no warning. An address the
+    network can reach carries the warning about who can reach it once the option
+    is on, or the sentence ``serve`` refuses it with while the option is off: the
+    two cannot both be true, and neither is invented here (spec 13.1).
+    """
+    texts = (
+        network.lan_warning(host, port, allow_lan=allowed),
+        network.lan_refusal(host, allow_lan=allowed),
+    )
+    return tuple(text for text in texts if text is not None)
 
 
 def _read(
@@ -394,6 +423,7 @@ def render(status: Status) -> str:
     lines.append(f"  Storage    {status.storage_root}")
     lines.append(f"  Runtimes   {status.runtime_root}")
     lines.append(f"  Schedule   {_schedule_line(status)}")
+    lines.extend(status.warnings)
     lines.append("")
     lines.extend(_job_lines(status))
     lines.append("")

@@ -8,7 +8,11 @@ Four commands, and each one is a small piece of the same core:
     artifact storage root, the private runtime root -- comes from
     :class:`townrecord.config.Settings` and is never invented here; the port
     comes from the same place, and a port that is already in use is a plain
-    sentence naming the port and the setting to change. Ctrl+C, and the
+    sentence naming the port and the setting to change. The address is 127.0.0.1
+    unless the user has turned network serving on: another address is refused
+    before anything is created or bound, and once it is allowed the service says
+    who can reach it and that a token is still required (spec 13.1). Ctrl+C, and
+    the
     desktop shell's stop, end the workers cleanly: a job that was running
     keeps its checkpoint and is claimable again (spec 16.1).
 
@@ -48,7 +52,7 @@ from pathlib import Path
 
 import uvicorn
 
-from . import serving
+from . import network, serving
 from .api.app import create_app
 from .api.tokens import SCOPE_READ, SCOPE_READ_WRITE, create_token
 from .config import Settings
@@ -118,6 +122,16 @@ def _parser() -> argparse.ArgumentParser:
 def _serve(_args: argparse.Namespace) -> int:
     """Start the API, the job workers and the schedule, and run until stopped."""
     settings = Settings.from_env()
+    # The address is decided before anything is created or bound (spec 13.1): a
+    # service that was never allowed off the loopback interface leaves no
+    # database and no socket behind, and the sentence says which setting to set.
+    refusal = network.lan_refusal(settings.host, allow_lan=settings.allow_lan)
+    if refusal is not None:
+        print(refusal, file=sys.stderr)
+        return EXIT_REFUSED
+    warning = network.lan_warning(settings.host, settings.port, allow_lan=settings.allow_lan)
+    if warning is not None:
+        print(warning, file=sys.stderr, flush=True)
     _prepare_database(settings)
     service = build_service(settings)
     try:

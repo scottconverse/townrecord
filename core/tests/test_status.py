@@ -348,3 +348,92 @@ def test_it_says_plainly_when_no_service_is_running(
     assert "America/Denver, daily at 06:00 local time" in text
 
     assert report.service is None
+
+
+# -- the address the API answers on, and who can reach it (spec 13.1) ---------
+
+
+def env_settings(tmp_path: Path, **extra: str) -> Settings:
+    """Settings as the TOWNRECORD_* variables would give them, for one temp root."""
+    env = {
+        "TOWNRECORD_DB": str(tmp_path / "townrecord.db"),
+        "TOWNRECORD_STORAGE": str(tmp_path / "storage"),
+        "TOWNRECORD_RUNTIME_ROOT": str(tmp_path / "runtime"),
+        "TOWNRECORD_TIME_ZONE": "America/Denver",
+    }
+    env.update(extra)
+    return Settings.from_env(env)
+
+
+def test_the_default_address_is_this_machine_only_and_says_nothing(tmp_path: Path) -> None:
+    """Spec 13.1: 127.0.0.1 is the default, and a default needs no warning."""
+    report = collect(env_settings(tmp_path, TOWNRECORD_HOST="127.0.0.1"))
+    text = render(report)
+
+    assert report.api == "http://127.0.0.1:8190"
+    assert "Warning:" not in text
+
+
+def test_an_address_on_the_network_without_the_setting_is_reported_as_a_refusal(
+    tmp_path: Path,
+) -> None:
+    """Without the setting, `serve` refuses this address, and the report says so.
+
+    The report is about a shell whose configuration would be refused, so it names
+    the setting to turn on rather than warning about an exposure that cannot
+    happen yet.
+    """
+    report = collect(env_settings(tmp_path, TOWNRECORD_HOST="0.0.0.0"))
+    text = render(report)
+
+    assert report.api == "http://0.0.0.0:8190"
+    assert "TOWNRECORD_ALLOW_LAN" in text
+    assert "Warning:" not in text
+
+
+def test_an_address_on_the_network_with_the_setting_warns_who_can_reach_it(
+    tmp_path: Path,
+) -> None:
+    """Spec 13.1: the option carries a warning, and the warning is about people."""
+    report = collect(env_settings(tmp_path, TOWNRECORD_HOST="0.0.0.0", TOWNRECORD_ALLOW_LAN="1"))
+    text = render(report)
+
+    assert "Warning:" in text
+    assert "http://0.0.0.0:8190" in text
+    assert "local network" in text
+    assert "token" in text
+    # The warning is in the report the command prints and in its JSON.
+    assert report.warnings
+    assert json.loads(json.dumps(report.warnings)) == list(report.warnings)
+
+
+def test_a_service_on_the_network_is_warned_about_whatever_the_asking_shell_says(
+    settings: Settings, conn: sqlite3.Connection
+) -> None:
+    """A service that is running on the network was allowed to when it started.
+
+    The shell that asks may have the setting off -- it is a different shell -- and
+    the report must still describe the service that is running, not that shell.
+    """
+    claim = serving.record(
+        settings.runtime_root,
+        host="0.0.0.0",
+        port=8791,
+        daily_time=clock_time(6, 0),
+        time_zone="America/Denver",
+        db_path=str(settings.db_path),
+        pid=4321,
+        clock=lambda: STARTED,
+    )
+    try:
+        text = render(collect(settings, clock=lambda: STARTED))
+    finally:
+        serving.clear(claim)
+
+    assert "http://0.0.0.0:8791" in text
+    assert "Warning:" in text
+    assert "local network" in text
+    assert "token" in text
+    # The shell that asked has the option off, and the report is still about the
+    # service that is running on the address it chose.
+    assert settings.allow_lan is False

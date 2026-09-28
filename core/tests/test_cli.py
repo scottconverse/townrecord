@@ -312,3 +312,41 @@ def test_the_console_script_entry_point_runs_in_process(
     assert main(["token", "create", "--name", "desk", "--scope", "read"]) == 0
     assert main(["token", "list"]) == 0
     assert main(["status"]) == 0
+
+
+# -- serving beyond this machine, as an option with a warning (spec 13.1) -----
+
+#: An address that is not this machine's and never can be: TEST-NET-1 of RFC
+#: 5737 is reserved for documentation. These tests bind nothing real and reach
+#: nothing; the address is what makes them fail fast at the socket, so no test
+#: here ever puts the API on a live network address.
+NETWORK_HOST = "192.0.2.1"
+
+
+def test_serve_refuses_a_network_address_until_the_setting_is_on(tmp_path: Path, port: int) -> None:
+    """Spec 13.1: serving beyond this machine is an option, and off means off."""
+    result = run_cli(env_for(tmp_path, port, TOWNRECORD_HOST=NETWORK_HOST), "serve")
+
+    assert result.returncode == EXIT_REFUSED
+    assert NETWORK_HOST in result.stderr
+    assert "TOWNRECORD_ALLOW_LAN" in result.stderr
+    # The refusal comes before any socket work and before anything is created, so
+    # a command that was not allowed to serve leaves nothing behind.
+    assert not (tmp_path / "townrecord.db").exists()
+    assert wait_for_port_free(port)
+
+
+def test_serve_warns_about_who_can_reach_it_once_the_setting_is_on(
+    tmp_path: Path, port: int
+) -> None:
+    """Spec 13.1: the option is turned on with a warning about who can reach it."""
+    env = env_for(tmp_path, port, TOWNRECORD_HOST=NETWORK_HOST, TOWNRECORD_ALLOW_LAN="1")
+    result = run_cli(env, "serve")
+
+    assert "Warning:" in result.stderr
+    assert f"{NETWORK_HOST}:{port}" in result.stderr
+    assert "local network" in result.stderr
+    assert "token" in result.stderr
+    # The warning is printed before the socket is attempted, and this address is
+    # not the machine's own, so this run ends at the bind with the port sentence.
+    assert "already in use" in result.stderr
