@@ -61,8 +61,23 @@ VIDEO_CHANNEL = "video_channel"
 #: source that could never be checked again could never recover (spec 7.3).
 SYNCABLE_STATUSES = ("accepted", "broken")
 
-#: The window a sync covers when its payload names none (spec 7.1 step 5).
+#: How far back the window a sync covers reaches when its payload names none
+#: (spec 7.1 step 5).
 DEFAULT_WINDOW_DAYS = 30
+
+#: How far forward the same window reaches. Nothing in spec 9.2 states a bound:
+#: it asks the adapter to pace its requests and cache everything, and a meeting
+#: list costs one request per year plus one for the upcoming list whichever way
+#: the window is drawn, so a wider window costs a request only when it crosses
+#: a year. This number is a decision made here, not a reading of the spec: two
+#: months is long enough to hold the next regular session of a body that meets
+#: monthly, and short enough that the listing stays a listing.
+#:
+#: Without it the end of the window is today, and a session nobody has held yet
+#: is fetched from the upcoming list on every sync and then thrown away by the
+#: window filter. Spec 9.4's next regular session and the sentence of spec 10.4
+#: could then only ever name a session that had already happened.
+DEFAULT_WINDOW_AHEAD_DAYS = 60
 
 #: How many skipped meetings and documents a checkpoint keeps by name. A
 #: summary that grows without bound is not a summary.
@@ -394,7 +409,12 @@ def sync_request(payload: Any, *, today: date) -> SyncRequest:
     """Read the payload of a sync job (spec 7.1 step 5).
 
     The payload is the id of one source, or a mapping naming one and the window
-    to cover. The window defaults to the last 30 days, and the end of a window
+    to cover. A window nobody states is 30 days back and 60 days forward from
+    the day of the run: back for the meetings the last month held (spec 7.1
+    step 5) and forward so that a session the portal already lists and nobody
+    has held yet is stored, which is the session spec 9.4 reads a body's next
+    minutes out of and spec 10.4 names as the packet they are expected in. A
+    caller that states a window gets exactly that window, and the end of one
     before its start is refused rather than quietly swapped.
     """
     raw_source: Any = payload
@@ -407,8 +427,8 @@ def sync_request(payload: Any, *, today: date) -> SyncRequest:
     first = _as_date(from_text, "The start of the window") if from_text else None
     last = _as_date(to_text, "The end of the window") if to_text else None
     if first is None and last is None:
-        last = today
         first = today - timedelta(days=DEFAULT_WINDOW_DAYS)
+        last = today + timedelta(days=DEFAULT_WINDOW_AHEAD_DAYS)
     elif first is None:
         first = last - timedelta(days=DEFAULT_WINDOW_DAYS)
     elif last is None:

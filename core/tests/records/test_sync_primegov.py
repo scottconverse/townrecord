@@ -11,9 +11,18 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import date, timedelta
 from typing import Any
 
+import pytest
+
 from townrecord.jobs import DONE, FAILED, ORIGIN_SCHEDULED, PAUSED, read_checkpoint
+from townrecord.records.portal import (
+    DEFAULT_WINDOW_AHEAD_DAYS,
+    DEFAULT_WINDOW_DAYS,
+    SyncRefused,
+    sync_request,
+)
 from townrecord.repo import (
     agenda_items,
     all_sources,
@@ -32,6 +41,7 @@ from .conftest import (
     Area,
     FakePortal,
     Sync,
+    days_from_today,
     document,
     meeting,
     needs,
@@ -44,12 +54,26 @@ A_MEETING = 4100
 #: The video URL of that meeting.
 A_VIDEO_URL = "https://www.youtube.com/watch?v=3qfQAkAAC9U"
 
+#: How far ahead of the day of the run a test puts a meeting that has not been
+#: held yet. The default window reaches 60 days forward, so three weeks is
+#: inside it with room to spare and is not at its edge.
+FUTURE_DAYS = 21
+
 
 def one_meeting(portal: FakePortal, **entry: Any) -> int:
     """List exactly one meeting on the fake portal and return its portal id."""
     listed = meeting(A_MEETING, "2026-09-08T19:00:00", "City Council Regular Session", **entry)
     portal.meetings = [listed]
     return int(listed["id"])
+
+
+def a_default_sync(sync: Sync, area: Area) -> int:
+    """Queue the sync a window-less payload asks for: the schedule's own job.
+
+    It is the payload spec 16.2 queues for every accepted portal source, and it
+    names no window, so the job chooses one.
+    """
+    return sync.queue("sync_primegov", {"source_id": area.portal_id})
 
 
 # -- Rule D: no city of the job's own -----------------------------------------
@@ -651,3 +675,143 @@ def test_a_window_that_ends_before_it_starts_is_refused(
     assert row["state"] == FAILED
     assert "before it starts" in row["last_error"]
     assert wired.requests == []
+
+
+# -- The window a payload names, and the one it does not ----------------------
+
+
+def test_the_default_window_stores_a_meeting_that_has_not_been_held_yet(
+    area: Area, wired: FakePortal, sync: Sync
+) -> None:
+    """Spec 9.2: the upcoming list is asked, and what it lists is kept.
+
+    The meeting here is on the portal's upcoming list and in no archived year,
+    and it starts three weeks after the day of the run. An unbound sync stores
+    it only if the window the job chooses for itself reaches past today, and
+    the row it writes is the row the next regular session of spec 9.4 is read
+    from. Nothing about the meeting is a fault: it has no video, no minutes and
+    no packet yet because it has not been held (rule 4).
+    """
+    wired.meetings = [meeting(A_MEETING, days_from_today(-1), "City Council Regular Session")]
+    future = days_from_today(FUTURE_DAYS)
+    wired.upcoming = [meeting(A_MEETING + 1, future, "City Council Regular Session")]
+
+    job_id = a_default_sync(sync, area)
+    sync.lane("normal")
+
+    assert sync.job(job_id)["state"] == DONE
+    stored = meeting_by_portal_id(sync.conn, area.portal_id, A_MEETING + 1)
+    assert stored is not None, "the meeting the upcoming list carried is stored"
+    assert stored.starts_at == future
+    assert stored.body_id == area.body_id
+    assert stored.type == "regular"
+    checkpoint = read_checkpoint(sync.conn, job_id)
+    assert checkpoint["meetings_created"] == 2
+    assert checkpoint["skipped_total"] == 0, "an unheld meeting is not a fault"
+    assert checkpoint["to_date"] >= (date.today() + timedelta(days=FUTURE_DAYS)).isoformat(), (
+        "the window the job chose for itself reaches the day of the unheld meeting"
+    )
+    assert sync.conn.execute("SELECT COUNT(*) FROM videos").fetchone()[0] == 0, (
+        "a meeting with no video yet gets no video row and no complaint"
+    )
+
+
+def test_the_default_window_still_reaches_the_thirty_days_behind_today(
+    area: Area, wired: FakePortal, sync: Sync
+) -> None:
+    """The window a payload does not name still looks back 30 days (spec 7.1).
+
+    The meeting is three weeks behind the day of the run: inside the window's
+    start and outside a window that only looked forward.
+    """
+    wired.meetings = [meeting(A_MEETING, days_from_today(-21), "City Council Regular Session")]
+
+    a_default_sync(sync, area)
+    sync.lane("normal")
+
+    assert meeting_by_portal_id(sync.conn, area.portal_id, A_MEETING) is not None
+
+
+def test_a_window_a_caller_states_is_the_window_it_gets(
+    area: Area, wired: FakePortal, sync: Sync
+) -> None:
+    """A payload that names both ends is obeyed, and today is its end here.
+
+    The default window reaches into the future, and this is what stops that
+    reaching being applied to a caller who said what it wanted: the upcoming
+    meeting is fetched from the portal and dropped by the stated window, which
+    is the behavior the caller asked for.
+    """
+    wired.meetings = [meeting(A_MEETING, "2026-09-08T19:00:00", "City Council Regular Session")]
+    wired.upcoming = [meeting(A_MEETING + 1, "2026-09-29T19:00:00", "City Council Regular Session")]
+
+    sync.queue_sync(area.portal_id, from_date="2026-09-01", to_date="2026-09-15")
+    sync.lane("normal")
+
+    assert meeting_by_portal_id(sync.conn, area.portal_id, A_MEETING) is not None
+    assert meeting_by_portal_id(sync.conn, area.portal_id, A_MEETING + 1) is None, (
+        "the stated window is the window: it ends on September 15"
+    )
+    assert wired.paths().count("/api/v2/PublicPortal/ListUpcomingMeetings") == 1, (
+        "the upcoming list is still asked: the window is what drops the meeting"
+    )
+
+
+# -- The window the payload does and does not name (sync_request) -------------
+
+
+def test_a_payload_that_names_no_window_gets_the_default_one() -> None:
+    """The two ends of the default window, on a day the test fixes itself.
+
+    The window the job chooses is what the tests above observe through a fake
+    portal; this is the arithmetic on its own, with ``today`` passed in rather
+    than read off the machine's clock.
+    """
+    asked = sync_request({"source_id": 7}, today=date(2026, 9, 27))
+
+    assert asked.source_id == 7
+    assert asked.date_from == date(2026, 9, 27) - timedelta(days=DEFAULT_WINDOW_DAYS)
+    assert asked.date_to == date(2026, 9, 27) + timedelta(days=DEFAULT_WINDOW_AHEAD_DAYS)
+    assert asked.date_from == date(2026, 8, 28), "the month behind the day of the run"
+    assert asked.date_to == date(2026, 11, 26), "and the two months ahead of it"
+
+
+def test_a_bare_source_id_is_the_same_payload_as_a_mapping_of_one() -> None:
+    """A payload that is the id alone names no window either (spec 7.1 step 5)."""
+    bare = sync_request(7, today=date(2026, 9, 27))
+    mapped = sync_request({"source_id": 7}, today=date(2026, 9, 27))
+
+    assert bare == mapped
+
+
+def test_a_window_that_names_both_ends_is_obeyed_exactly() -> None:
+    """Nothing is widened for a caller that said what it wanted."""
+    asked = sync_request(
+        {"source_id": 7, "from_date": "2026-09-01", "to_date": "2026-09-15"},
+        today=date(2026, 9, 27),
+    )
+
+    assert asked.date_from == date(2026, 9, 1)
+    assert asked.date_to == date(2026, 9, 15)
+
+
+def test_a_window_that_names_only_its_start_still_ends_today() -> None:
+    """Half a window is filled in, and today closes it, as it always did.
+
+    Only the unbound case reaches forward: a caller that named a start said what
+    it wanted at the end it cared about, and the end of the window is not made
+    to reach past the day of the run behind its back.
+    """
+    asked = sync_request({"source_id": 7, "from_date": "2026-09-01"}, today=date(2026, 9, 27))
+
+    assert asked.date_from == date(2026, 9, 1)
+    assert asked.date_to == date(2026, 9, 27)
+
+
+def test_a_window_that_ends_before_it_starts_is_refused_by_name() -> None:
+    """The refusal the job test sees as a failed job, at the source of it."""
+    with pytest.raises(SyncRefused):
+        sync_request(
+            {"source_id": 7, "from_date": "2026-09-30", "to_date": "2026-09-01"},
+            today=date(2026, 9, 27),
+        )
