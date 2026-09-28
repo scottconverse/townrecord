@@ -26,7 +26,13 @@ from townrecord.capture import TRANSCRIBE_JOB_KIND
 from townrecord.capture.transcribe import LANE as TRANSCRIBE_LANE
 from townrecord.config import Settings
 from townrecord.jobs import QUEUED, RUNNING, JobContext, JobsSettings, claim, enqueue, get
-from townrecord.records import ALIGN_MEETING, DOWNLOAD_RECORD, EXTRACT_PAGES, SYNC_PRIMEGOV
+from townrecord.records import (
+    ALIGN_MEETING,
+    DOWNLOAD_RECORD,
+    EXTRACT_PAGES,
+    READ_MINUTES,
+    SYNC_PRIMEGOV,
+)
 from townrecord.runtime import JOB_KIND as RUNTIME_UPDATE_KIND
 from townrecord.service import KIND_MODULES, build_service, kinds
 
@@ -38,6 +44,7 @@ EXPECTED_KINDS = (
     DOWNLOAD_RECORD,
     EXTRACT_PAGES,
     ALIGN_MEETING,
+    READ_MINUTES,
     CAPTURE_JOB_KIND,
     TRANSCRIBE_JOB_KIND,
     RUNTIME_UPDATE_KIND,
@@ -79,7 +86,7 @@ def test_every_job_kind_that_exists_is_registered(settings: Settings) -> None:
 
     assert service.registry.kinds() == tuple(sorted(EXPECTED_KINDS))
     assert set(service.registry.kinds()) == set(kinds())
-    assert len(kinds()) == 7
+    assert len(kinds()) == len(EXPECTED_KINDS) == 8
 
     # Each kind is a name the module the service says registers it really
     # declares, so KIND_MODULES is a fact and not a comment.

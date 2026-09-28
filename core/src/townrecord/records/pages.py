@@ -22,6 +22,13 @@ A page with no text layer is a scan. OCR is a later unit, so the page is
 stored with the plain reason it has no text (spec 9.6) and its row is what a
 later unit reads to find the work.
 
+Reading a packet is also what makes the votes of an earlier meeting readable:
+spec 9.4 puts the draft minutes of a regular session in the next regular
+session's packet, so the pages are the only thing the reading of those votes was
+waiting on. A packet's reading therefore asks for the minutes of the sessions
+whose own packets this one may hold them for, which is the last thing this job
+does, and asking is idempotent like everything else here.
+
 Reading is idempotent: the pages of the record are written fresh rather than
 edited, so a second reading of the same bytes writes the same rows.
 """
@@ -44,6 +51,7 @@ from ..repo import (
     set_record_page_count,
 )
 from . import portal
+from .requests import request_minutes_of_packet
 
 #: The plain reason a page that carries no text is stored with (spec 9.6).
 #: Reading a scan is OCR, which is a later unit, and this is the sentence that
@@ -100,7 +108,7 @@ def extract_pages(ctx: JobContext) -> None:
     replaced = delete_record_pages(ctx.conn, record.id)
     several = 0
     for number, text in pages:
-        printed = _footer_numbers(text)
+        printed = printed_footers(text)
         if len(printed) > 1:
             several += 1
         insert_record_page(
@@ -108,11 +116,13 @@ def extract_pages(ctx: JobContext) -> None:
             record_id=record.id,
             page_number=number,
             text=text,
-            footer_page_number=_own_footer(printed, number),
+            footer_page_number=own_footer(printed, number),
             ocr_reason=None if text else NEEDS_OCR,
         )
     set_record_page_count(ctx.conn, record.id, len(pages))
     written = record_pages(ctx.conn, record.id)
+    if record.kind == portal.PACKET_KIND:
+        request_minutes_of_packet(ctx.conn, record)
     ctx.save_checkpoint(
         {
             "record_id": record.id,
@@ -162,7 +172,7 @@ def _read(content: bytes, record: Record) -> list[tuple[int, str]]:
     return pages
 
 
-def _footer_numbers(text: str) -> list[int]:
+def printed_footers(text: str) -> list[int]:
     """Every number the page prints in a footer, in the order it prints them.
 
     Empty for a page that prints no footer at all, and more than one number for
@@ -171,7 +181,7 @@ def _footer_numbers(text: str) -> list[int]:
     return [int(found) for found in _PAGE_FOOTER.findall(text)]
 
 
-def _own_footer(printed: list[int], page_number: int) -> int | None:
+def own_footer(printed: list[int], page_number: int) -> int | None:
     """Which of the numbers a page printed is this record's own footer.
 
     The record's own footer is the one that agrees with the page's place in the
@@ -190,4 +200,4 @@ def _own_footer(printed: list[int], page_number: int) -> int | None:
     return printed[-1]
 
 
-__all__ = ["NEEDS_OCR", "PagesRefused", "extract_pages"]
+__all__ = ["NEEDS_OCR", "PagesRefused", "extract_pages", "own_footer", "printed_footers"]
