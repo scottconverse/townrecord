@@ -43,7 +43,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
-from ..align.identifiers import find_identifiers, find_item_references
+from ..align.identifiers import NUMBER_WORDS, find_identifiers, find_item_references
 from ..jobs import JobContext
 from ..repo import (
     Record,
@@ -162,6 +162,18 @@ _ORDINAL_SUFFIX = re.compile(r"^(st|nd|rd|th)$", re.IGNORECASE)
 #: A numbered item, as an agenda's number is spelled ("9.", "9.B", "10.A.1").
 _ITEM_NUMBER = re.compile(r"^\d+(?:[A-Za-z]|\.[A-Za-z0-9]+)*$")
 
+#: The words that say a motion took items out of the consent agenda. "with the
+#: exception of" is written before "except" because "except" alone does not
+#: match inside "exception", and a chair who says "with the exception of items
+#: 9A and 9B" means what a minute that prints "except items 9A and 9B" means.
+#: "minus" is here because the September 8, 2026 chair used it ("a motion to
+#: approve the consent agenda? Um, minus items B, E, B, and E"), and a reading
+#: that does not know the word approves the very items he took out.
+_EXCEPTION = re.compile(
+    r"\b(?:with\s+the\s+exception\s+of|excepting|except|excluding|pulling|pulled|minus)\b",
+    re.IGNORECASE,
+)
+
 
 @dataclass(frozen=True)
 class MinutesRun:
@@ -256,6 +268,26 @@ class ItemLink:
 
 
 @dataclass(frozen=True)
+class ConsentCoverage:
+    """What a consent-agenda motion covers, and what it took out of itself.
+
+    ``covered`` is every item of the consent agenda the motion is a motion on,
+    and ``excepted`` is every item it named as taken out. The two are disjoint,
+    and an item in ``excepted`` is an item whose own motion has to be found
+    somewhere else (spec 10.4).
+
+    ``unreadable`` says the motion named exceptions and this reading could not
+    read one of them as an item number. Such a motion covers nothing: what it
+    covers is exactly what is not known about it, and a vote stored for an item
+    it might have taken out would be a false fact (spec 16.3).
+    """
+
+    covered: tuple[ItemRef, ...] = ()
+    excepted: tuple[ItemRef, ...] = ()
+    unreadable: bool = False
+
+
+@dataclass(frozen=True)
 class SpokenVote:
     """A vote mentioned in the video, with the lines that mention it.
 
@@ -268,6 +300,22 @@ class SpokenVote:
     start_ms: int
     end_ms: int
     evidence: str
+
+
+@dataclass(frozen=True)
+class SpokenReading:
+    """What the video said about a meeting's votes, and what it did not say.
+
+    ``votes`` is one mention per item, the first the video makes. ``taken_out``
+    is the items a consent-agenda motion took out of itself that the video
+    never came back to: they get no vote, and they are named here so the
+    meeting's own note can say which items have no vote yet and why, rather
+    than the reading inventing one for them (spec 10.4, 16.3).
+    """
+
+    votes: tuple[SpokenVote, ...] = ()
+    taken_out: tuple[ItemRef, ...] = ()
+    unreadable_consent: bool = False
 
 
 def find_run(pages: Sequence[RecordPage], *, body_name: str, on: date) -> MinutesRun | None:
@@ -379,11 +427,14 @@ def links_for(motion: MotionRead, items: Sequence[ItemRef]) -> tuple[ItemLink, .
        number the item is known by;
     3. an item number the motion names ("item 10.A").
 
-    A motion no reading matches is linked to nothing, and the reading says so
-    rather than attaching it to the nearest item.
+    A consent-agenda motion's coverage is the whole answer and not a first
+    reading: when it names exceptions this reading cannot read, the readings
+    below would link it to the very items it took out, so it is linked to
+    nothing instead. A motion no reading matches is linked to nothing, and the
+    reading says so rather than attaching it to the nearest item.
     """
-    consent = _consent_links(motion, items)
-    if consent:
+    consent = consent_links(motion.text, items)
+    if consent is not None:
         return consent
 
     found: dict[str, ItemLink] = {}
@@ -418,6 +469,18 @@ def spoken_votes(segments: Sequence[Segment], items: Sequence[ItemRef]) -> list[
     read from the transcript's own segments: the line that asks, and the line
     that says it carried. What comes back is a mention with no tally, because
     "carries unanimously" is not a count of anything (spec 10.4).
+    """
+    return list(spoken_reading(segments, items).votes)
+
+
+def spoken_reading(segments: Sequence[Segment], items: Sequence[ItemRef]) -> SpokenReading:
+    """Read what the video said about the items' votes, and what it left out.
+
+    A spoken motion is read for the items it covers, and nothing else is:
+    a consent-agenda motion is read with the same code the minutes are read
+    with, so the items it takes out get no vote from it, and a chair's later
+    motion on one of them is that item's own vote (spec 10.4). The items it
+    took out and never came back to are reported rather than given a vote.
 
     The first mention of an item wins. A meeting reconsiders things, and a
     later mention of the same item is a second thing the video said rather than
@@ -425,25 +488,45 @@ def spoken_votes(segments: Sequence[Segment], items: Sequence[ItemRef]) -> list[
     """
     votes: list[SpokenVote] = []
     spoken: set[int] = set()
+    taken_out: dict[int, ItemRef] = {}
+    unreadable = False
     for index, segment in enumerate(segments):
         if not _SPOKEN_MOTION.search(segment.text):
             continue
         motion_line, last = _spoken_line(segments, index)
-        item = _item_spoken_of(motion_line, items)
-        if item is None or item.id in spoken:
+        coverage = consent_coverage(motion_line, items)
+        if coverage is None:
+            item = _item_spoken_of(motion_line, items)
+            covered = () if item is None else (item,)
+        else:
+            covered = coverage.covered
+            unreadable = unreadable or coverage.unreadable
+            for item in coverage.excepted:
+                taken_out.setdefault(item.id, item)
+        if not covered:
             continue
         outcome, line_index = _spoken_outcome(segments, last + 1)
-        spoken.add(item.id)
-        votes.append(
-            SpokenVote(
-                agenda_item_id=item.id,
-                result=_spoken_result(outcome),
-                start_ms=segments[index].start_ms,
-                end_ms=segments[line_index].end_ms if line_index is not None else segment.end_ms,
-                evidence=_spoken_evidence(motion_line, outcome),
+        for item in covered:
+            if item.id in spoken:
+                continue
+            spoken.add(item.id)
+            taken_out.pop(item.id, None)
+            votes.append(
+                SpokenVote(
+                    agenda_item_id=item.id,
+                    result=_spoken_result(outcome),
+                    start_ms=segments[index].start_ms,
+                    end_ms=(
+                        segments[line_index].end_ms if line_index is not None else segment.end_ms
+                    ),
+                    evidence=_spoken_evidence(motion_line, outcome),
+                )
             )
-        )
-    return votes
+    return SpokenReading(
+        votes=tuple(votes),
+        taken_out=tuple(taken_out.values()),
+        unreadable_consent=unreadable,
+    )
 
 
 def read_minutes(ctx: JobContext) -> None:
@@ -747,12 +830,14 @@ def _read_from_video(ctx: JobContext, meeting: Any, sentence: str) -> None:
     """
     clear_minutes_reading(ctx.conn, meeting.id, source_kinds=("transcript",))
     written = 0
+    reading = SpokenReading()
     video = primary_video(ctx.conn, meeting.id)
     if video is not None:
         transcript = latest_transcript(ctx.conn, video.id)
         if transcript is not None:
             items = items_of(ctx.conn, meeting.id)
-            for vote in spoken_votes(segments_of(ctx.conn, transcript.id), items):
+            reading = spoken_reading(segments_of(ctx.conn, transcript.id), items)
+            for vote in reading.votes:
                 citation_id = insert_video_citation(
                     ctx.conn,
                     video_id=video.id,
@@ -777,6 +862,20 @@ def _read_from_video(ctx: JobContext, meeting: Any, sentence: str) -> None:
     reason = f"The minutes of meeting {meeting.id} are {sentence.rstrip('.')}."
     if written:
         reason += f" {written} vote(s) were read from the video instead."
+    if reading.taken_out:
+        # An item taken out of the consent agenda is voted on by its own motion
+        # or not at all, so an item with no vote yet is named here with the
+        # reason rather than left to look like an item nobody read (spec 16.3).
+        numbers = ", ".join(item.number for item in reading.taken_out)
+        reason += (
+            f" No motion of their own was found for {numbers}, which the consent agenda"
+            " motion took out, so they have no vote from the video yet."
+        )
+    if reading.unreadable_consent:
+        reason += (
+            " A consent-agenda motion named exceptions the reading could not read as"
+            " item numbers, so it was read as a motion on no item at all."
+        )
     ctx.pause(reason)
 
 
@@ -1078,26 +1177,52 @@ def _parts(number: str) -> tuple[str, ...]:
     return tuple(part for part in re.split(r"[.\s]+", number.strip()) if part)
 
 
-def _consent_links(motion: MotionRead, items: Sequence[ItemRef]) -> tuple[ItemLink, ...]:
-    """Every consent-agenda item this motion covers, except the ones it names."""
-    if not re.search(r"\bconsent\s+agenda\b", motion.text, re.IGNORECASE):
-        return ()
+def consent_coverage(text: str, items: Sequence[ItemRef]) -> ConsentCoverage | None:
+    """What a consent-agenda motion covers, or None when it is not one.
+
+    None means the text is not a motion on the consent agenda: it does not name
+    a consent agenda, or these items hold no consent-agenda section to be a
+    motion on. A finding that is not None is the whole answer, because what a
+    consent motion covers is decided by the clause it names its exceptions in,
+    and a second reading of that clause is how a motion ends up linked to the
+    items it took out.
+    """
+    if not re.search(r"\bconsent\s+agenda\b", text, re.IGNORECASE):
+        return None
     section = next(
         (item for item in items if item.title.strip().casefold().startswith("consent agenda")),
         None,
     )
     if section is None:
-        return ()
-    excepted = _item_numbers_in(motion.text)
-    clause = _consent_clause(motion.text)
-    links = []
+        return None
+    named = _excepted_keys(text, section.number)
+    if named is None:
+        return ConsentCoverage(unreadable=True)
+    covered: list[ItemRef] = []
+    excepted: list[ItemRef] = []
     for item in items:
         if not _is_under(item.number, section.number):
             continue
-        if _number_key(item.number) in excepted:
-            continue
-        links.append(ItemLink(item.id, "consent", clause))
-    return tuple(links)
+        if _number_key(item.number) in named:
+            excepted.append(item)
+        else:
+            covered.append(item)
+    return ConsentCoverage(covered=tuple(covered), excepted=tuple(excepted))
+
+
+def consent_links(text: str, items: Sequence[ItemRef]) -> tuple[ItemLink, ...] | None:
+    """The consent-agenda items a motion's text covers, or None when it is not one.
+
+    The clause the motion names its exceptions in is read first, because it
+    reads as a reference to the items it names and linking the motion to those
+    would be exactly backwards. An empty tuple is a consent motion that covers
+    nothing, which is a finding and not a fall-through.
+    """
+    coverage = consent_coverage(text, items)
+    if coverage is None:
+        return None
+    clause = _consent_clause(text)
+    return tuple(ItemLink(item.id, "consent", clause) for item in coverage.covered)
 
 
 def _is_under(number: str, section: str) -> bool:
@@ -1129,26 +1254,58 @@ def _consent_clause(text: str) -> str:
     return found.group(0).strip() if found else ""
 
 
-def _item_numbers_in(text: str) -> frozenset[str]:
-    """The item numbers a clause names, as one key per number.
+def _excepted_keys(text: str, section: str) -> frozenset[str] | None:
+    """The item numbers a motion's exception clause names, as one key per number.
 
     "except items 9B and 9E" names two, spelled without the dot the agenda
     spells them with, so the keys are compared with everything but the letters
-    and the digits taken out.
+    and the digits taken out. A number a chair said as a word is read too:
+    "items nine A and nine B" is the same two items, and the letter that
+    follows a number word is part of the number and not a word of its own.
+
+    A chair speaking says the letters without the section ("minus items B, E,
+    B, and E"), so a letter on its own is read as the item of the consent
+    section of that letter. Reading it as nothing would have the motion cover
+    the items the chair took out, which is the false vote this reading exists
+    to prevent, so the section is used rather than the letter dropped.
+
+    An empty set is a motion with nothing to except. None is a motion that has
+    an exception clause and no number and no letter in it this reading can
+    read: the two are different facts, and only the second one means the
+    motion's coverage is unknown (spec 16.3).
     """
-    clause = re.search(r"\bexcept\b(.*)$", text, re.IGNORECASE | re.DOTALL)
-    if clause is None:
+    found = _EXCEPTION.search(text)
+    if found is None:
         return frozenset()
-    tokens = re.split(r"[,;&]|\band\b|\s+", clause.group(1), flags=re.IGNORECASE)
-    keys = set()
-    for token in tokens:
+    base = section.rstrip(".")
+    keys: set[str] = set()
+    pending: str | None = None
+    for token in re.split(r"[,;&]|\band\b|\s+", text[found.end() :], flags=re.IGNORECASE):
         cleaned = token.strip().strip(".:;,")
-        if not cleaned or not any(character.isdigit() for character in cleaned):
+        if not cleaned:
             continue
-        if not _ITEM_NUMBER.match(cleaned):
+        folded = cleaned.casefold()
+        if folded in NUMBER_WORDS:
+            number = str(NUMBER_WORDS[folded])
+        elif _ITEM_NUMBER.match(cleaned):
+            number = cleaned
+        elif len(cleaned) == 1 and cleaned.isalpha():
+            if pending is not None:
+                # "9 A" and "nine A" are item 9.A: the letter belongs to the
+                # number that was just read, so it replaces that reading.
+                keys.discard(_number_key(pending))
+                combined = f"{pending}{cleaned}"
+            else:
+                combined = f"{base}.{cleaned}"
+            keys.add(_number_key(combined))
+            pending = None
             continue
-        keys.add(_number_key(cleaned))
-    return frozenset(keys)
+        else:
+            pending = None
+            continue
+        keys.add(_number_key(number))
+        pending = number
+    return frozenset(keys) if keys else None
 
 
 def _number_key(number: str) -> str:
@@ -1238,16 +1395,21 @@ __all__ = [
     "NOT_AVAILABLE",
     "NO_LATER_SESSION",
     "NO_RUN_FOUND",
+    "ConsentCoverage",
     "ItemLink",
     "ItemRef",
     "MinutesRun",
     "MotionRead",
+    "SpokenReading",
     "SpokenVote",
+    "consent_coverage",
+    "consent_links",
     "find_run",
     "items_of",
     "links_for",
     "page_lines",
     "parse_motions",
     "read_minutes",
+    "spoken_reading",
     "spoken_votes",
 ]

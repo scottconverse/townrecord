@@ -6,7 +6,7 @@ session, so the draft of one meeting sits in the packet of the *next* one
 that meeting: they are read out of another meeting's packet, and reading them
 is what this module tests.
 
-The five things the checks were asked for, in the order they were asked for:
+The six things the checks were asked for, in the order they were asked for:
 
 * a motion block parses into its mover, its seconder, its text, its names and
   its counted result;
@@ -16,12 +16,15 @@ The five things the checks were asked for, in the order they were asked for:
   gets names the last motion that was actually decided;
 * a vote read from the video has no tally, and there is nowhere to put one;
 * a meeting whose minutes are not published yet pauses with the plain sentence
-  spec 10.4 asks for.
+  spec 10.4 asks for;
+* a consent-agenda motion read from the video excepts the same items the
+  minutes' own clause excepts, so the item it took out is not stored as an item
+  that motion approved.
 
-Two of the tests read the recorded September 8, 2026 packet and caption track
-of the oversight repository in place and are skipped when the recordings are
-not on this machine. Everything else is built here, so the five checks hold on
-a machine with no recordings at all.
+Three of the tests read the recorded September 8 and September 22, 2026 agendas,
+packet and caption tracks of the oversight repository in place and are skipped
+when the recordings are not on this machine. Everything else is built here, so
+the six checks hold on a machine with no recordings at all.
 
 Nothing here reaches the network: the portal is never asked for anything, and
 the records the tests read are built in the database (rule 7).
@@ -46,9 +49,11 @@ from townrecord.records.minutes import (
     NO_LATER_SESSION,
     NO_RUN_FOUND,
     NOT_AVAILABLE,
+    ConsentCoverage,
     ItemRef,
     MinutesRun,
     SpokenVote,
+    consent_coverage,
     find_run,
     page_lines,
     parse_motions,
@@ -85,7 +90,9 @@ from townrecord.repo import (
 
 from .conftest import (
     AGENDA_16805,
+    AGENDA_16821,
     CAPTIONS_16805,
+    CAPTIONS_SEP22,
     PACKET_MINUTES_SEP08,
     Area,
     FakePortal,
@@ -402,7 +409,9 @@ def a_spoken_transcript(
     return video
 
 
-def meeting_with_real_items(sync: Sync, area: Area, *, starts_at: str = SEPT_8) -> int:
+def meeting_with_real_items(
+    sync: Sync, area: Area, *, starts_at: str = SEPT_8, agenda: Path = AGENDA_16805
+) -> int:
     """Store a meeting whose items are the ones the recorded agenda prints.
 
     The items come from the real HTML agenda through the real adapter, which is
@@ -412,7 +421,7 @@ def meeting_with_real_items(sync: Sync, area: Area, *, starts_at: str = SEPT_8) 
     meeting_id = a_meeting(sync, area, starts_at=starts_at)
     source = get_source(sync.conn, area.portal_id)
     assert source is not None
-    for item in adapter_for(source).parse_html_agenda(AGENDA_16805.read_bytes()):
+    for item in adapter_for(source).parse_html_agenda(agenda.read_bytes()):
         insert_agenda_item(
             sync.conn,
             meeting_id=meeting_id,
@@ -1155,9 +1164,13 @@ def test_the_real_captions_give_mentions_with_no_tally(
 ) -> None:
     """With no minutes yet, the video is read for what it mentions.
 
-    Unit F measured six spoken motions on this meeting's captions. Every one of
-    them is a mention with no tally, including the two whose chair named a
-    number out loud, because a number a chair says is not a count (spec 10.4).
+    Unit F measured six spoken motions on this meeting's captions. Seven more
+    mentions come from the consent motion, which the chair moved minus items B
+    and E: the two he took out keep the votes their own motions gave them, and
+    every other item of the consent agenda is mentioned by the motion that
+    carried it. Every one of them is a mention with no tally, including the two
+    whose chair named a number out loud, because a number a chair says is not a
+    count (spec 10.4).
     """
     meeting_id = meeting_with_real_items(sync, area)
     video_id = a_video(sync, area, meeting_id)
@@ -1166,17 +1179,33 @@ def test_the_real_captions_give_mentions_with_no_tally(
 
     job_id = read(sync, meeting_id)
 
-    assert sync.job(job_id)["state"] == PAUSED
-    assert "6 vote(s) were read from the video instead." in sync.job(job_id)["last_error"]
+    row = sync.job(job_id)
+    assert row["state"] == PAUSED
+    assert row["last_error"] == a_pause_reason(
+        meeting_id, f"{NOT_AVAILABLE}; {NO_LATER_SESSION}.", written=17
+    )
     votes = _all_votes(sync, meeting_id)
-    assert len(votes) == 6
+    assert len(votes) == 17
     assert all(vote.source_kind == "transcript" for vote in votes)
     assert all(vote.tally is None for vote in votes), "a mention is never a tally"
     assert all(vote.evidence.startswith(FROM_VIDEO) for vote in votes)
-    numbers = {_number_of(sync, vote.agenda_item_id) for vote in votes}
-    assert numbers == {"9.B", "9.E", "10.A.1", "10.A.2", "10.A.3", "11.A"}
-    results = {_number_of(sync, vote.agenda_item_id): vote.result for vote in votes}
-    assert results["9.B"] == "unknown", "nothing in that part of the video said what it did"
+    by_number = {_number_of(sync, vote.agenda_item_id): vote for vote in votes}
+    assert set(by_number) == set(CONSENT_COVERED) | {
+        "9.B",
+        "9.E",
+        "10.A.1",
+        "10.A.2",
+        "10.A.3",
+        "11.A",
+    }
+    assert by_number["9.B"].result == "unknown", "nothing there said what that motion did"
+    for number in CONSENT_COVERED:
+        assert "minus items B, E, B, and E" in by_number[number].evidence, number
+    for number in ("9.B", "9.E"):
+        assert "consent agenda" not in by_number[number].evidence.casefold(), (
+            f"the chair took {number} out of the consent agenda, so the consent motion is not "
+            "the motion that decided it"
+        )
     for vote in votes:
         citation = get_citation(sync.conn, int(vote.citation_id))
         assert citation is not None
@@ -1238,7 +1267,225 @@ def test_a_motion_line_the_video_never_closed_is_unknown() -> None:
     assert votes[0].evidence == f'{FROM_VIDEO}: "{said}"'
 
 
-# -- Looking things up in the database ----------------------------------------
+# -- Check 6: what a video consent motion takes out ---------------------------
+
+#: A chair speaking reads the item numbers of the consent agenda without the
+#: section, so these are the two the September 22, 2026 chair named.
+SEP22_CONSENT_REMOVED = ("9.A", "9.B")
+
+#: The September 22, 2026 consent items the video's consent motion covers:
+#: every item under "9." except the two the chair named. Both of the items he
+#: named were moved on later in the same meeting, so the video holds a vote for
+#: them from their own motions and no item of that meeting is left without one.
+SEP22_CONSENT_COVERED = ("9.C", "9.D", "9.E", "9.F", "9.G", "9.H")
+
+
+def consent_items() -> list[ItemRef]:
+    """A consent section and its items, as a reading of a video is given them."""
+    return [
+        ItemRef(id=1, number="9.", title="Consent Agenda", identifiers={}),
+        ItemRef(id=2, number="9.A", title="O-2026-62, A Bill For An Ordinance", identifiers={}),
+        ItemRef(id=3, number="9.B", title="O-2026-63, A Bill For An Ordinance", identifiers={}),
+        ItemRef(id=4, number="9.C", title="R-2026-68, A Resolution", identifiers={}),
+        ItemRef(id=5, number="10.A", title="An ordinance", identifiers={}),
+    ]
+
+
+def test_a_consent_motion_s_exception_clause_reads_the_same_from_a_chair() -> None:
+    """The clause the minutes print the same way is the item numbers it names.
+
+    The exception is the whole answer: the items it names are exactly the items
+    the motion is *not* a motion on, and the rest of the consent agenda is.
+    """
+    items = consent_items()
+
+    coverage = consent_coverage(
+        ">> I will motion to approve the consent agenda with the exception of items 9A and 9B.",
+        items,
+    )
+
+    assert coverage is not None
+    assert [item.number for item in coverage.excepted] == ["9.A", "9.B"]
+    assert [item.number for item in coverage.covered] == ["9.C"]
+    assert coverage.unreadable is False
+
+    # A motion that names no exception covers the whole consent agenda, and one
+    # that is not a consent motion at all is not read here.
+    assert consent_coverage("to approve the Consent Agenda", items) == ConsentCoverage(
+        covered=(items[1], items[2], items[3])
+    )
+    assert consent_coverage("to approve the minutes as presented", items) is None
+
+
+def test_a_consent_item_number_reads_with_and_without_the_dot() -> None:
+    """A chair says "9A" and the agenda prints "9.A"; both are item 9.A."""
+    items = consent_items()
+
+    for said in (
+        "with the exception of items 9A and 9B",
+        "with the exception of items 9.A and 9.B",
+        "except items nine A and nine B",
+        "minus items A and B",
+    ):
+        coverage = consent_coverage(
+            f">> I make a motion to approve the consent agenda {said}.", items
+        )
+        assert coverage is not None, said
+        assert [item.number for item in coverage.excepted] == ["9.A", "9.B"], said
+
+
+def test_a_consent_motion_the_video_spoke_gives_no_vote_to_what_it_excepts(
+    area: Area, wired: FakePortal, sync: Sync, storage_root: Path
+) -> None:
+    """The reported false fact, in miniature: 9.A is not passed by the motion
+    that took 9.A out of the consent agenda.
+
+    The September 22, 2026 chair said ">> I will motion to approve the consent
+    agenda with the exception of items 9A and 9B. Second." and the stored vote
+    for 9.A was that motion. Here the item it took out has no vote of its own,
+    so it has no video vote, and the meeting's note names it and says why.
+    """
+    meeting_id = a_meeting(sync, area)
+    items = {
+        number: an_item(sync, meeting_id, number, title=title)
+        for number, title in (
+            ("9.", "Consent Agenda"),
+            ("9.A", "O-2026-62, A Bill For An Ordinance Condi"),
+            ("9.B", "O-2026-63, A Bill For An Ordinance Condi"),
+            ("9.C", "R-2026-68, A Resolution"),
+        )
+    }
+    video_id = a_video(sync, area, meeting_id)
+    a_spoken_transcript(
+        sync,
+        storage_root,
+        video_id,
+        (
+            ">> I will motion to approve the consent agenda with the exception of items 9A",
+            "and 9B. Second.",
+            ">> Okay. And that carries unanimously.",
+            ">> I make a motion to approve ordinance O-2026-63.",
+            ">> Okay. And that carries.",
+        ),
+    )
+
+    job_id = read(sync, meeting_id)
+
+    row = sync.job(job_id)
+    assert row["state"] == PAUSED
+    assert row["last_error"] == a_pause_reason(
+        meeting_id, f"{NOT_AVAILABLE}; {NO_LATER_SESSION}.", written=2
+    ) + (
+        " No motion of their own was found for 9.A, which the consent agenda"
+        " motion took out, so they have no vote from the video yet."
+    )
+
+    consent = votes_of_item(sync.conn, items["9.C"])
+    assert len(consent) == 1
+    assert consent[0].result == "passed"
+    assert "exception of items 9A" in consent[0].evidence
+
+    # 9.A was excepted and never moved on its own, so nothing stored a vote for
+    # it. 9.B was excepted and was moved on, and that motion is its vote.
+    assert votes_of_item(sync.conn, items["9.A"]) == []
+    nine_b = votes_of_item(sync.conn, items["9.B"])
+    assert len(nine_b) == 1
+    assert "O-2026-63" in nine_b[0].evidence
+    assert "consent agenda" not in nine_b[0].evidence.casefold()
+
+
+def test_a_consent_motion_whose_exceptions_cannot_be_read_covers_nothing(
+    area: Area, wired: FakePortal, sync: Sync, storage_root: Path
+) -> None:
+    """A clause naming no item number leaves the coverage unknown, not full.
+
+    What such a motion covers is exactly what is not known about it, so no item
+    gets a vote from it and the note says so (spec 16.3).
+    """
+    meeting_id = a_meeting(sync, area)
+    items = {
+        number: an_item(sync, meeting_id, number, title=title)
+        for number, title in (
+            ("9.", "Consent Agenda"),
+            ("9.A", "O-2026-62, A Bill For An Ordinance Condi"),
+            ("9.C", "R-2026-68, A Resolution"),
+        )
+    }
+    video_id = a_video(sync, area, meeting_id)
+    a_spoken_transcript(
+        sync,
+        storage_root,
+        video_id,
+        (
+            ">> I make a motion to approve the consent agenda except the ones on the sheet.",
+            ">> Okay. And that carries unanimously.",
+        ),
+    )
+
+    job_id = read(sync, meeting_id)
+
+    assert votes_of_item(sync.conn, items["9.A"]) == []
+    assert votes_of_item(sync.conn, items["9.C"]) == []
+    assert sync.job(job_id)["last_error"] == a_pause_reason(
+        meeting_id, f"{NOT_AVAILABLE}; {NO_LATER_SESSION}."
+    ) + (
+        " A consent-agenda motion named exceptions the reading could not read as"
+        " item numbers, so it was read as a motion on no item at all."
+    )
+
+
+@needs(AGENDA_16821, CAPTIONS_SEP22)
+def test_the_real_september_22_video_gives_each_excepted_item_its_own_motion(
+    area: Area, wired: FakePortal, sync: Sync, storage_root: Path
+) -> None:
+    """The September 22, 2026 consent motion and the items it took out.
+
+    The stored vote the coordinator found was on 9.A, from the motion that said
+    "with the exception of items 9A and 9B". Both of those items were moved on
+    later in the same meeting, and the vote each one has is the motion that
+    decided it (spec 10.4).
+    """
+    meeting_id = meeting_with_real_items(sync, area, starts_at=SEPT_22, agenda=AGENDA_16821)
+    video_id = a_video(sync, area, meeting_id)
+    transcript_id = a_transcript(sync, storage_root, video_id, CAPTIONS_SEP22.read_bytes())
+    its_lines(sync, transcript_id, CAPTIONS_SEP22.read_bytes())
+
+    job_id = read(sync, meeting_id)
+
+    assert sync.job(job_id)["state"] == PAUSED
+    votes = _all_votes(sync, meeting_id)
+    by_number = {_number_of(sync, vote.agenda_item_id): vote for vote in votes}
+    assert set(by_number) == set(SEP22_CONSENT_COVERED) | set(SEP22_CONSENT_REMOVED) | {
+        "10.A",
+        "10.B",
+        "10.C",
+        "10.D",
+        "10.E",
+    }
+    assert all(vote.tally is None for vote in votes), "a mention is never a tally"
+    for number in SEP22_CONSENT_COVERED:
+        assert "exception of items 9A and 9B" in by_number[number].evidence, number
+    for number in SEP22_CONSENT_REMOVED:
+        assert "consent agenda" not in by_number[number].evidence.casefold(), (
+            f"{number} is one of the items the consent motion took out, so that motion is not the "
+            "motion that decided it"
+        )
+    assert "2026-62" in by_number["9.A"].evidence, "9.A's own motion is what gave it a vote"
+
+    # The two votes are minutes apart, and the order is the point: what 9.A's
+    # vote rests on was said after the consent motion, not at it.
+    nine_a = _citation_start(sync, by_number["9.A"])
+    nine_c = _citation_start(sync, by_number["9.C"])
+    assert nine_a > nine_c, "9.A's own motion came after the consent agenda motion"
+
+
+def _citation_start(sync: Sync, vote: Vote) -> int:
+    """The millisecond in the video one vote's citation starts at."""
+    assert vote.citation_id is not None
+    citation = get_citation(sync.conn, int(vote.citation_id))
+    assert citation is not None
+    assert citation.start_ms is not None
+    return int(citation.start_ms)
 
 
 def _all_votes(sync: Sync, meeting_id: int) -> list[Vote]:

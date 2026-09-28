@@ -66,6 +66,13 @@ AGENDA_16805 = EVIDENCE_FOLDER / "primegov" / "longmont-html-agenda-16805.html"
 #: The srv3 caption track of video 3qfQAkAAC9U, the September 8, 2026 meeting.
 CAPTIONS_16805 = EVIDENCE_FOLDER / "youtube" / "captions" / "3qfQAkAAC9U.en.srv3"
 
+#: The September 22, 2026 City Council regular session HTML agenda (16821).
+#: Its minutes are not published yet, so its votes are read from the video.
+AGENDA_16821 = EVIDENCE_FOLDER / "primegov" / "longmont-html-agenda-16821.html"
+
+#: The srv3 caption track of video jhsFsEz0P5A, the September 22, 2026 meeting.
+CAPTIONS_SEP22 = EVIDENCE_FOLDER / "youtube" / "captions-sep22" / "jhsFsEz0P5A.en.srv3"
+
 #: The meeting list of 2026, recorded from the portal.
 ARCHIVED_2026 = EVIDENCE_FOLDER / "primegov" / "longmont-ListArchivedMeetings-2026.json"
 
