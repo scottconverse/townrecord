@@ -1,6 +1,6 @@
 """The PrimeGov records jobs: sync a portal, fetch its records, read them.
 
-Five kinds, and the lanes spec 16.1 gives them:
+Six kinds, and the lanes spec 16.1 gives them:
 
 * ``sync_primegov`` on the normal lane: list a window of one portal and store
   what it published (spec 7.2 step 3, 7.1 step 5);
@@ -12,9 +12,11 @@ Five kinds, and the lanes spec 16.1 gives them:
   place in its video (spec 10.2);
 * ``read_minutes`` on the normal lane: read a meeting's votes out of its
   minutes in a later session's packet, or out of its video when there are no
-  minutes yet (spec 9.4, 10.4).
+  minutes yet (spec 9.4, 10.4);
+* ``read_speakers`` on the normal lane: label a meeting's transcript with who is
+  speaking, from the chair's own words (spec 10.6).
 
-Importing this package registers the five kinds on the process-wide registry,
+Importing this package registers the six kinds on the process-wide registry,
 so ``enqueue`` picks the right lane and a ``Runner`` built without a registry
 finds the real handlers. ``register_jobs`` is the same thing for a caller that
 built its own registry, and it is safe to call twice.
@@ -34,6 +36,7 @@ from .portal import (
     HEAVY,
     NORMAL,
     READ_MINUTES,
+    READ_SPEAKERS,
     SYNC_PRIMEGOV,
 )
 from .requests import (
@@ -46,7 +49,9 @@ from .requests import (
     request_alignment,
     request_minutes,
     request_minutes_of_packet,
+    request_speakers,
 )
+from .speakers import read_speakers
 from .sync import sync_primegov
 
 __all__ = [
@@ -60,6 +65,7 @@ __all__ = [
     "NORMAL",
     "PACKET_READ",
     "READ_MINUTES",
+    "READ_SPEAKERS",
     "SYNCED_AGAIN",
     "SYNC_PRIMEGOV",
     "TRANSCRIPT_STORED",
@@ -68,25 +74,28 @@ __all__ = [
     "extract_pages",
     "jobs",
     "read_minutes",
+    "read_speakers",
     "register_jobs",
     "request_alignment",
     "request_minutes",
     "request_minutes_of_packet",
+    "request_speakers",
     "sync_primegov",
 ]
 
-#: The five kinds with the lane each one runs on.
+#: The six kinds with the lane each one runs on.
 jobs: tuple[tuple[str, object, str], ...] = (
     (SYNC_PRIMEGOV, sync_primegov, NORMAL),
     (DOWNLOAD_RECORD, download_record, HEAVY),
     (EXTRACT_PAGES, extract_pages, HEAVY),
     (ALIGN_MEETING, align_meeting, NORMAL),
     (READ_MINUTES, read_minutes, NORMAL),
+    (READ_SPEAKERS, read_speakers, NORMAL),
 )
 
 
 def register_jobs(registry: Registry | None = None) -> tuple[str, ...]:
-    """Register these five kinds and return the kinds that were added.
+    """Register these six kinds and return the kinds that were added.
 
     A kind that is already registered is left as it is: the caller may have
     registered its own handler for it, and a second registration is refused by

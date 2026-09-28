@@ -38,7 +38,14 @@ from .capture.probe import capture_probe
 from .config import Settings
 from .db import connect as default_connect
 from .jobs import Clock, JobsSettings, Registry, Runner, utcnow
-from .records import ALIGN_MEETING, DOWNLOAD_RECORD, EXTRACT_PAGES, READ_MINUTES, SYNC_PRIMEGOV
+from .records import (
+    ALIGN_MEETING,
+    DOWNLOAD_RECORD,
+    EXTRACT_PAGES,
+    READ_MINUTES,
+    READ_SPEAKERS,
+    SYNC_PRIMEGOV,
+)
 from .runtime import JOB_KIND as RUNTIME_UPDATE_KIND
 from .runtime import RuntimeManager, RuntimeNotInstalled, RuntimeSettings
 from .runtime import register as register_runtime_update
@@ -56,6 +63,7 @@ KIND_MODULES: tuple[tuple[str, str], ...] = (
     (EXTRACT_PAGES, "townrecord.records"),
     (ALIGN_MEETING, "townrecord.records"),
     (READ_MINUTES, "townrecord.records"),
+    (READ_SPEAKERS, "townrecord.records"),
     (CAPTURE_JOB_KIND, "townrecord.capture"),
     (TRANSCRIBE_JOB_KIND, "townrecord.capture"),
     (RUNTIME_UPDATE_KIND, "townrecord.runtime"),
