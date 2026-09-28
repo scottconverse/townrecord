@@ -122,7 +122,9 @@ def extract_pages(ctx: JobContext) -> None:
     set_record_page_count(ctx.conn, record.id, len(pages))
     written = record_pages(ctx.conn, record.id)
     if record.kind == portal.PACKET_KIND:
-        request_minutes_of_packet(ctx.conn, record)
+        # The readings this queues take after the one that is running (spec
+        # 16.2): a packet the daily schedule read queues scheduled readings.
+        request_minutes_of_packet(ctx.conn, record, origin=ctx.origin)
     ctx.save_checkpoint(
         {
             "record_id": record.id,
