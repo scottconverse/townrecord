@@ -11,6 +11,12 @@ Two rules are load-bearing:
   loads or unloads a model", and the way to keep that true is to ask only for a
   list: :data:`READ_ONLY_PATHS` is the whole vocabulary, and
   :func:`_read_only_url` refuses anything else before a request is made;
+* it says where each model runs. A local program is not a local model: Ollama
+  serves some of its models from its own cloud, and a user who picked one of
+  those while the task is set to a local model would be sending a meeting to a
+  vendor (spec 2, 11.5). Each entry of the reply is read through
+  :func:`townrecord.ai.providers.model_home`, and :meth:`Found.lines` writes out
+  what it said;
 * a discovery that finds nothing says what it tried. An empty list is not an
   answer a user can act on, so the result carries every address it asked and
   why each one stayed quiet, and :meth:`DiscoveryResult.sentence` writes it out.
@@ -27,7 +33,7 @@ from typing import Any
 
 import httpx
 
-from .providers import KIND_LOCAL, Provider
+from .providers import KIND_LOCAL, ModelHome, Provider, model_home
 
 #: The two spellings of the loopback address every endpoint is tried on.
 LOOPBACK_HOSTS: tuple[str, ...] = ("127.0.0.1", "[::1]")
@@ -75,12 +81,30 @@ DEFAULT_PROBE_TIMEOUT_S = 5.0
 
 @dataclass(frozen=True)
 class Found:
-    """One local program that answered, and the models it listed."""
+    """One local program that answered, and the models it listed.
+
+    Each model is reported with where it runs and why (spec 11.5): a local
+    program can serve a model from its own cloud, and a listing that showed
+    only names would leave a user picking one of those believing it runs on
+    their own machine. ``homes`` is read from the entry each model was listed
+    in, which is where Ollama's own answer lives; a caller that builds a
+    ``Found`` from names alone gets the name-only reading of the same rule.
+    """
 
     program: str
     base_url: str
     models: tuple[str, ...]
     form: str = FORM_OLLAMA
+    #: Where each model of ``models`` runs, in the same order.
+    homes: tuple[ModelHome, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.homes and self.models:
+            object.__setattr__(
+                self,
+                "homes",
+                tuple(model_home(name, program=self.program) for name in self.models),
+            )
 
     def as_provider(self, name: str = "") -> Provider:
         """The provider row this program would be saved as."""
@@ -91,11 +115,26 @@ class Found:
             models=self.models,
         )
 
+    @property
+    def here(self) -> tuple[ModelHome, ...]:
+        """The models of this program that run on this machine."""
+        return tuple(home for home in self.homes if home.is_local)
+
     def sentence(self) -> str:
-        """One plain sentence about this program."""
+        """One plain sentence about this program and where its models run."""
         if not self.models:
             return f"{self.program} answered at {self.base_url} and listed no models."
-        return f"{self.program} answered at {self.base_url} with {len(self.models)} model(s)."
+        listed = f"{self.program} answered at {self.base_url} with {len(self.models)} model(s)"
+        here = len(self.here)
+        if here == len(self.models):
+            return f"{listed}, all of them on this machine."
+        if not here:
+            return f"{listed}, none of them on this machine."
+        return f"{listed}: {here} on this machine and {len(self.models) - here} in the cloud."
+
+    def lines(self) -> tuple[str, ...]:
+        """One plain line per model, naming where it runs and why."""
+        return tuple(home.sentence() for home in self.homes)
 
 
 @dataclass(frozen=True)
@@ -150,7 +189,7 @@ def discover(
         for host in hosts:
             url = endpoint.url(host)
             tried.append(url)
-            models, problem = _ask(client, url, endpoint)
+            entries, problem = _ask(client, url, endpoint)
             if problem:
                 problems.append(f"{url} ({problem})")
                 continue
@@ -158,8 +197,12 @@ def discover(
                 Found(
                     program=endpoint.program,
                     base_url=endpoint.base_url(host),
-                    models=models,
+                    models=tuple(name for name, _entry in entries),
                     form=endpoint.form,
+                    homes=tuple(
+                        model_home(name, program=endpoint.program, entry=entry)
+                        for name, entry in entries
+                    ),
                 )
             )
             break
@@ -193,14 +236,20 @@ def probe(client: httpx.Client, base_url: str) -> tuple[bool, str]:
     endpoint = endpoint_for(base_url)
     host = httpx.URL(base_url).host or "127.0.0.1"
     url = endpoint.url(host)
-    _models, problem = _ask(client, url, endpoint)
+    _entries, problem = _ask(client, url, endpoint)
     if problem:
         return False, f"{url} ({problem})"
     return True, ""
 
 
-def _ask(client: httpx.Client, url: str, endpoint: LocalEndpoint) -> tuple[tuple[str, ...], str]:
-    """Ask one address for its model list. Return the models, or the reason."""
+def _ask(
+    client: httpx.Client, url: str, endpoint: LocalEndpoint
+) -> tuple[tuple[tuple[str, Mapping[str, Any]], ...], str]:
+    """Ask one address for its model list. Return the entries, or the reason.
+
+    An entry is the name and the whole raw reply item it was read from, because
+    the item says where that model runs and the name alone does not.
+    """
     _read_only_url(url)
     try:
         response = client.get(url)
@@ -213,13 +262,13 @@ def _ask(client: httpx.Client, url: str, endpoint: LocalEndpoint) -> tuple[tuple
     except ValueError:
         return (), "it answered with something that is not JSON"
     try:
-        return _model_names(payload, endpoint.form), ""
+        return _model_entries(payload, endpoint.form), ""
     except ValueError as exc:
         return (), str(exc)
 
 
-def _model_names(payload: Any, form: str) -> tuple[str, ...]:
-    """Read the model names out of one program's list reply."""
+def _model_entries(payload: Any, form: str) -> tuple[tuple[str, Mapping[str, Any]], ...]:
+    """Read each model's name out of one program's list reply, with its entry."""
     if not isinstance(payload, Mapping):
         raise ValueError("it answered with JSON that is not an object")
     if form == FORM_OLLAMA:
@@ -230,16 +279,16 @@ def _model_names(payload: Any, form: str) -> tuple[str, ...]:
         keys = ("id", "name")
     if not isinstance(items, list):
         raise ValueError("it answered with a list this program cannot read")
-    names: list[str] = []
+    entries: list[tuple[str, Mapping[str, Any]]] = []
     for item in items:
         if not isinstance(item, Mapping):
             continue
         for key in keys:
             value = str(item.get(key, "") or "").strip()
             if value:
-                names.append(value)
+                entries.append((value, item))
                 break
-    return tuple(names)
+    return tuple(entries)
 
 
 def _read_only_url(url: str) -> None:

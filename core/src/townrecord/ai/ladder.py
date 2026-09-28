@@ -161,6 +161,13 @@ class Ladder:
         never send that work to a cloud provider without the user's choice.
         Only a picked setting can fail closed: an automatic ladder is a list
         the user wrote, and moving down it is the choice they already made.
+
+        The model is asked, not only the provider. A local program can serve a
+        model from its own cloud, so "the user picked a local model" is only
+        true when the model itself runs on this machine. A picked model that
+        runs in the cloud is not local work at all, and
+        :func:`townrecord.ai.failover.run_task` refuses it before the first
+        call rather than failing closed after one.
         """
         if self.is_automatic:
             return False
@@ -174,7 +181,7 @@ class Ladder:
             # kind is the one case that is not local, and it is not found here
             # either: the program is on PATH, not in the registry.
             return self.first().kind in ("", KIND_LOCAL)
-        return provider.is_local
+        return provider.is_local(self.first().model)
 
     def resolve(
         self, registry: ProviderRegistry, *, reachable: Callable[[Provider], bool] | None = None

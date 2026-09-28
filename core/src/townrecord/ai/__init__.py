@@ -7,7 +7,8 @@ Spec 11 in six pieces, and each piece is one module:
   program.
 * :mod:`townrecord.ai.discovery` finds the local model programs on the loopback
   address and lists what they hold. It never loads or unloads a model
-  (spec 11.8).
+  (spec 11.8), and it says where each model runs: a local program is not a
+  local model, because Ollama serves some of its models from its own cloud.
 * :mod:`townrecord.ai.ladder` is the tasks and their ladders of spec 11.4:
   either one provider the user picked, or "Automatic", an ordered ladder whose
   first reachable rung runs.
@@ -28,6 +29,7 @@ with fakes (PROJECT-BRIEF rule 9).
 from __future__ import annotations
 
 from .budgets import (
+    BUDGET_CLOUD_MODEL,
     DEFAULT_BUDGETS,
     Budget,
     for_kind,
@@ -107,6 +109,7 @@ from .preflight import (
     preflight,
 )
 from .providers import (
+    CLOUD_NAME_MARKERS,
     COMMAND_KINDS,
     HTTP_KINDS,
     KEY_KINDS,
@@ -117,8 +120,14 @@ from .providers import (
     KIND_OPENAI,
     KIND_OPENAI_COMPATIBLE,
     KINDS,
+    REMOTE_FIELDS,
+    RUNS_HERE,
+    RUNS_IN_CLOUD,
+    ModelHome,
     Provider,
     ProviderRegistry,
+    cloud_label,
+    model_home,
     redact,
 )
 from .store import (
@@ -144,6 +153,7 @@ __all__ = [
     "AUTOMATIC_LABEL",
     "Allowance",
     "Attempt",
+    "BUDGET_CLOUD_MODEL",
     "Budget",
     "CLAUDE_BASE_FLAGS",
     "CLAUDE_NO_TOOLS",
@@ -156,6 +166,7 @@ __all__ = [
     "CODEX_PROGRAM",
     "CODEX_SIGN_IN",
     "CODEX_SIGN_IN_CHECK",
+    "CLOUD_NAME_MARKERS",
     "CODEX_WEB_FLAGS",
     "COMMAND_KINDS",
     "CallRecord",
@@ -182,6 +193,7 @@ __all__ = [
     "MODE_AUTOMATIC",
     "MODE_PROVIDER",
     "MOVE_REASONS",
+    "ModelHome",
     "PlannedWork",
     "Preflight",
     "Provider",
@@ -190,6 +202,9 @@ __all__ = [
     "READ_ONLY_PATHS",
     "REASONS",
     "REASON_CONTENT_REFUSAL",
+    "REMOTE_FIELDS",
+    "RUNS_HERE",
+    "RUNS_IN_CLOUD",
     "Resolution",
     "Rung",
     "TASKS",
@@ -198,6 +213,7 @@ __all__ = [
     "argv_for",
     "calls_on",
     "claude_argv",
+    "cloud_label",
     "codex_argv",
     "configured_providers",
     "day_totals",
@@ -211,6 +227,7 @@ __all__ = [
     "get_provider",
     "is_logout",
     "live_checks",
+    "model_home",
     "month_totals",
     "moves_on",
     "parse_overrides",

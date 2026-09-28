@@ -9,6 +9,11 @@ a provider answers rather than of a task: a local model is slow and free, an
 API is fast and paid, and a subscription program is somewhere between. The user
 changes them per task, which is why the overrides arrive keyed by provider kind
 (the ``ai_tasks.budgets`` column of migration 0016).
+
+The kind is not quite the whole answer. A local program can serve a model from
+its own cloud, and forty minutes per job is right for a model on this machine
+and wrong for one that is an API call (spec 11.5, 11.6). So :func:`for_task`
+takes where the model runs and sizes the budget by that.
 """
 
 from __future__ import annotations
@@ -25,6 +30,7 @@ from .providers import (
     KIND_OPENAI,
     KIND_OPENAI_COMPATIBLE,
     KINDS,
+    ModelHome,
 )
 
 
@@ -54,6 +60,12 @@ DEFAULT_BUDGETS: Mapping[str, Budget] = {
     KIND_LOCAL: Budget(job_s=2400.0, call_s=600.0),
 }
 
+#: The budget a model in the cloud gets, even when the row that reaches it is a
+#: local program's row (spec 11.6). Forty minutes per job is right for a model
+#: on this machine and wrong for one Ollama serves from its own cloud, which is
+#: an API call however the user's row is spelled, so it gets the API budget.
+BUDGET_CLOUD_MODEL: Budget = DEFAULT_BUDGETS[KIND_OPENAI]
+
 #: The seconds one call of a local model is expected to take when a caller only
 #: has a total to work from. Spec 11.6 measured a four-hour council meeting
 #: draft at about 20 minutes across nine local-model calls.
@@ -68,9 +80,43 @@ def for_kind(kind: str, *, overrides: Mapping[str, Mapping[str, float]] | None =
     gets. A kind with no default and no override is refused: guessing what a
     new kind of provider may take is how a job hangs.
     """
+    return _with_overrides(_base_budget(kind), kind, overrides)
+
+
+def for_task(
+    task: str,
+    kind: str,
+    *,
+    home: ModelHome | None = None,
+    overrides: Mapping[str, Mapping[str, float]] | None = None,
+) -> Budget:
+    """Return the budget for one task on one provider kind (spec 11.6).
+
+    ``home`` is where the model this task is about to run on actually runs. A
+    local program's row gets the local budget only when the model is local too:
+    the same row can serve a model from a cloud, and that one is an API call
+    (:data:`BUDGET_CLOUD_MODEL`). A caller that has not worked out where the
+    model runs passes nothing, and the kind's own budget is the answer.
+    """
+    del task  # The task only says which overrides were read; the kind sizes them.
+    base = _base_budget(kind)
+    if home is not None and not home.is_local:
+        base = BUDGET_CLOUD_MODEL
+    return _with_overrides(base, kind, overrides)
+
+
+def _base_budget(kind: str) -> Budget:
+    """The built-in budget of one kind, or a refusal naming the kinds that have one."""
     base = DEFAULT_BUDGETS.get(kind)
     if base is None:
         raise ValueError(f"{kind!r} has no time budget. The kinds are: {', '.join(KINDS)}.")
+    return base
+
+
+def _with_overrides(
+    base: Budget, kind: str, overrides: Mapping[str, Mapping[str, float]] | None
+) -> Budget:
+    """``base`` with this task's overrides for ``kind``, which are its own kind."""
     chosen = (overrides or {}).get(kind)
     if not chosen:
         return base
@@ -78,14 +124,6 @@ def for_kind(kind: str, *, overrides: Mapping[str, Mapping[str, float]] | None =
         job_s=float(chosen.get("job_s", base.job_s)),
         call_s=float(chosen.get("call_s", base.call_s)),
     )
-
-
-def for_task(
-    task: str, kind: str, *, overrides: Mapping[str, Mapping[str, float]] | None = None
-) -> Budget:
-    """Return the budget for one task on one provider kind (spec 11.6)."""
-    del task  # The task only says which overrides were read; the kind sizes them.
-    return for_kind(kind, overrides=overrides)
 
 
 def parse_overrides(text: str, *, what: str = "budgets") -> tuple[dict[str, dict[str, float]], str]:

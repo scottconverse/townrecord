@@ -6,7 +6,10 @@ The rules are TownReporter's, and they are short enough to state as data:
   quota refusal, an unavailable provider, or an unreadable reply;
 * do not move for a content refusal. That is final;
 * a user-picked local model fails closed and is never sent to a cloud
-  provider without the user's choice;
+  provider without the user's choice. The model is what is asked, so a local
+  program the user picked, holding a model that runs in that program's own
+  cloud, is refused before the first call: a cloud model behind a local
+  program is not a local model (spec 2, 11.5);
 * record, for each call, the model that was requested, the model that ran, and
   why it was chosen.
 
@@ -25,7 +28,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from .ladder import Ladder, Resolution, Rung
-from .providers import Provider, ProviderRegistry
+from .providers import KIND_LOCAL, ModelHome, Provider, ProviderRegistry
 
 #: The failures that move the ladder one rung down (spec 11.5).
 REASON_EXPIRED_SIGN_IN = "expired sign-in"
@@ -152,6 +155,24 @@ def run_task(
         )
 
     requested = _label(resolution.provider, resolution.rung)
+    rung_model = resolution.rung.model if resolution.rung is not None else ""
+    home = resolution.provider.model_home(rung_model)
+    if not ladder.is_automatic and resolution.provider.kind == KIND_LOCAL and not home.is_local:
+        # The user picked a local program, and the model it would run does not
+        # run on this machine: a cloud model behind a local program (spec 2,
+        # 11.5). Nothing is called, because a call is the thing that would send
+        # the minutes away, and failing closed after one is already too late.
+        # A provider the user picked from a vendor is their own choice of the
+        # cloud, and an automatic ladder is a list they wrote, so neither of
+        # those is refused here.
+        return TaskRun(
+            task=ladder.task,
+            ok=False,
+            sentence=_refused_sentence(ladder, resolution.provider.name, home),
+            resolution=resolution,
+            skipped=resolution.skipped,
+            failed_closed=True,
+        )
     records: list[CallRecord] = []
     index = resolution.index
     while index is not None:
@@ -216,6 +237,15 @@ def run_task(
         ),
         resolution=resolution,
         skipped=resolution.skipped,
+    )
+
+
+def _refused_sentence(ladder: Ladder, provider_name: str, home: ModelHome) -> str:
+    """One plain sentence about work that was not sent, and what to do instead."""
+    return (
+        f"Nothing was sent to the model. {provider_name} is set to {home.model}, but "
+        f"{home.sentence()} This {ladder.task} work stays on this machine: pick a model that "
+        f"runs here, or set {ladder.task} to Automatic."
     )
 
 
