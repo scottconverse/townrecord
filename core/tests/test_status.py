@@ -270,6 +270,57 @@ def test_the_report_is_never_just_ok(settings: Settings, conn: sqlite3.Connectio
         assert heading in text
 
 
+# -- the bodies with a record missing (spec 9.5) ------------------------------
+
+
+def test_it_counts_the_bodies_with_a_record_missing(
+    settings: Settings, conn: sqlite3.Connection
+) -> None:
+    """One line, counted from the meetings, so ``status`` can print it without writing."""
+    city = insert_jurisdiction(conn, type="city", name="Longmont")
+    body = insert_body(conn, jurisdiction_id=city, name="City Council", type="council")
+    other = insert_body(conn, jurisdiction_id=city, name="Planning Commission", type="commission")
+    insert_meeting(
+        conn,
+        body_id=body,
+        title="City Council Regular Session",
+        starts_at="2026-09-08T19:00:00-06:00",
+    )
+    # A meeting inside the 36 hours the rule waits, and a body of no stated kind:
+    # neither is a finding, so the count is one and not three.
+    insert_meeting(
+        conn, body_id=other, title="Planning Commission Hearing", starts_at="2026-09-27T17:00:00Z"
+    )
+    unstated = insert_body(conn, jurisdiction_id=city, name="Board of Adjustment")
+    insert_meeting(
+        conn,
+        body_id=unstated,
+        title="Board of Adjustment Meeting",
+        starts_at="2026-09-08T19:00:00-06:00",
+    )
+
+    report = collect(settings, clock=lambda: STARTED)
+    assert report.missing_bodies == 1
+
+    text = render(report)
+    assert "  Missing    1 body(ies) have a record missing 36 hours or more" in text
+    assert "after a meeting that was not cancelled or continued" in text
+
+
+def test_it_prints_no_missing_line_when_nothing_is_missing(
+    settings: Settings, conn: sqlite3.Connection
+) -> None:
+    """The ordinary case is no line at all, so the line that appears means something."""
+    build_area(conn)
+
+    report = collect(settings, clock=lambda: STARTED)
+    assert report.missing_bodies == 0
+
+    text = render(report)
+    assert "  Missing    " not in text
+    assert "have a record missing" not in text
+
+
 # -- a running service, and the shell that asks about it ----------------------
 
 

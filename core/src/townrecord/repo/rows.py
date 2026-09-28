@@ -5,8 +5,9 @@ not an object graph: it holds the foreign keys the table holds, and a reader
 joins what it needs.
 
 The tables are the ones of migration ``0005_core_model.sql``, for
-:class:`ScheduledRun` of migration ``0012_schedule.sql``, and for
-:class:`SpeakerLabel` of migration ``0014_speakers.sql``.
+:class:`ScheduledRun` of migration ``0012_schedule.sql``, for
+:class:`SpeakerLabel` of migration ``0014_speakers.sql``, and for
+:class:`MissingRecord` of migration ``0018_missing_records.sql``.
 """
 
 from __future__ import annotations
@@ -52,12 +53,23 @@ class Jurisdiction(Row):
 
 @dataclass(frozen=True)
 class Body(Row):
-    """A group that holds public meetings."""
+    """A group that holds public meetings.
+
+    ``type`` is the kind of body it is (migration 0018), which is what the
+    missing-record rule of spec 9.5 reads: a council, a commission, a board or
+    an authority. NULL means nobody has stated a kind, which is a different
+    fact from ``'other'`` and is never read as one of the four.
+
+    ``missing_alert_days`` is the "alert me after N days" setting of that body
+    (spec 12.7). NULL means no alert has been set for it.
+    """
 
     id: int
     jurisdiction_id: int
     name: str
     created_at: str
+    type: str | None = None
+    missing_alert_days: int | None = None
 
 
 @dataclass(frozen=True)
@@ -411,6 +423,26 @@ class MotionItem(Row):
     agenda_item_id: int
     link_kind: str
     evidence: str
+    created_at: str
+
+
+@dataclass(frozen=True)
+class MissingRecord(Row):
+    """One record a meeting should have and does not (spec 9.5).
+
+    ``opened_at`` is the moment the gap opened, which is the meeting's start
+    plus the 36 hours the rule waits (migration 0018). ``state`` is ``open``
+    while the record is still missing and ``filled`` once it has appeared, with
+    ``filled_at`` saying when. A row is never deleted, so the catalog can say
+    that a gap was once open and is not any more.
+    """
+
+    id: int
+    meeting_id: int
+    kind: str
+    opened_at: str
+    state: str
+    filled_at: str | None
     created_at: str
 
 

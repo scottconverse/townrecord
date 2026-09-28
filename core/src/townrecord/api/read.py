@@ -176,7 +176,7 @@ def _body_out(conn: sqlite3.Connection, body_id: int) -> BodyOut:
     row = get_body(conn, body_id)
     if row is None:
         raise not_found(f"There is no body {body_id}.")
-    return BodyOut(id=row.id, jurisdiction_id=row.jurisdiction_id, name=row.name)
+    return BodyOut(id=row.id, jurisdiction_id=row.jurisdiction_id, name=row.name, type=row.type)
 
 
 def _jurisdiction_out(conn: sqlite3.Connection, jurisdiction_id: int) -> JurisdictionOut:
@@ -509,7 +509,12 @@ def get_area(conn: sqlite3.Connection = Depends(get_connection)) -> AreaOut:
     return AreaOut(
         jurisdictions=roots,
         bodies=[
-            BodyOut(id=row.id, jurisdiction_id=row.jurisdiction_id, name=row.name)
+            BodyOut(
+                id=row.id,
+                jurisdiction_id=row.jurisdiction_id,
+                name=row.name,
+                type=row.type,
+            )
             for row in area_repo.bodies(conn)
         ],
         sources=[

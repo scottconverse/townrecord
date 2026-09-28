@@ -111,9 +111,32 @@ def overlaps_of(conn: sqlite3.Connection, jurisdiction_id: int) -> list[int]:
     return [int(row["overlaps_id"]) for row in rows]
 
 
-def insert_body(conn: sqlite3.Connection, *, jurisdiction_id: int, name: str) -> int:
-    """Store one body and return its id."""
-    return insert(conn, "bodies", {"jurisdiction_id": jurisdiction_id, "name": name})
+def insert_body(
+    conn: sqlite3.Connection,
+    *,
+    jurisdiction_id: int,
+    name: str,
+    type: str | None = None,
+    missing_alert_days: int | None = None,
+) -> int:
+    """Store one body and return its id.
+
+    ``type`` is what kind of body it is -- a council, a commission, a board or
+    an authority (spec 9.5, migration 0018). It is left NULL when nobody has
+    stated one, which is not the same fact as ``'other'`` and is never read as
+    one of the four. ``missing_alert_days`` is the body's own "alert me after N
+    days" setting (spec 12.7), NULL until it is set.
+    """
+    return insert(
+        conn,
+        "bodies",
+        {
+            "jurisdiction_id": jurisdiction_id,
+            "name": name,
+            "type": type,
+            "missing_alert_days": missing_alert_days,
+        },
+    )
 
 
 def get_body(conn: sqlite3.Connection, body_id: int) -> Body | None:
