@@ -37,7 +37,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from townrecord import proc
+from townrecord import pacing, proc
 from townrecord.runtime.javascript import FALLBACK_RUNTIME, resolve
 from townrecord.video.youtube.listing import SOURCE_DATA_API, SOURCE_YTDLP
 from townrecord.video.youtube.readiness import (
@@ -70,6 +70,11 @@ PLAYER_NOT_BUILT = "not built here"
 
 #: The module, not the script: the private runtime is asked for it by name.
 YTDLP_MODULE = "yt_dlp"
+
+#: What a status ask is called in the process pace's own log line
+#: (:mod:`townrecord.pacing`). A status ask is a YouTube request like any
+#: other, and the measured run of 2026-09-27 made 7 of them beside 7 captures.
+PACE_WHAT = "a status ask"
 
 #: Seconds. One video's information is a small read, not a download.
 STATUS_TIMEOUT_S = 60
@@ -236,6 +241,9 @@ class StatusAsker:
         method, label = SOURCE_DATA_API, ASK_LABELS[SOURCE_DATA_API]
         if self.api is None:
             return StatusAsk(method=method, label=label, reason=API_NOT_CONFIGURED)
+        # A configured API is a request to YouTube, so it waits (spec 8.10).
+        # The unconfigured step above sends nothing, so it waits for nothing.
+        pacing.pacer().wait(what=PACE_WHAT)
         try:
             listing = self.api.video_status(video_id)
         except Exception as exc:  # a reader that raises is a step that answered nothing
@@ -264,6 +272,9 @@ class StatusAsker:
         """Spec 8.2 step 3: yt-dlp's own info dict and its ``live_status``."""
         method, label = SOURCE_YTDLP, ASK_LABELS[SOURCE_YTDLP]
         argv = info_argv(self.interpreter, url, js_runtime=self.js_runtime)
+        # Spec 8.10: this is a YouTube request, so it takes its turn in the
+        # process pace like a capture does.
+        pacing.pacer().wait(what=PACE_WHAT)
         try:
             result = self.runner(argv, timeout_s=self.timeout_s, env=proc.allowed_environment())
         except proc.ProcessTimedOut as exc:
@@ -275,6 +286,11 @@ class StatusAsker:
 
         if result.returncode != 0:
             detail = result.last_stderr_line() or "no reason given"
+            marker = pacing.rate_limit_marker(result.stderr)
+            if marker is not None:
+                # Spec 8.10: a 429 is YouTube answering for the address, so a
+                # status ask that got one holds every other YouTube job with it.
+                pacing.pacer().rate_limited(what=PACE_WHAT, marker=marker)
             return StatusAsk(
                 method=method,
                 label=label,

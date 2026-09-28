@@ -49,7 +49,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .. import artifacts, proc, repo
+from .. import artifacts, pacing, proc, repo
 from ..captions import CaptionParseError
 from ..captions.parse import Segment, parse_srv3, parse_vtt
 from ..jobs import JobContext
@@ -65,6 +65,9 @@ from .store import insert_transcript_with_segments
 
 logger = logging.getLogger(__name__)
 
+#: What a caption capture is called in the process pace's own log line
+#: (:mod:`townrecord.pacing`), so a run that is waiting says what it waits for.
+PACE_WHAT = "a caption capture"
 #: The reason recorded when yt-dlp finished but wrote no sidecar.
 MISSING_SIDECAR_REASON = (
     "yt-dlp finished without writing an info.json sidecar, so nothing says who made "
@@ -328,7 +331,15 @@ class CaptionCapture:
         return attempt
 
     def _attempt(self, ctx: JobContext, argv: Sequence[str], client: str = "") -> Attempt:
-        """Run one command and keep it together with the client it named."""
+        """Run one command and keep it together with the client it named.
+
+        The command is a YouTube request, so it waits for the process pace
+        first (spec 8.10). The wait is here, in the one place every command of
+        the spec 8.3 ladder goes through, so a ladder of four commands is four
+        waits rather than one: spacing only the first would still leave the
+        three retries back to back, which is the burst that was refused.
+        """
+        pacing.pacer().wait(what=PACE_WHAT)
         ctx.heartbeat()
         result = command.run_capture(self.runner, argv, timeout_s=self.settings.process_timeout_s)
         return Attempt(result=result, player_client=client)
@@ -347,6 +358,13 @@ class CaptionCapture:
             # later pass. It is NOT a reason to download audio." So the job is
             # queued again with a delay, and no other command is ever built.
             logger.warning("Video capture was rate limited (%s).", marker)
+            # Spec 8.10: a 429 is YouTube answering for the address, so the
+            # hold is written to the process pace and every other YouTube job
+            # waits with this one. The job's own deferral below is the second
+            # half of the same wait, and the pace never shortens either.
+            pacing.pacer().rate_limited(
+                what=PACE_WHAT, marker=marker, delay_s=self.settings.rate_limit_retry_s
+            )
             ctx.defer(
                 f"rate limited by YouTube ({marker}), will retry later",
                 delay_s=self.settings.rate_limit_retry_s,

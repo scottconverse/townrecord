@@ -23,12 +23,16 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from .. import proc
+from .. import pacing, proc
 from . import command, work
 
 #: How long one known-video test may take. It is longer than a capture's own
 #: default because it is one video and one run, and it is not repeated.
 DEFAULT_PROBE_TIMEOUT_S = 300.0
+
+#: What the known-video test is called in the process pace's own log line
+#: (:mod:`townrecord.pacing`).
+PACE_WHAT = "the known-video test"
 
 #: The download archive inside the scratch folder. It holds this one run and is
 #: thrown away with the folder, so the test is never skipped as already seen.
@@ -83,6 +87,10 @@ def capture_probe(
                 url=url,
                 js_runtime=js_runtime,
             )
+            # The test runs the capture command, so it is a YouTube request and
+            # waits on the process pace (spec 8.10): a version being tested must
+            # not spend the address's allowance that the next capture needs.
+            pacing.pacer().wait(what=PACE_WHAT)
             result = command.run_capture(
                 proc.run if runner is None else runner, argv, timeout_s=timeout_s
             )
@@ -96,6 +104,7 @@ def capture_probe(
 __all__ = [
     "DEFAULT_PROBE_TIMEOUT_S",
     "NO_TEST_VIDEO",
+    "PACE_WHAT",
     "PROBE_ARCHIVE_NAME",
     "PROBE_FOLDER_PREFIX",
     "NoTestVideo",
