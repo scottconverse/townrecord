@@ -762,11 +762,11 @@ def test_the_real_september_8_speakers_read_the_way_the_captions_hold_them(
     assert len(confirmed) == MEASURED_CONFIRMED, "two records named these people"
     assert all(one.person_id is not None for one in confirmed)
 
-    # The two readings of this meeting that are wrong are named here and are
-    # still written as names. The test says so rather than leaving a reader to
-    # find them: the captioner writes "Prom." for "Mayor Pro Tem", and the
-    # reading of the chair's summary goes on to read the words after the title
-    # "Mayor" as if they were a name.
+    # The reading of this meeting that is wrong is named here and is still
+    # written as a name. The test says so rather than leaving a reader to find
+    # it: the captioner writes "Prom." for "Mayor Pro Tem", and the reading of
+    # the chair's summary goes on to read the words after the title "Mayor" as
+    # if they were a name.
     for spoken in MEASURED_WRONG:
         assert labels[spoken].person_id is not None, f"{spoken} was written as a name"
 
