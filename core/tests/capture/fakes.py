@@ -22,7 +22,7 @@ from typing import Any
 
 from townrecord import proc
 from townrecord.capture.command import JOB_KIND
-from townrecord.jobs import DONE, JobContext, claim, enqueue, finish
+from townrecord.jobs import DONE, ORIGIN_MANUAL, JobContext, claim, enqueue, finish
 from townrecord.runtime.settings import RUNTIMES_FOLDER, TOOL_NAME
 from townrecord.runtime.tools import program_in, program_name, python_in
 
@@ -427,6 +427,7 @@ def claimed_job(
     *,
     kind: str = JOB_KIND,
     lane: str = "normal",
+    origin: str = ORIGIN_MANUAL,
 ) -> JobContext:
     """Enqueue one capture job, claim it, and return its context.
 
@@ -435,8 +436,13 @@ def claimed_job(
     this unit). So a test that captures a video twice finds that job in front of
     the one it just enqueued: it is closed here, because it is not what the test
     is asking for and a later claim would otherwise never reach its own job.
+
+    ``origin`` is how the job was asked for (spec 16.2), and the context is
+    built from the claimed row's own origin rather than from the argument: a
+    handler reads what was recorded, so a test that hands one origin to the
+    queue and another to the context would test a machine that does not exist.
     """
-    job_id = enqueue(conn, kind, video_id)
+    job_id = enqueue(conn, kind, video_id, origin=origin)
     taken = claim(conn, lane, "worker-1", clock=clock)
     while taken is not None and taken.job_id != job_id:
         finish(conn, taken.job_id, taken.token, DONE, clock=clock)
@@ -451,4 +457,5 @@ def claimed_job(
         lane=taken.lane,
         claim_token=taken.token,
         clock=clock,
+        origin=taken.origin,
     )

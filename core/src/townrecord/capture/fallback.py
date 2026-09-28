@@ -141,6 +141,10 @@ def enqueue_transcription(
         # The lane is named rather than looked up, so the heavy lane's limit of
         # one holds even when the handler has not been registered by a caller.
         lane=transcribe.LANE,
+        # The transcription is this capture's child, so it was asked for the way
+        # the capture was: a scheduled capture queues a scheduled transcription
+        # (spec 16.2). Without this the child is recorded as the user's ask.
+        origin=ctx.origin,
     )
     handoff = Handoff(state=AUDIO_STATE, reason=text, trigger=trigger, job_id=job_id)
     _record(ctx, video, handoff)
@@ -190,6 +194,9 @@ def _link_sister(
             is_provisional=sister.is_provisional,
             settled_under_churn=sister.settled_under_churn,
             settled_at=sister.settled_at,
+            # The link is this capture's own write, so what it queues for the
+            # meeting takes after the capture (spec 16.2).
+            job_origin=ctx.origin,
         )
     handoff = Handoff(
         state=SISTER_STATE,
