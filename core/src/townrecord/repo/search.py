@@ -26,6 +26,12 @@ two hits, because their windows do not share a line.
 The index is not comparable across the two tables either: the two lists are
 joined segment hits first. The whole list is then cut at the limit.
 
+The window index is read first and on its own, and the tables of a hit are
+joined for the windows the limit kept. A window the limit drops is a window no
+join is made for, which is what keeps a common word affordable: it matches a
+fifth of the index, and the joins over all of those matches cost far more than
+the match itself (reports/SC1-search-scale.md).
+
 User text is data, never syntax. A query is split into words and every word is
 written as its own quoted phrase, so a string that happens to contain FTS5
 operators (``AND``, ``OR``, ``NOT``, ``NEAR``, ``*``, ``^``, ``:``, ``-``, a
@@ -77,6 +83,13 @@ _WINDOW_LINES = 3
 #: windows of a mention that is already found cannot crowd a later mention out
 #: of the answer.
 _WINDOWS_PER_MENTION = _WINDOW_LINES * (_WINDOW_LINES + 1) // 2
+
+#: How many window rowids one statement may name. The window index answers
+#: first and the tables are joined for what it answered, so the second
+#: statement names every window the limit kept. This only matters to a caller
+#: who asks for a limit in the thousands; SQLite takes a few hundred parameters
+#: on every platform this runs, and the batch keeps well inside that.
+_ROWID_CHUNK = 400
 
 
 @dataclass(frozen=True)
@@ -241,12 +254,121 @@ def _segment_hits(
     are read from ``segments``: the window's first and last line give the
     seconds it covers and the excerpt is the verbatim text of the lines in
     between, never the copy of the text the index keeps for matching.
+
+    Two statements, and the order between them is the point. The first asks the
+    window index alone for its best matches and stops at the limit, which is
+    the scan and the ranking and nothing else. The second reads the lines and
+    the area of those windows and of no others. One statement that did both
+    would join and sort every window that matched before the limit cut
+    anything, and a common word matches a fifth of the index: those joins are
+    then most of the cost of a search (reports/SC1-search-scale.md measured
+    them at 99.6 percent of it).
+    """
+    ranked = _ranked_windows(
+        conn, expression, level, body, date_from, date_to, limit * _WINDOWS_PER_MENTION
+    )
+    if not ranked:
+        return []
+    scores = dict(ranked)
+    rows = _window_rows(conn, [rowid for rowid, _score in ranked])
+    # `_one_hit_per_mention` breaks a tie by the order the rows arrive in, so
+    # they go back into the order the limit chose them, which is the order one
+    # statement returned them in before this was split.
+    chosen = {rowid: place for place, (rowid, _score) in enumerate(ranked)}
+    rows.sort(key=lambda row: chosen[int(row["window_rowid"])])
+    return [
+        _segment_hit(row)
+        for row in _one_hit_per_mention(conn, rows, _phrase_hits(conn, phrase), scores)
+    ]
+
+
+def _ranked_windows(
+    conn: sqlite3.Connection,
+    expression: str,
+    level: str | None,
+    body: int | None,
+    date_from: str | None,
+    date_to: str | None,
+    top: int,
+) -> list[tuple[int, float]]:
+    """Return the best matching windows of the index, best first, and stop.
+
+    Only the window index is read, so all this pays for is the match and its
+    ranking, and every window the limit drops is a window no join is made for.
+    The area filters are the one thing the index cannot answer, because the
+    meeting a line was spoken at is not in it; they are turned into the set of
+    transcripts that pass them and asked here as a filter on the index. That is
+    where they sat before the statement was split, inside the same WHERE clause
+    as the match, so a window that fails them is not in the answer and the next
+    window is not fetched in its place.
+    """
+    sql = [
+        "SELECT segment_window_search.rowid AS window_rowid,",
+        "       bm25(segment_window_search) AS score",
+        "FROM segment_window_search",
+        "WHERE segment_window_search MATCH ?",
+    ]
+    params: list[object] = [expression]
+    transcripts = _area_transcripts(conn, level, body, date_from, date_to)
+    if transcripts is not None:
+        if not transcripts:
+            return []
+        sql.append(
+            "AND segment_window_search.transcript_id IN (" + ", ".join("?" * len(transcripts)) + ")"
+        )
+        params.extend(transcripts)
+    sql.append("ORDER BY score LIMIT ?")
+    params.append(top)
+    return [
+        (int(row["window_rowid"]), float(row["score"]))
+        for row in conn.execute("\n".join(sql), tuple(params))
+    ]
+
+
+def _area_transcripts(
+    conn: sqlite3.Connection,
+    level: str | None,
+    body: int | None,
+    date_from: str | None,
+    date_to: str | None,
+) -> list[int] | None:
+    """Return the transcripts that pass the area filters, or None for no filter.
+
+    A window names its transcript and nothing else of the area, and a
+    transcript reaches the area through its video and its meeting, so the walk
+    is made once here over the small tables and asked of the index as a set of
+    transcript ids. A video that is not matched to a meeting has no level and
+    no body, so a left join leaves it out of a filtered answer, which is what
+    the walk did when it ran once per window.
+    """
+    if level is None and body is None and date_from is None and date_to is None:
+        return None
+    sql = [
+        "SELECT transcripts.id",
+        "FROM transcripts",
+        "LEFT JOIN videos ON videos.id = transcripts.video_id",
+        "LEFT JOIN meetings ON meetings.id = videos.meeting_id",
+        "LEFT JOIN bodies ON bodies.id = meetings.body_id",
+        "LEFT JOIN jurisdictions ON jurisdictions.id = bodies.jurisdiction_id",
+        "WHERE 1 = 1",
+    ]
+    params: list[object] = []
+    sql, params = _area_filters(sql, params, level, body, date_from, date_to, "jurisdictions.type")
+    return [int(row[0]) for row in conn.execute("\n".join(sql), tuple(params))]
+
+
+def _window_rows(conn: sqlite3.Connection, rowids: list[int]) -> list[sqlite3.Row]:
+    """Read the lines and the area of the windows the limit kept.
+
+    Every table the walk to the area passes through is joined here, and the
+    walk is made for these windows only. The rowids are asked in batches so
+    that a caller who asks for a limit in the thousands cannot name more
+    parameters than SQLite accepts in one statement.
     """
     sql = [
         "SELECT segment_window_search.rowid AS window_rowid,",
         "       (segment_window_search.rowid - segment_window_search.last_segment_id * 4)",
         "           AS span,",
-        "       bm25(segment_window_search) AS score,",
         "       segment_window_search.transcript_id AS transcript_id,",
         "       segment_window_search.first_segment_id AS first_segment_id,",
         "       segment_window_search.last_segment_id AS last_segment_id,",
@@ -286,16 +408,14 @@ def _segment_hits(
         "LEFT JOIN meetings ON meetings.id = videos.meeting_id",
         "LEFT JOIN bodies ON bodies.id = meetings.body_id",
         "LEFT JOIN jurisdictions ON jurisdictions.id = bodies.jurisdiction_id",
-        "WHERE segment_window_search MATCH ?",
     ]
-    params: list[object] = [expression]
-    sql, params = _area_filters(sql, params, level, body, date_from, date_to, "jurisdictions.type")
-    sql.append("ORDER BY score LIMIT ?")
-    params.append(limit * _WINDOWS_PER_MENTION)
-    rows = conn.execute("\n".join(sql), tuple(params)).fetchall()
-    return [
-        _segment_hit(row) for row in _one_hit_per_mention(conn, rows, _phrase_hits(conn, phrase))
-    ]
+    head = "\n".join(sql)
+    rows: list[sqlite3.Row] = []
+    for start in range(0, len(rowids), _ROWID_CHUNK):
+        batch = rowids[start : start + _ROWID_CHUNK]
+        named = f"{head}\nWHERE segment_window_search.rowid IN ({', '.join('?' * len(batch))})"
+        rows.extend(conn.execute(named, tuple(batch)).fetchall())
+    return rows
 
 
 def _phrase_hits(conn: sqlite3.Connection, phrase: str | None) -> set[int]:
@@ -330,7 +450,10 @@ def _line_positions(conn: sqlite3.Connection, transcript_id: int) -> dict[int, i
 
 
 def _one_hit_per_mention(
-    conn: sqlite3.Connection, rows: list[sqlite3.Row], phrase_hits: set[int]
+    conn: sqlite3.Connection,
+    rows: list[sqlite3.Row],
+    phrase_hits: set[int],
+    scores: dict[int, float],
 ) -> list[sqlite3.Row]:
     """Keep one window of each spoken mention and drop the rest.
 
@@ -344,6 +467,9 @@ def _one_hit_per_mention(
     its words, which is what puts an exact phrase first in the answer. A window
     that shares a line with one already taken is the same mention and is
     dropped; two mentions two lines apart share no line and stay two hits.
+
+    The score of a window is read from ``scores`` and not from its row, because
+    bm25 is a function of the index and the rows are read from the tables.
     """
     positions: dict[int, dict[int, int]] = {}
     places: dict[int, tuple[int, int]] = {}
@@ -362,11 +488,12 @@ def _one_hit_per_mention(
         return places[window_rowid]
 
     def tightest_first(row: sqlite3.Row) -> tuple[int, int, float, int]:
+        window_rowid = int(row["window_rowid"])
         first, _last = place(row)
         return (
-            int(row["window_rowid"]) not in phrase_hits,
+            window_rowid not in phrase_hits,
             int(row["span"]),
-            float(row["score"]),
+            scores[window_rowid],
             first,
         )
 
