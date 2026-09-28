@@ -14,7 +14,9 @@ machine's proxy settings so a test never depends on the machine it runs on
 
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -260,3 +262,31 @@ def openai_body(*names: str) -> dict[str, Any]:
 def local_server() -> FakeLocalServer:
     """A fake local model server with no replies configured yet."""
     return FakeLocalServer()
+
+
+# -- The recorded fixtures of the oversight repository ------------------------
+
+
+#: Where the recordings of the oversight repository live. Every test that
+#: reads one carries ``@needs(...)``, so the suite runs on a machine that has
+#: none of them (PROJECT-BRIEF rule 11b). The folder is the same one
+#: ``tests/records`` reads, reached from this file rather than imported from
+#: there: this folder's tests must not depend on another folder's fixtures.
+EVIDENCE_FOLDER = Path(
+    os.environ.get(
+        "TOWNRECORD_EVIDENCE",
+        Path(__file__).resolve().parents[4] / "townrecord-oversight" / "evidence" / "fixtures",
+    )
+)
+
+#: The run of the September 22, 2026 packet that carries the draft minutes of
+#: the September 8, 2026 session (spec 9.4), 22 pages, packet pages 17 to 38.
+PACKET_MINUTES_SEP08 = (
+    EVIDENCE_FOLDER / "primegov" / "longmont-packet-16823-minutes-sep08-p17-38.pdf"
+)
+
+
+def needs(*paths: Path) -> pytest.MarkDecorator:
+    """Skip a test when a recorded fixture is not on this machine."""
+    missing = ", ".join(str(path) for path in paths if not path.exists())
+    return pytest.mark.skipif(bool(missing), reason=f"recorded fixture not present: {missing}")
