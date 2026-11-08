@@ -435,6 +435,7 @@ class CaptionCapture:
                 ctx, video, reason=NO_CAPTION_FILE, trigger=AudioTrigger.NO_CAPTIONS
             )
         info = work.read_info(info_path)
+        repo.record_duration(ctx.conn, video.id, sidecar.duration_s(info))
         origin = sidecar.caption_origin(info)
         if origin is None:
             raise CaptureFailed(NO_ENGLISH_TRACK)
