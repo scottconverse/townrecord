@@ -274,9 +274,8 @@ def test_a_published_time_that_would_land_after_a_later_item_gives_way() -> None
         segment(0.0, "we are going to start with agenda item 1, the call to order."),
         segment(100.0, "we move to agenda item 2, roll call."),
         segment(200.0, "agenda item 3, approval of the agenda."),
-        # The measured captions, split across segments the way the captioner
-        # split them, so no single segment holds item 10's whole title.
-        segment(3967.52, "We are now on to items uh ordinances on"),
+        # The measured captions with the chair's announcement of item 10 left
+        # out, so only the clerk's published time could place it.
         segment(3970.64, "second reading and public hearings on"),
         segment(3972.40, "any matter. We have item A, first and"),
     )
@@ -495,3 +494,126 @@ def test_aligned_and_unaligned_items_together_are_the_agenda() -> None:
     assert [item.number for item in result.aligned_items()] == ["1."]
     assert [item.number for item in result.unaligned_items()] == ["2.", "3."]
     assert len(result.aligned_items()) + len(result.unaligned_items()) == len(result.items) == 3
+
+
+#: The measured captions of the October 27, 2026 Longmont council study session
+#: (meeting 7 of the live run), quoted verbatim. The chair announces item 3 and
+#: the captioner breaks the title across two lines, so no single line holds it.
+_ANNOUNCED_ACROSS_LINES = (
+    segment(227.44, "add agenda items to future agendas. Does"),
+    segment(230.40, "any council member have an item? Seeing"),
+    segment(233.04, "none, let's move on."),
+    segment(237.04, "Fast. [laughter]"),
+    segment(238.80, "We are now on to public invited to be"),
+    segment(240.88, "heard. Um and oh here we go. The first"),
+)
+
+
+def test_a_title_the_chair_announces_across_two_caption_lines_is_a_transition() -> None:
+    items = [
+        _fixture_item("2.", "ADD AGENDA ITEMS TO FUTURE AGENDAS"),
+        _fixture_item("3.", "PUBLIC INVITED TO BE HEARD"),
+    ]
+    result = _align(items, _ANNOUNCED_ACROSS_LINES)
+
+    three = _item(result, "3.")
+    assert three.method == SPOKEN_TRANSITIONS
+    assert three.start_ms == 238_800
+    assert "now on to public invited to be heard" in three.evidence.lower()
+
+
+def test_a_title_spread_over_lines_needs_the_chair_to_announce_it() -> None:
+    """The rules reading names the same title across two lines with no cue."""
+    result = _align(_consent_items(), _consent_transcript())
+
+    assert _item(result, "2.").start_ms is None
+    assert _item(result, "3.").start_ms is None
+
+
+def test_an_announced_title_must_finish_inside_the_window() -> None:
+    items = [_fixture_item("3.", "PUBLIC INVITED TO BE HEARD")]
+    transcript = (
+        segment(238.8, "We are now on to public invited to be"),
+        segment(270.0, "heard about the budget, said one resident."),
+    )
+    result = _align(items, transcript)
+
+    assert _item(result, "3.").start_ms is None
+
+
+def test_the_window_for_an_announced_title_is_a_setting() -> None:
+    items = [_fixture_item("3.", "PUBLIC INVITED TO BE HEARD")]
+    transcript = (
+        segment(238.8, "We are now on to public invited to be"),
+        segment(270.0, "heard. Um and oh here we go. The first"),
+    )
+    assert _item(_align(items, transcript), "3.").start_ms is None
+    result = _align(items, transcript, title_window_s=40.0)
+
+    assert _item(result, "3.").start_ms == 238_800
+
+
+def test_an_announced_title_leaves_out_the_agendas_note_in_brackets() -> None:
+    items = [
+        _fixture_item(
+            "3.", "MOTIONS TO DIRECT THE CITY MANAGER TO ADD AGENDA ITEMS TO FUTURE AGENDAS"
+        ),
+        _fixture_item("4.", "PUBLIC INVITED TO BE HEARD (3 minute limitation per speaker)"),
+    ]
+    result = _align(items, _ANNOUNCED_ACROSS_LINES)
+
+    assert _item(result, "4.").start_ms == 238_800
+
+
+def test_an_announced_title_may_be_one_side_of_a_dash() -> None:
+    items = [
+        _fixture_item("6.", "Public Invited to be Heard – for topics other than public hearings"),
+    ]
+    result = _align(items, _ANNOUNCED_ACROSS_LINES)
+
+    assert _item(result, "6.").start_ms == 238_800
+
+
+def test_the_chair_announcing_item_ten_across_two_lines_places_it() -> None:
+    """The September 8, 2026 captions, verbatim: item 10 is announced at 3967.5 s."""
+    items = [
+        _fixture_item(
+            "10.", "ORDINANCES ON SECOND READING AND PUBLIC HEARINGS", 4440, video_s=7200
+        ),
+        _fixture_item("10.A.", "FIRST AND MAIN TRANSIT PROJECT", 4447, video_s=7200),
+    ]
+    transcript = (
+        segment(3967.52, "We are now on to items uh ordinances on"),
+        segment(3970.64, "second reading and public hearings on"),
+        segment(3972.40, "any matter. We have item A, first and"),
+    )
+    result = _align(items, transcript, duration_ms=TWO_HOURS_MS)
+
+    assert _item(result, "10.").method == SPOKEN_TRANSITIONS
+    assert _item(result, "10.").start_ms == 3_967_520
+    assert _item(result, "10.A.").start_ms == 3_972_400
+
+
+#: The September 8, 2026 captions, 209.0 s to 221.3 s, verbatim. Three items
+#: go by inside fifteen seconds, and only two of them are announced with a cue.
+_THREE_ITEMS_QUICKLY = (
+    segment(208.959, "queue, we're going to move on to city"),
+    segment(211.04, "manager report."),
+    segment(212.799, ">> No report. No report. Mayor, council."),
+    segment(215.2, ">> Great. Thank you. Uh, special reports"),
+    segment(216.959, "and presentations. There are none. We"),
+    segment(219.28, "are now on to first call. Public invited"),
+    segment(221.28, "to be heard."),
+)
+
+
+def test_an_announced_title_starts_where_its_words_start_and_stops_at_the_next_cue() -> None:
+    items = [
+        _fixture_item("6.", "CITY MANAGER REPORT"),
+        _fixture_item("7.", "SPECIAL REPORTS AND PRESENTATIONS"),
+        _fixture_item("8.", "FIRST CALL - PUBLIC INVITED TO BE HEARD"),
+    ]
+    result = _align(items, _THREE_ITEMS_QUICKLY)
+
+    assert _item(result, "7.").start_ms == 215_200
+    assert _item(result, "8.").start_ms == 219_280
