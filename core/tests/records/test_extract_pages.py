@@ -275,6 +275,42 @@ def test_the_recorded_agenda_is_read_page_by_page(
 
 
 @needs(AGENDA_16805_PDF)
+def test_reading_the_agenda_of_a_meeting_with_no_html_agenda_queues_its_alignment(
+    area: Area, wired: FakePortal, sync: Sync
+) -> None:
+    """With no HTML agenda, these pages are the agenda the meeting is aligned against."""
+    wired.document_bytes = AGENDA_16805_PDF.read_bytes()
+    meeting_id = an_agenda_meeting(sync, wired, area)
+    assert sync.jobs_of_kind("align_meeting") == []
+
+    sync.lane("heavy")
+
+    record = its_record(sync, meeting_id)
+    queued = sync.jobs_of_kind("align_meeting")
+    assert len(queued) == 1
+    assert (queued[0]["lane"], queued[0]["state"]) == ("normal", QUEUED)
+    assert json.loads(queued[0]["payload"])["meeting_id"] == meeting_id
+    assert record_pages(sync.conn, record.id), "the pages it waits for are stored first"
+
+
+@needs(AGENDA_16805_PDF)
+def test_reading_the_agenda_of_a_meeting_with_an_html_agenda_queues_no_alignment(
+    area: Area, wired: FakePortal, sync: Sync
+) -> None:
+    """A meeting with an HTML agenda is aligned against that, not against these pages."""
+    wired.document_bytes = AGENDA_16805_PDF.read_bytes()
+    meeting_id = an_agenda_meeting(sync, wired, area)
+    sync.conn.execute(
+        "UPDATE meetings SET portal_html_template_id = ? WHERE id = ?",
+        (AGENDA_TEMPLATE_ID, meeting_id),
+    )
+
+    sync.lane("heavy")
+
+    assert sync.jobs_of_kind("align_meeting") == []
+
+
+@needs(AGENDA_16805_PDF)
 def test_the_stored_pages_are_what_the_search_reads(
     area: Area, wired: FakePortal, sync: Sync
 ) -> None:

@@ -81,6 +81,10 @@ ARCHIVED_2026 = EVIDENCE_FOLDER / "primegov" / "longmont-ListArchivedMeetings-20
 #: The compiled PDF agenda of that meeting, recorded from the portal.
 AGENDA_16805_PDF = EVIDENCE_FOLDER / "primegov" / "longmont-agenda-16805.pdf"
 
+#: The agenda PDF of the November 3, 2026 Regular Session, template 16858,
+#: recorded from the live run. That meeting published no HTML agenda.
+AGENDA_16858_PDF = EVIDENCE_FOLDER / "primegov" / "longmont-agenda-16858.pdf"
+
 #: The run of the September 22, 2026 packet that carries the draft minutes of
 #: the September 8, 2026 session (spec 9.4). Its first page is packet page 17,
 #: and each of its 22 pages prints the number the packet gave it and the number
@@ -96,8 +100,10 @@ MEETING_3709 = 3709
 VIDEO_3709 = "3qfQAkAAC9U"
 VIDEO_3709_DURATION_S = 14407
 
-#: The counts unit F measured on that meeting, by method (spec 10.2).
-MEASURED_COUNTS = {"spoken_transitions": 22, "html_video_times": 6, "none": 12}
+#: The counts measured on that meeting, by method (spec 10.2). Since the
+#: aligner finds an item where the chair announces its title, 26 items are
+#: placed by the spoken record (tests/align/test_real_meetings.py).
+MEASURED_COUNTS = {"spoken_transitions": 26, "html_video_times": 4, "none": 10}
 
 #: The offset unit F measured on that meeting, in seconds.
 MEASURED_OFFSET_S = 466

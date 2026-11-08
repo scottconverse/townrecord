@@ -11,6 +11,11 @@ aligner measured, and reading it back means reading the same page again. The
 offset and its anchors go in one row per meeting (migration 0009), so a reader
 can see what the boundaries rest on.
 
+A meeting the portal published no HTML agenda for is aligned against its agenda
+PDF instead: the items are read from the pages the page reader stored. They
+carry no clerk times, so only the spoken record can place them. Reading those
+pages is a third thing that puts a paused job back on the queue.
+
 The job is safe to re-run: the same agenda and the same transcript write the
 same rows, and the alignment row is updated in place rather than added to. A run
 it pauses is not lost: it comes back to the queue when the transcript is stored
@@ -30,12 +35,15 @@ from ..repo import (
     get_source,
     latest_transcript,
     primary_video,
+    record_pages,
+    records_of_meeting,
     save_meeting_alignment,
     segments_of,
     update_agenda_item_alignment,
     upsert_agenda_item,
 )
 from . import portal
+from .agenda_pdf import parse_pdf_agenda
 
 
 def align_meeting(ctx: JobContext) -> None:
@@ -54,21 +62,21 @@ def align_meeting(ctx: JobContext) -> None:
     if meeting is None:
         ctx.pause(f"There is no meeting {request.meeting_id} to align.")
         return
+    pdf_pages: list[str] | None = None
+    source: Source | None = None
     if meeting.portal_html_template_id is None:
-        ctx.pause(
-            f"Meeting {meeting.id} carries no HTML agenda template id, so its agenda items "
-            "have no published times to align with."
-        )
-        return
-
-    source_id = request.source_id if request.source_id is not None else meeting.portal_source_id
-    source = get_source(ctx.conn, source_id) if source_id is not None else None
-    if source is None or source.type != portal.MEETING_PORTAL:
-        ctx.pause(
-            f"Meeting {meeting.id} was not listed by a meeting portal source, so its agenda "
-            "cannot be read again."
-        )
-        return
+        pdf_pages = _agenda_pdf_pages(ctx, meeting.id)
+        if pdf_pages is None:
+            return
+    else:
+        source_id = request.source_id if request.source_id is not None else meeting.portal_source_id
+        source = get_source(ctx.conn, source_id) if source_id is not None else None
+        if source is None or source.type != portal.MEETING_PORTAL:
+            ctx.pause(
+                f"Meeting {meeting.id} was not listed by a meeting portal source, so its "
+                "agenda cannot be read again."
+            )
+            return
 
     video = primary_video(ctx.conn, meeting.id)
     if video is None:
@@ -93,9 +101,20 @@ def align_meeting(ctx: JobContext) -> None:
         )
         return
 
-    agenda = _read_agenda(ctx, source, meeting, video.duration_s)
-    if agenda is None:
-        return
+    agenda: list[Any] | None
+    if pdf_pages is not None:
+        agenda = parse_pdf_agenda(pdf_pages)
+        if not agenda:
+            ctx.pause(
+                f"The agenda PDF of meeting {meeting.id} has no numbered items that could "
+                "be read, so there is nothing to align."
+            )
+            return
+    else:
+        assert source is not None
+        agenda = _read_agenda(ctx, source, meeting, video.duration_s)
+        if agenda is None:
+            return
 
     result = align_agenda_with_transcript(
         agenda,
@@ -135,6 +154,35 @@ def align_meeting(ctx: JobContext) -> None:
             "dropped": list(result.dropped),
         }
     )
+
+
+def _agenda_pdf_pages(ctx: JobContext, meeting_id: int) -> list[str] | None:
+    """The text of each page of the meeting's agenda PDF, or None after a pause.
+
+    A meeting with neither agenda pauses until a sync stores one. An agenda
+    whose pages are not read yet pauses until the page reader has read them,
+    and the page reader is what puts this job back on the queue.
+    """
+    agendas = [
+        record
+        for record in records_of_meeting(ctx.conn, meeting_id)
+        if record.kind == portal.AGENDA_KIND
+    ]
+    if not agendas:
+        ctx.pause(
+            f"Meeting {meeting_id} has no HTML agenda and no agenda PDF, so it has no agenda "
+            "items to align. This job runs again when the meeting is synced again."
+        )
+        return None
+    record = agendas[-1]
+    pages = record_pages(ctx.conn, record.id)
+    if not pages:
+        ctx.pause(
+            f"Meeting {meeting_id} has no HTML agenda, and the pages of its agenda PDF "
+            f"(record {record.id}) are not read yet. This job runs again when they are."
+        )
+        return None
+    return [page.text for page in pages]
 
 
 def _read_agenda(

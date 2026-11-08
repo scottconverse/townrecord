@@ -13,11 +13,12 @@ from pathlib import Path
 
 from townrecord.artifacts import store
 from townrecord.captions import parse_srv3
-from townrecord.jobs import DONE, PAUSED, read_checkpoint
+from townrecord.jobs import DONE, PAUSED, QUEUED, read_checkpoint
 from townrecord.records.portal import AlignRequest
 from townrecord.repo import (
     agenda_items,
     get_meeting_alignment,
+    insert_record,
     insert_segment,
     insert_transcript,
     insert_video,
@@ -26,6 +27,7 @@ from townrecord.repo import (
 
 from .conftest import (
     AGENDA_16805,
+    AGENDA_16805_PDF,
     CAPTIONS_16805,
     MEASURED_COUNTS,
     MEASURED_OFFSET_S,
@@ -40,6 +42,11 @@ from .conftest import (
 #: The portal's own ids for the fixture meeting.
 A_MEETING = 3709
 AGENDA_TEMPLATE_ID = 16805
+
+#: What the September 8, 2026 meeting was measured to align as with only its
+#: PDF agenda: the same forty items with no clerk times, so none is placed by
+#: one, and the spoken record places the same 26 it places with the HTML.
+PDF_ONLY_COUNTS = {"spoken_transitions": 26, "html_video_times": 0, "none": 14}
 
 
 def a_meeting(
@@ -114,17 +121,43 @@ def test_a_meeting_that_is_not_there_pauses(area: Area, wired: FakePortal, sync:
     assert row["last_error"] == "There is no meeting 999 to align."
 
 
-def test_a_meeting_with_no_html_agenda_template_pauses(
-    area: Area, wired: FakePortal, sync: Sync
-) -> None:
-    """No published template means no published times to align against."""
+def test_a_meeting_with_neither_agenda_pauses(area: Area, wired: FakePortal, sync: Sync) -> None:
+    """No HTML agenda and no agenda PDF means no items to align."""
     meeting_id = a_meeting(sync, area, template_id=None)
     job_id = align(sync, meeting_id, area.portal_id)
 
     row = sync.job(job_id)
     assert row["state"] == PAUSED
-    assert "carries no HTML agenda template id" in row["last_error"]
+    assert row["last_error"] == (
+        f"Meeting {meeting_id} has no HTML agenda and no agenda PDF, so it has no agenda "
+        "items to align. This job runs again when the meeting is synced again."
+    )
     assert wired.requests == []
+
+
+def an_agenda_pdf(sync: Sync, storage_root: Path, meeting_id: int, pdf: bytes) -> int:
+    """Store the meeting's agenda PDF the way a download does, with no pages read yet."""
+    artifact = store(sync.conn, storage_root, "record", pdf, "pdf")
+    return insert_record(
+        sync.conn, meeting_id=meeting_id, kind="agenda", artifact_id=artifact.id, title="Agenda"
+    )
+
+
+@needs(AGENDA_16805_PDF)
+def test_an_agenda_pdf_whose_pages_are_not_read_pauses(
+    area: Area, wired: FakePortal, sync: Sync, storage_root: Path
+) -> None:
+    """The page reader has not read the agenda yet, and the job says it waits for it."""
+    meeting_id = a_meeting(sync, area, template_id=None)
+    record_id = an_agenda_pdf(sync, storage_root, meeting_id, AGENDA_16805_PDF.read_bytes())
+    job_id = align(sync, meeting_id, area.portal_id)
+
+    row = sync.job(job_id)
+    assert row["state"] == PAUSED
+    assert row["last_error"] == (
+        f"Meeting {meeting_id} has no HTML agenda, and the pages of its agenda PDF "
+        f"(record {record_id}) are not read yet. This job runs again when they are."
+    )
 
 
 def test_a_meeting_no_portal_listed_pauses(area: Area, wired: FakePortal, sync: Sync) -> None:
@@ -263,6 +296,41 @@ def test_the_real_meeting_aligns_the_way_unit_f_measured(
     unplaced = [item for item in items if item.alignment_method == "none"]
     assert len(unplaced) == MEASURED_COUNTS["none"]
     assert all(item.alignment_reason for item in unplaced), "an unplaced item says why"
+
+
+@needs(AGENDA_16805_PDF, CAPTIONS_16805)
+def test_a_meeting_with_only_an_agenda_pdf_aligns_once_its_pages_are_read(
+    area: Area, wired: FakePortal, sync: Sync, storage_root: Path
+) -> None:
+    """The September 8, 2026 meeting again, as if the portal had published only its PDF.
+
+    The job pauses for the pages, the page reader reads them and puts the same
+    job back on the queue, and it then aligns the forty items the HTML agenda
+    has. A PDF has no clerk times, so no item is placed by one; the spoken
+    record places what it places without them.
+    """
+    meeting_id = a_meeting(sync, area, template_id=None)
+    video_id = a_video(sync, area, meeting_id, duration_s=VIDEO_3709_DURATION_S)
+    transcript_id = a_transcript(sync, storage_root, video_id, CAPTIONS_16805.read_bytes())
+    its_lines(sync, transcript_id, CAPTIONS_16805.read_bytes())
+    record_id = an_agenda_pdf(sync, storage_root, meeting_id, AGENDA_16805_PDF.read_bytes())
+    job_id = align(sync, meeting_id, area.portal_id)
+    assert sync.job(job_id)["state"] == PAUSED
+
+    sync.queue("extract_pages", {"record_id": record_id})
+    sync.lane("heavy")
+    assert sync.job(job_id)["state"] == QUEUED, "reading the pages puts the same job back"
+    sync.lane("normal")
+
+    assert sync.job(job_id)["state"] == DONE
+    assert len(sync.jobs_of_kind("align_meeting")) == 1
+    checkpoint = read_checkpoint(sync.conn, job_id)
+    assert checkpoint["agenda_items"] == 40
+    assert checkpoint["counts_by_method"] == PDF_ONLY_COUNTS
+    assert wired.requests == [], "the PDF's pages are read from the store, not the portal"
+    items = {item.number: item for item in agenda_items(sync.conn, meeting_id)}
+    assert len(items) == 40
+    assert items["10.A"].alignment_method == "spoken_transitions"
 
 
 @needs(AGENDA_16805, CAPTIONS_16805)

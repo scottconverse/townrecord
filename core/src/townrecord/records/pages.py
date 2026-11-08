@@ -45,13 +45,14 @@ from ..jobs import JobContext
 from ..repo import (
     Record,
     delete_record_pages,
+    get_meeting,
     get_record,
     insert_record_page,
     record_pages,
     set_record_page_count,
 )
 from . import portal
-from .requests import request_minutes_of_packet
+from .requests import request_alignment, request_minutes_of_packet
 
 #: The plain reason a page that carries no text is stored with (spec 9.6).
 #: Reading a scan is OCR, which is a later unit, and this is the sentence that
@@ -121,6 +122,8 @@ def extract_pages(ctx: JobContext) -> None:
         )
     set_record_page_count(ctx.conn, record.id, len(pages))
     written = record_pages(ctx.conn, record.id)
+    if record.kind == portal.AGENDA_KIND:
+        _request_alignment_from_pdf(ctx, record)
     if record.kind == portal.PACKET_KIND:
         # The readings this queues take after the one that is running (spec
         # 16.2): a packet the daily schedule read queues scheduled readings.
@@ -143,6 +146,27 @@ def extract_pages(ctx: JobContext) -> None:
             ),
             "needing_ocr": sum(1 for page in written if page.ocr_reason is not None),
         }
+    )
+
+
+def _request_alignment_from_pdf(ctx: JobContext, record: Record) -> None:
+    """Put the meeting's alignment on the queue when its agenda is only a PDF.
+
+    A meeting with an HTML agenda is aligned against that, so reading its
+    agenda PDF changes nothing. One without is aligned against these pages, and
+    its align job waits for them.
+    """
+    meeting = get_meeting(ctx.conn, record.meeting_id)
+    if meeting is None or meeting.portal_html_template_id is not None:
+        return
+    request_alignment(
+        ctx.conn,
+        meeting.id,
+        reason=(
+            f"The pages of the agenda PDF of meeting {meeting.id} (record {record.id}) "
+            "were read, and they are the agenda it is aligned against."
+        ),
+        origin=ctx.origin,
     )
 
 
