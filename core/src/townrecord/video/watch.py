@@ -420,6 +420,14 @@ def _watch_video(
     if _already_captured(ctx, video):
         tally.already_captured += 1
         return
+    other = _meeting_recording(ctx, video)
+    if other is not None:
+        tally.already_captured += 1
+        tally.skip(
+            f"Video {video.id} ({listing.video_id}) is another recording of meeting "
+            f"{video.meeting_id}, which video {other} already covers, so it is not captured."
+        )
+        return
 
     queued = portal.enqueue_once(ctx, capture_job_kind(), {"video_id": video.id})
     if queued is None:
@@ -430,6 +438,35 @@ def _watch_video(
         )
     else:
         tally.captures_queued += 1
+
+
+def _meeting_recording(ctx: JobContext, video: repo.Video) -> int | None:
+    """Return another video of this video's meeting that is captured or being captured.
+
+    A meeting needs one recording. The portal often links one YouTube video and
+    the city's channel posts another of the same sitting; capturing both doubles
+    the YouTube requests for nothing, and on an address YouTube is already
+    refusing that is another 429. A video of the meeting that nobody captured and
+    nobody is capturing does not count, so a dead portal link never stops the
+    channel's copy from being captured.
+    """
+    if video.meeting_id is None:
+        return None
+    kind = capture_job_kind()
+    for other in ctx.conn.execute(
+        "SELECT id FROM videos WHERE meeting_id = ? AND id != ? ORDER BY is_primary DESC, id",
+        (video.meeting_id, video.id),
+    ).fetchall():
+        row = repo.get_video(ctx.conn, other["id"])
+        if row is not None and _already_captured(ctx, row):
+            return row.id
+        busy = ctx.conn.execute(
+            "SELECT 1 FROM jobs WHERE kind = ? AND payload = ? AND state IN ('queued', 'running')",
+            (kind, json.dumps({"video_id": other["id"]})),
+        ).fetchone()
+        if busy is not None:
+            return other["id"]
+    return None
 
 
 def _already_captured(ctx: JobContext, video: repo.Video) -> bool:

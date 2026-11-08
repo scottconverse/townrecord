@@ -642,8 +642,9 @@ def test_the_skip_seeds_come_from_the_source_itself(
 def a_scheduler(db_path: Path, registry: Registry) -> Scheduler:
     """A real daily schedule over this test's database.
 
-    No test video is set, so the yt-dlp update check of spec 8.9 is a paused run
-    and the only job this schedule enqueues is the day's watch.
+    No test video is set, so the yt-dlp update check of spec 8.9 is a paused run.
+    The TextFlowKit update tests its own program and still runs, so a test
+    reads the day's watch out of what the schedule enqueued with :func:`watches`.
     """
     return Scheduler(
         db_path=db_path,
@@ -654,6 +655,16 @@ def a_scheduler(db_path: Path, registry: Registry) -> Scheduler:
         clock=lambda: A_MORNING,
         interval_s=0.05,
     )
+
+
+def watches(conn: sqlite3.Connection, enqueued: Sequence[int]) -> list[int]:
+    """The watch jobs among the jobs one schedule tick enqueued."""
+    return [
+        job_id
+        for job_id in enqueued
+        if conn.execute("SELECT kind FROM jobs WHERE id = ?", (job_id,)).fetchone()["kind"]
+        == TASK_WATCH
+    ]
 
 
 def test_a_watch_the_schedule_asked_for_queues_a_capture_the_schedule_asked_for(
@@ -670,7 +681,7 @@ def test_a_watch_the_schedule_asked_for_queues_a_capture_the_schedule_asked_for(
     watch = Watch(db_path, conn, ladder=ListingLadder(rss=StubLister([one_meeting_video()])))
     scheduler = a_scheduler(db_path, watch.registry)
 
-    enqueued = scheduler.tick()
+    enqueued = watches(conn, scheduler.tick())
     assert len(enqueued) == 1, "one accepted channel source, one watch"
     parent = watch.job(enqueued[0])
     assert parent["kind"] == TASK_WATCH
@@ -714,7 +725,7 @@ def test_a_channel_source_whose_origin_names_no_channel_pauses_the_day_it_is_owe
     watch = Watch(db_path, conn, ladder=ListingLadder(rss=StubLister([one_meeting_video()])))
     scheduler = a_scheduler(db_path, watch.registry)
 
-    assert scheduler.tick() == (), "nothing was enqueued for the day"
+    assert watches(conn, scheduler.tick()) == [], "no watch was enqueued for the day"
     paused = conn.execute("SELECT * FROM schedule_runs WHERE task = ?", (TASK_WATCH,)).fetchone()
     assert paused is not None
     assert paused["state"] == "paused"
@@ -811,3 +822,73 @@ def test_the_recorded_city_feed_becomes_rows_and_captures(
     assert all("names no body of jurisdiction" in sentence for sentence in checkpoint["skipped"]), (
         checkpoint["skipped"]
     )
+
+
+# -- one capture per meeting ---------------------------------------------------
+#
+# The live run of 2026-11-05 captured two meetings twice: the portal linked one
+# YouTube video and the city's channel posted another of the same sitting, and
+# each was its own capture. On an address YouTube was already refusing, every
+# extra capture is another 429 and another hold. A meeting needs one recording.
+
+
+def a_primary_video(conn: sqlite3.Connection, world: World, meeting_id: int, state: str) -> int:
+    """The portal's own video of the meeting, already the meeting's primary."""
+    portal_id = world.source(type=portal.MEETING_PORTAL, origin="https://portal.test.invalid")
+    return insert_video(
+        conn,
+        source_id=portal_id,
+        platform_video_id="Fcdk3MPz8Ic",
+        meeting_id=meeting_id,
+        url="https://www.youtube.com/watch?v=Fcdk3MPz8Ic",
+        published_at=A_PUBLISHED,
+        is_primary=True,
+        capture_state=state,
+        source_note="Listed by the meeting portal source.",
+    )
+
+
+def test_a_second_video_of_a_captured_meeting_is_not_captured(
+    db_path: Path, conn: sqlite3.Connection, world: World
+) -> None:
+    meeting = world.meeting(world.body_id, "2026-09-22T19:00:00", "City Council Regular Session")
+    a_primary_video(conn, world, meeting, CAPTURED)
+    source = world.channel()
+    watch = Watch(db_path, conn, ladder=ListingLadder(rss=StubLister([one_meeting_video()])))
+
+    _, checkpoint = watch.watch(source)
+
+    assert watch.row("jhsFsEz0P5A").meeting_id == meeting, "the video is still linked"
+    assert watch.captures() == [], "the meeting already has its recording"
+    assert checkpoint["captures_queued"] == 0
+    assert checkpoint["already_captured"] == 1
+
+
+def test_a_second_video_waits_while_the_meetings_own_capture_is_queued(
+    db_path: Path, conn: sqlite3.Connection, world: World
+) -> None:
+    meeting = world.meeting(world.body_id, "2026-09-22T19:00:00", "City Council Regular Session")
+    primary = a_primary_video(conn, world, meeting, "pending")
+    source = world.channel()
+    watch = Watch(db_path, conn, ladder=ListingLadder(rss=StubLister([one_meeting_video()])))
+    enqueue(conn, CAPTURE_JOB_KIND, {"video_id": primary}, registry=watch.registry)
+
+    _, checkpoint = watch.watch(source)
+
+    payloads = [json.loads(job["payload"]) for job in watch.captures()]
+    assert payloads == [{"video_id": primary}], "one capture for the meeting, not two"
+    assert checkpoint["captures_queued"] == 0
+
+
+def test_a_second_video_is_captured_when_the_meetings_own_one_never_was(
+    db_path: Path, conn: sqlite3.Connection, world: World
+) -> None:
+    """A primary video nobody is capturing is no recording, so this one is."""
+    meeting = world.meeting(world.body_id, "2026-09-22T19:00:00", "City Council Regular Session")
+    a_primary_video(conn, world, meeting, "failed")
+    source = world.channel()
+    watch = Watch(db_path, conn, ladder=ListingLadder(rss=StubLister([one_meeting_video()])))
+
+    _, checkpoint = watch.watch(source)
+
+    assert checkpoint["captures_queued"] == 1
