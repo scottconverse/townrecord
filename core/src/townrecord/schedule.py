@@ -68,7 +68,7 @@ from .records.portal import (
 from .repo import all_sources, record_enqueued_run, record_paused_run, run_for
 from .repo.rows import Source
 from .runtime.job import JOB_KIND as RUNTIME_UPDATE_KIND
-from .runtime.settings import TOOL_NAME
+from .runtime.settings import TEXTFLOWKIT_TOOL, TOOL_NAME
 from .video.watch import JOB_KIND as WATCH_CHANNEL_KIND
 from .video.watch import refusal_for as watch_refusal
 
@@ -270,7 +270,7 @@ class Scheduler:
         """Yield every run a day is owed, with why it cannot happen when it cannot.
 
         One sync per meeting portal source that may be synced, one watch per
-        video channel source that may be watched, then the yt-dlp update check.
+        video channel source that may be watched, then the update check of each managed tool.
         The subjects are what "once per local day" is counted by.
 
         A source the user has not accepted, or has rejected, is not yielded at
@@ -301,6 +301,14 @@ class Scheduler:
             tool_subject(TOOL_NAME),
             None if self.test_video_url.strip() else NO_TEST_VIDEO_REASON,
             {"tool": TOOL_NAME},
+        )
+        # TextFlowKit is tested through its own program, not a video, so its
+        # check is owed whether or not a test video is set (spec 8.9).
+        yield (
+            TASK_RUNTIME_UPDATE,
+            tool_subject(TEXTFLOWKIT_TOOL),
+            None,
+            {"tool": TEXTFLOWKIT_TOOL},
         )
 
     def _sync_refusal(self, conn: sqlite3.Connection, source: Source) -> str | None:

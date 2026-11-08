@@ -190,3 +190,62 @@ def test_the_service_installs_one_pace_for_the_whole_process(settings: Settings)
 
     service.close()
     assert pacing.forget_pacer(installed) is False, "the service kept its pace after closing"
+
+
+# -- a runtime installed while the service runs ------------------------------
+
+
+def test_a_runtime_installed_after_start_is_used_without_a_restart(settings: Settings) -> None:
+    """The first run installs yt-dlp and TextFlowKit while the service is up.
+
+    The live run of 2026-11-08 built the service before either runtime existed,
+    so every capture ran this process's interpreter, which has no yt_dlp, until
+    the service was restarted. The handlers follow the active runtime instead.
+    """
+    import sys
+
+    from townrecord.runtime.settings import TEXTFLOWKIT_PROGRAM, TEXTFLOWKIT_TOOL
+    from townrecord.runtime.tools import program_in
+
+    from .runtime.fakes import installed, make_venv, write_installed
+
+    service = build_service(settings, clock=lambda: BEFORE_THE_DAY)
+    capture = service.handlers[CAPTURE_JOB_KIND]
+    assert capture.current().interpreter == sys.executable
+
+    root = settings.runtime_root
+    python = make_venv(root, "2026.11.1")
+    write_installed(root, installed("2026.11.1", "2026.11.1"), None)
+    make_venv(root, "0.1.19", tool=TEXTFLOWKIT_TOOL, program=TEXTFLOWKIT_PROGRAM)
+    write_installed(
+        root, installed("0.1.19", "0.1.19", tool=TEXTFLOWKIT_TOOL), None, tool=TEXTFLOWKIT_TOOL
+    )
+    program = program_in(root / "runtimes" / TEXTFLOWKIT_TOOL / "0.1.19", TEXTFLOWKIT_PROGRAM)
+
+    assert capture.current().interpreter == str(python)
+    assert service.handlers[RECHECK_JOB_KIND].current().interpreter == str(python)
+    transcribe = service.handlers[TRANSCRIBE_JOB_KIND].current()
+    assert transcribe.ytdlp_interpreter == str(python)
+    assert transcribe.textflowkit_program == str(program)
+    watch = service.handlers[WATCH_CHANNEL_JOB_KIND].current()
+    assert watch.ladder.ytdlp.interpreter == str(python)
+    service.close()
+
+
+def test_the_update_job_updates_the_tool_its_payload_names(settings: Settings) -> None:
+    """One runtime_update kind, and the payload says which tool (spec 8.9).
+
+    Nothing installed TextFlowKit in the live run, because the one handler was
+    built for yt-dlp and ignored the payload's ``tool``.
+    """
+    from townrecord.runtime.settings import TEXTFLOWKIT_TOOL, TOOL_NAME
+
+    service = build_service(settings, clock=lambda: BEFORE_THE_DAY)
+    update = service.handlers[RUNTIME_UPDATE_KIND]
+
+    assert update.for_payload({"tool": TEXTFLOWKIT_TOOL}).tool == TEXTFLOWKIT_TOOL
+    assert update.for_payload({"tool": TOOL_NAME}).tool == TOOL_NAME
+    assert update.for_payload(None).tool == TOOL_NAME
+    with pytest.raises(ValueError, match="does not manage"):
+        update.for_payload({"tool": "left-pad"})
+    service.close()

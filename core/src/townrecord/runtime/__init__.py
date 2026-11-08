@@ -15,7 +15,15 @@ enqueue it -- once per tool.
 
 from __future__ import annotations
 
-from .job import JOB_KIND, LANE, RuntimeUpdate, register
+from .job import (
+    JOB_KIND,
+    LANE,
+    RuntimeUpdate,
+    RuntimeUpdates,
+    program_probe,
+    register,
+    register_tools,
+)
 from .lock import UpdateInProgress, UpdateLock
 from .manager import (
     InstallResult,
@@ -40,6 +48,9 @@ from .tools import TOOL_SPECS, ToolSpec, UnknownTool, tool_spec
 from .versions import is_newer, same_version, version_key
 
 __all__ = [
+    "RuntimeUpdates",
+    "program_probe",
+    "register_tools",
     "JOB_KIND",
     "LANE",
     "TEXTFLOWKIT_PROGRAM",

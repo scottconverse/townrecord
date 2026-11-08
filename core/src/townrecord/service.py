@@ -14,7 +14,9 @@ the test of this unit checks that it matches what the registry actually holds.
 
 The handlers are built with their real programs -- the interpreter of the
 private runtime of spec 8.9 when one is installed, this process's interpreter
-when none is -- and with an ``httpx`` client for the one PyPI call. Nothing
+when none is -- and they follow the runtime: one the first run installs while
+the service is up is used by the next job, with no restart. They get an
+``httpx`` client for the one PyPI call. Nothing
 here reaches the network: a client is built, and no request is made until a
 job runs.
 """
@@ -22,6 +24,7 @@ job runs.
 from __future__ import annotations
 
 import logging
+import threading
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -47,9 +50,14 @@ from .records import (
     SYNC_PRIMEGOV,
 )
 from .runtime import JOB_KIND as RUNTIME_UPDATE_KIND
-from .runtime import RuntimeManager, RuntimeNotInstalled, RuntimeSettings
-from .runtime import register as register_runtime_update
-from .runtime.settings import TEXTFLOWKIT_TOOL, TOOL_NAME
+from .runtime import (
+    RuntimeManager,
+    RuntimeNotInstalled,
+    RuntimeSettings,
+    program_probe,
+    register_tools,
+)
+from .runtime.settings import TEXTFLOWKIT_PROGRAM, TEXTFLOWKIT_TOOL, TOOL_NAME
 from .schedule import Scheduler
 from .video.watch import JOB_KIND as WATCH_CHANNEL_JOB_KIND
 from .video.watch import register as register_watch_channel
@@ -164,7 +172,9 @@ def build_service(
     records.register_jobs(registry)
     runtime = runtime_settings or RuntimeSettings()
     manager = RuntimeManager(root=settings.runtime_root, settings=runtime, tool=TOOL_NAME)
-    interpreter = _interpreter_or_none(manager)
+    # Said once at start, so the log shows what the first jobs will find.
+    _interpreter_or_none(manager)
+    _textflowkit_or_none(settings, runtime)
     real_client = _client_or_new(client)
     handlers = _register_handlers(
         settings,
@@ -172,9 +182,7 @@ def build_service(
         client=real_client,
         probe=probe if probe is not None else _default_probe(settings, capture_runner),
         capture_runner=capture_runner,
-        interpreter=interpreter,
         runtime_settings=runtime,
-        textflowkit=_textflowkit_or_none(settings, runtime),
     )
     runner = Runner(
         settings.db_path,
@@ -239,6 +247,65 @@ def _install_pacer(settings: Settings) -> pacing.Pacer:
     return pace
 
 
+#: The programs a handler runs: the yt-dlp interpreter and the TextFlowKit
+#: program, each None while its runtime is not installed.
+Programs = tuple[str | None, str | None]
+
+#: Builds one handler, registering it in the registry it is given.
+Builder = Callable[[Registry, str | None, str | None], Callable[[Any], None]]
+
+
+@dataclass
+class FollowsRuntime:
+    """A handler that is rebuilt when the active runtime changes (spec 8.9).
+
+    The first run installs yt-dlp and TextFlowKit with ``runtime_update`` jobs
+    while the service is already up, and an update can switch a pointer to a
+    newer version on any later day. A handler built once at start keeps the
+    programs it was built with -- this process's interpreter, which cannot
+    import yt-dlp -- until a restart. So each job asks which programs the
+    pointers name now, and the inner handler is rebuilt when they changed.
+    """
+
+    build: Callable[[str | None, str | None], Callable[[Any], None]]
+    resolve: Callable[[], Programs]
+    _programs: Programs | None = None
+    _handler: Callable[[Any], None] | None = None
+    _lock: threading.Lock = field(default_factory=threading.Lock)
+
+    def current(self) -> Any:
+        """The inner handler for the runtime that is active now."""
+        programs = self.resolve()
+        with self._lock:
+            if self._handler is None or programs != self._programs:
+                self._handler = self.build(*programs)
+                self._programs = programs
+            return self._handler
+
+    def __call__(self, ctx: Any) -> None:
+        self.current()(ctx)
+
+
+def _follow(
+    registry: Registry, kind: str, build: Builder, resolve: Callable[[], Programs]
+) -> FollowsRuntime:
+    """Register `kind` with a handler that follows the active runtime.
+
+    `build` is the module's own ``register``, run against a registry nobody
+    reads, so the inner handler is built exactly as before and only the wrapper
+    goes into the real registry, in the lane the module chose.
+    """
+    scratch = Registry()
+    first = build(scratch, *resolve())
+    registration = scratch.registration(kind)
+    if registration is None:
+        raise RuntimeError(f"The builder for {kind} registered nothing.")
+    wrapper = FollowsRuntime(build=lambda py, tfk: build(Registry(), py, tfk), resolve=resolve)
+    wrapper._handler, wrapper._programs = first, resolve()
+    registry.register(kind, wrapper, lane=registration.lane)
+    return wrapper
+
+
 def _register_handlers(
     settings: Settings,
     registry: Registry,
@@ -246,41 +313,58 @@ def _register_handlers(
     client: httpx.Client,
     probe: Callable[[str], bool],
     capture_runner: CaptureRunner | None,
-    interpreter: str | None,
     runtime_settings: RuntimeSettings,
-    textflowkit: str | None,
 ) -> dict[str, object]:
     """Wire each handler with the paths and programs it runs."""
+    ytdlp = RuntimeManager(root=settings.runtime_root, settings=runtime_settings, tool=TOOL_NAME)
+    storage = settings.storage_root
+
+    def resolve() -> Programs:
+        return (
+            _interpreter_or_none(ytdlp, quiet=True),
+            _textflowkit_or_none(settings, runtime_settings, quiet=True),
+        )
+
+    def capture(reg: Registry, py: str | None, _tfk: str | None) -> Callable[[Any], None]:
+        return register_capture(
+            storage_root=storage, registry=reg, runner=capture_runner, interpreter=py
+        )
+
+    def transcribe(reg: Registry, py: str | None, tfk: str | None) -> Callable[[Any], None]:
+        return register_transcribe(
+            storage_root=storage,
+            registry=reg,
+            runner=capture_runner,
+            interpreter=py,
+            textflowkit_program=tfk,
+        )
+
+    def recheck(reg: Registry, py: str | None, _tfk: str | None) -> Callable[[Any], None]:
+        return register_recheck(
+            storage_root=storage, registry=reg, runner=capture_runner, interpreter=py
+        )
+
+    def watch(reg: Registry, py: str | None, _tfk: str | None) -> Callable[[Any], None]:
+        return register_watch_channel(
+            registry=reg, ladder=service_ladder(client=client, interpreter=py)
+        )
+
     handlers: dict[str, object] = {
-        CAPTURE_JOB_KIND: register_capture(
-            storage_root=settings.storage_root,
-            registry=registry,
-            runner=capture_runner,
-            interpreter=interpreter,
-        ),
-        TRANSCRIBE_JOB_KIND: register_transcribe(
-            storage_root=settings.storage_root,
-            registry=registry,
-            runner=capture_runner,
-            interpreter=interpreter,
-            textflowkit_program=textflowkit,
-        ),
-        RECHECK_JOB_KIND: register_recheck(
-            storage_root=settings.storage_root,
-            registry=registry,
-            runner=capture_runner,
-            interpreter=interpreter,
-        ),
-        WATCH_CHANNEL_JOB_KIND: register_watch_channel(
-            registry=registry,
-            ladder=service_ladder(client=client, interpreter=interpreter),
-        ),
-        RUNTIME_UPDATE_KIND: register_runtime_update(
+        CAPTURE_JOB_KIND: _follow(registry, CAPTURE_JOB_KIND, capture, resolve),
+        TRANSCRIBE_JOB_KIND: _follow(registry, TRANSCRIBE_JOB_KIND, transcribe, resolve),
+        RECHECK_JOB_KIND: _follow(registry, RECHECK_JOB_KIND, recheck, resolve),
+        WATCH_CHANNEL_JOB_KIND: _follow(registry, WATCH_CHANNEL_JOB_KIND, watch, resolve),
+        # One kind, and the payload's tool says which runtime a run updates.
+        # TextFlowKit has no video to test against: its test is its program.
+        RUNTIME_UPDATE_KIND: register_tools(
             root=settings.runtime_root,
             registry=registry,
             client=client,
-            probe=probe,
-            test_video_url=settings.test_video_url,
+            probes={TOOL_NAME: probe, TEXTFLOWKIT_TOOL: program_probe(TEXTFLOWKIT_PROGRAM)},
+            test_video_urls={
+                TOOL_NAME: settings.test_video_url,
+                TEXTFLOWKIT_TOOL: f"its own program ({TEXTFLOWKIT_PROGRAM} --version)",
+            },
             settings=runtime_settings,
         ),
     }
@@ -315,7 +399,7 @@ def _default_probe(settings: Settings, capture_runner: CaptureRunner | None):
     return capture_probe(test_video_url=settings.test_video_url, runner=capture_runner)
 
 
-def _interpreter_or_none(manager: RuntimeManager) -> str | None:
+def _interpreter_or_none(manager: RuntimeManager, *, quiet: bool = False) -> str | None:
     """Return the active runtime's interpreter, or None when none is installed.
 
     None is not a silent fallback: it is the documented meaning of the field
@@ -327,11 +411,14 @@ def _interpreter_or_none(manager: RuntimeManager) -> str | None:
     try:
         return manager.interpreter()
     except RuntimeNotInstalled as exc:
-        logger.warning("No active %s runtime yet: %s", manager.tool, exc)
+        if not quiet:
+            logger.warning("No active %s runtime yet: %s", manager.tool, exc)
         return None
 
 
-def _textflowkit_or_none(settings: Settings, runtime_settings: RuntimeSettings) -> str | None:
+def _textflowkit_or_none(
+    settings: Settings, runtime_settings: RuntimeSettings, *, quiet: bool = False
+) -> str | None:
     """Return the TextFlowKit program of the private runtime, or None.
 
     None means the console script's name, found on PATH: spec 8.5 runs
@@ -345,5 +432,6 @@ def _textflowkit_or_none(settings: Settings, runtime_settings: RuntimeSettings) 
         )
         return manager.program()
     except (RuntimeNotInstalled, ValueError, RuntimeError) as exc:
-        logger.warning("No active %s runtime yet: %s", TEXTFLOWKIT_TOOL, exc)
+        if not quiet:
+            logger.warning("No active %s runtime yet: %s", TEXTFLOWKIT_TOOL, exc)
         return None

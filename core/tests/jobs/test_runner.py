@@ -395,3 +395,72 @@ def test_two_runners_share_the_queue_without_double_work(
         first.stop(timeout=5.0)
         second.stop(timeout=5.0)
     assert sorted(seen) == ids, "a job ran twice or not at all"
+
+
+# -- a busy database (live run 2026-11-08) -----------------------------------
+
+
+def test_a_job_that_finds_the_database_locked_goes_back_in_the_queue(
+    db_path: Path, conn: sqlite3.Connection
+) -> None:
+    """A lock is a wait, not a broken job: it is tried again later, never failed."""
+
+    def locked(ctx: JobContext) -> None:
+        raise sqlite3.OperationalError("database is locked")
+
+    registry = Registry()
+    registry.register("capture", locked)
+    job_id = enqueue(conn, "capture")
+    Runner(db_path, registry=registry).run_once("normal")
+
+    row = get(conn, job_id)
+    assert row["state"] == QUEUED
+    assert row["run_after"] is not None
+    assert "database was busy" in row["last_error"]
+
+
+def test_a_lane_worker_survives_a_locked_claim(
+    db_path: Path, conn: sqlite3.Connection, monkeypatch
+) -> None:
+    """The live run lost two of its three workers to one locked BEGIN IMMEDIATE."""
+    from townrecord.jobs import queue as queue_module
+
+    real_claim = queue_module.claim
+    raised = {"n": 0}
+
+    def flaky_claim(*args, **kwargs):
+        if raised["n"] < 2:
+            raised["n"] += 1
+            raise sqlite3.OperationalError("database is locked")
+        return real_claim(*args, **kwargs)
+
+    monkeypatch.setattr(queue_module, "claim", flaky_claim)
+    ran = threading.Event()
+    registry = Registry()
+    registry.register("scan", lambda ctx: ran.set())
+    job_id = enqueue(conn, "scan")
+    runner = Runner(
+        db_path,
+        registry=registry,
+        settings=JobsSettings(lane_limits={"normal": 1}, poll_interval=0.01),
+    )
+    runner.start()
+    try:
+        assert ran.wait(timeout=10.0), "the worker died on the locked claim"
+        assert wait_for(lambda: get(conn, job_id)["state"] == DONE)
+    finally:
+        assert runner.stop(timeout=5.0) is True
+    assert raised["n"] == 2
+
+
+def test_connections_wait_out_a_busy_database() -> None:
+    """Python's default is five seconds; a long write held the file longer."""
+    from townrecord.db.connect import BUSY_TIMEOUT_S, connect
+
+    connection = connect(":memory:")
+    try:
+        waited_ms = connection.execute("PRAGMA busy_timeout").fetchone()[0]
+    finally:
+        connection.close()
+    assert BUSY_TIMEOUT_S >= 30
+    assert waited_ms == int(BUSY_TIMEOUT_S * 1000)
