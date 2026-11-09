@@ -96,7 +96,7 @@ class YtdlpFlatLister:
     def __init__(
         self,
         *,
-        runner: Runner = proc.run_allowlisted,
+        runner: Runner = proc.run,
         interpreter: str | None = None,
         timeout_s: float = YTDLP_TIMEOUT_S,
         js_runtime: str | None = None,

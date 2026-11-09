@@ -300,3 +300,18 @@ def test_the_recorded_info_fixture_is_the_tiny_hand_written_one() -> None:
     assert "automatic_captions" not in payload
     assert payload["live_status"] == "not_live"
     assert payload["duration"] == 14407
+
+
+def test_the_default_runner_takes_the_call_the_lister_makes() -> None:
+    """With no runner given, the lister's own call shape runs a real child.
+
+    When the channel feed answered 404, the watch fell through to yt-dlp and every
+    listing failed with ``run_allowlisted() got an unexpected keyword argument
+    'env'`` (live run, November 8, 2026).
+    """
+    lister = YtdlpFlatLister(interpreter=sys.executable)
+    result = lister.runner(
+        [sys.executable, "-c", "print('ok')"], timeout_s=60, env=proc.allowed_environment()
+    )
+    assert result.returncode == 0
+    assert result.stdout.strip() == b"ok"

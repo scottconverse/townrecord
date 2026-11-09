@@ -13,6 +13,7 @@ runner here, so no test in this file starts a process or reaches the network.
 from __future__ import annotations
 
 import json
+import sys
 from typing import Any
 
 import pytest
@@ -318,3 +319,17 @@ def test_describe_status_names_the_field_the_video_carried(
     info: dict[str, Any], expected: str
 ) -> None:
     assert describe_status(info) == expected
+
+
+def test_the_default_runner_takes_the_call_the_asker_makes() -> None:
+    """With no runner given, the asker's own call shape runs a real child.
+
+    The asker passes ``env=``; a default that refuses it fails every status ask
+    the moment a real service uses it (live run, November 8, 2026).
+    """
+    asker = StatusAsker(interpreter=sys.executable)
+    result = asker.runner(
+        [sys.executable, "-c", "print('ok')"], timeout_s=60, env=proc.allowed_environment()
+    )
+    assert result.returncode == 0
+    assert result.stdout.strip() == b"ok"
