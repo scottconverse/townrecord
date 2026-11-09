@@ -212,6 +212,9 @@ def sep22_fixture_path() -> Path | None:
     """
     named = os.environ.get("TOWNRECORD_SEP22_SRV3", "").strip()
     paths = (Path(named), *SEP22_CANDIDATES) if named else SEP22_CANDIDATES
+    evidence = os.environ.get("TOWNRECORD_EVIDENCE", "").strip()
+    if evidence:
+        paths = (*paths, Path(evidence) / "youtube" / "captions-sep22" / SEP22_FIXTURE_NAME)
     for path in paths:
         if path.is_file():
             return path
