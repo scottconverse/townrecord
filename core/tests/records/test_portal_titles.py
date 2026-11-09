@@ -20,7 +20,7 @@ import re
 import pytest
 
 from townrecord.records import portal
-from townrecord.repo import get_source, insert_body
+from townrecord.repo import get_source, insert_body, insert_jurisdiction, insert_source
 
 from .conftest import ARCHIVED_2026, needs
 
@@ -380,3 +380,83 @@ def test_the_three_meetings_of_the_day_the_live_sync_missed_read_as_their_bodies
     assert portal.body_name(that_day[3710]) == "City Council"
     assert portal.body_name(that_day[3709]) == "City Council"
     assert portal.body_name(that_day[3797]) == "Longmont Housing Authority Advisory Board"
+
+
+#: The Planning and Zoning titles Longmont's second YouTube channel carries
+#: (live watch, November 9, 2026). Not one was linked to its meeting.
+LONGMONT_PZ_CHANNEL_TITLES = (
+    "Longmont Planning & Zoning - Regular Session - October 21, 2026",
+    "Longmont Planning & Zoning - Regular Session - September 23, 2026",
+    "Longmont Planning & Zoning - Regular Session - September 16, 2026",
+    "Longmont Planning & Zoning - Regular Session - August 19, 2026",
+    "Longmont Planning & Zoning - Regular Session - July 22, 2026",
+    "Longmont Planning & Zoning - Regular Session - June 17, 2026",
+)
+
+
+def _longmont(conn, *names: str):
+    """A Longmont jurisdiction holding the named bodies, and its channel source."""
+    jurisdiction_id = insert_jurisdiction(conn, type="city", name="Longmont")
+    for name in names:
+        insert_body(conn, jurisdiction_id=jurisdiction_id, name=name)
+    source_id = insert_source(
+        conn,
+        jurisdiction_id=jurisdiction_id,
+        type="video_channel",
+        origin="https://www.youtube.com/channel/second",
+        suggested_by="a person",
+        reason="the tests need one",
+        status="accepted",
+    )
+    return get_source(conn, source_id)
+
+
+def test_a_title_led_by_the_city_and_missing_the_last_word_finds_its_one_board(conn) -> None:
+    """A "Longmont Planning & Zoning" title is the Planning and Zoning Commission.
+
+    The city's own name in front of a title is not part of the body's name, and
+    a name that stops short of its last word (Commission, Board, Committee,
+    Authority) names the one body of the city it fits.
+    """
+    source = _longmont(
+        conn,
+        "City Council",
+        "Planning and Zoning Commission",
+        "Longmont Urban Renewal Authority",
+        "Water Board",
+    )
+    for title in LONGMONT_PZ_CHANNEL_TITLES:
+        found = portal.resolve_body(conn, source, title)
+        assert found is not None, f"{title!r} names the Planning and Zoning Commission"
+        assert found.name == "Planning and Zoning Commission"
+
+
+def test_a_body_whose_name_starts_with_the_city_keeps_it(conn) -> None:
+    """The Longmont Urban Renewal Authority is still found by its full name."""
+    source = _longmont(conn, "Longmont Urban Renewal Authority", "Urban Renewal Authority")
+
+    found = portal.resolve_body(conn, source, "Longmont Urban Renewal Authority - Regular Meeting")
+
+    assert found is not None
+    assert found.name == "Longmont Urban Renewal Authority"
+
+
+def test_a_short_name_two_boards_fit_is_skipped(conn) -> None:
+    """With a Planning Commission and a Planning Board, "Planning" names neither."""
+    source = _longmont(conn, "Planning Commission", "Planning Board")
+
+    assert portal.resolve_body(conn, source, "Longmont Planning - Regular Session") is None
+
+
+def test_only_the_four_board_words_may_be_missing(conn) -> None:
+    """A missing last word other than Commission, Board, Committee or Authority is no match."""
+    source = _longmont(conn, "Golf Course Advisory Group")
+
+    assert portal.resolve_body(conn, source, "Golf Course Advisory - Regular Session") is None
+
+
+def test_a_city_title_for_a_body_the_city_lacks_is_still_skipped(conn) -> None:
+    """The Housing Authority's board is not a body of the city, with or without the prefix."""
+    source = _longmont(conn, "City Council", "Planning and Zoning Commission")
+
+    assert portal.resolve_body(conn, source, "Longmont Housing Authority Advisory Board") is None

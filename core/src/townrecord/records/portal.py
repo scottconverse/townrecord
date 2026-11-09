@@ -34,7 +34,15 @@ from ..adapters.primegov import PrimeGovAdapter
 from ..align.identifiers import find_identifiers
 from ..config import Settings
 from ..jobs import JobContext, enqueue
-from ..repo import BROKEN_AFTER_FAILURES, Body, Source, bodies, get_body, get_source
+from ..repo import (
+    BROKEN_AFTER_FAILURES,
+    Body,
+    Source,
+    bodies,
+    get_body,
+    get_jurisdiction,
+    get_source,
+)
 
 #: The job kinds this package registers (spec 16.1). Their lanes are the ones
 #: the brief gives them: a packet is 60 to 170 MB, so fetching one is heavy, and
@@ -832,10 +840,38 @@ def resolve_body(conn: sqlite3.Connection, source: Source, title: str) -> Body |
         for body in held:
             if _folded_name(body.name) == folded:
                 return body
-        return _gathered_body(held, title)
+        jurisdiction = get_jurisdiction(conn, source.jurisdiction_id)
+        city = _folded_name(jurisdiction.name) if jurisdiction else ""
+        return _gathered_body(held, title) or _short_body(held, folded, city)
     if source.body_id is None:
         return None
     return get_body(conn, source.body_id)
+
+
+#: The last words a title may leave off a body's name: "Longmont Planning &
+#: Zoning" is the Planning and Zoning Commission.
+_DROPPABLE_LAST_WORDS = ("commission", "board", "committee", "authority")
+
+
+def _short_body(held: Iterable[Body], folded: str, city: str) -> Body | None:
+    """The one body a short or city-led name fits, or None.
+
+    The city's own name in front of a title is not part of the body's name
+    ("Longmont Planning & Zoning"), and a name may stop short of its last word
+    when that word is Commission, Board, Committee or Authority. The name is
+    taken only when exactly one body of the city fits it; two that fit, or
+    none, give None and the caller reports the title.
+    """
+    names = [folded]
+    if city and folded.startswith(city + " "):
+        names.append(folded[len(city) + 1 :])
+    fits: list[Body] = []
+    for body in held:
+        full = _folded_name(body.name)
+        head, _, last = full.rpartition(" ")
+        if any(name == full or (last in _DROPPABLE_LAST_WORDS and name == head) for name in names):
+            fits.append(body)
+    return fits[0] if len(fits) == 1 else None
 
 
 def _folded_name(name: str) -> str:
