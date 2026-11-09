@@ -190,3 +190,113 @@ def test_the_service_installs_one_pace_for_the_whole_process(settings: Settings)
 
     service.close()
     assert pacing.forget_pacer(installed) is False, "the service kept its pace after closing"
+
+
+# -- a runtime installed while the service runs ------------------------------
+
+
+def test_a_runtime_installed_after_start_is_used_without_a_restart(settings: Settings) -> None:
+    """The first run installs yt-dlp and TextFlowKit while the service is up.
+
+    The live run of 2026-11-08 built the service before either runtime existed,
+    so every capture ran this process's interpreter, which has no yt_dlp, until
+    the service was restarted. The handlers follow the active runtime instead.
+    """
+    import sys
+
+    from townrecord.runtime.settings import TEXTFLOWKIT_PROGRAM, TEXTFLOWKIT_TOOL
+    from townrecord.runtime.tools import program_in
+
+    from .runtime.fakes import installed, make_venv, write_installed
+
+    service = build_service(settings, clock=lambda: BEFORE_THE_DAY)
+    capture = service.handlers[CAPTURE_JOB_KIND]
+    assert capture.current().interpreter == sys.executable
+
+    root = settings.runtime_root
+    python = make_venv(root, "2026.11.1")
+    write_installed(root, installed("2026.11.1", "2026.11.1"), None)
+    make_venv(root, "0.1.19", tool=TEXTFLOWKIT_TOOL, program=TEXTFLOWKIT_PROGRAM)
+    write_installed(
+        root, installed("0.1.19", "0.1.19", tool=TEXTFLOWKIT_TOOL), None, tool=TEXTFLOWKIT_TOOL
+    )
+    program = program_in(root / "runtimes" / TEXTFLOWKIT_TOOL / "0.1.19", TEXTFLOWKIT_PROGRAM)
+
+    assert capture.current().interpreter == str(python)
+    assert service.handlers[RECHECK_JOB_KIND].current().interpreter == str(python)
+    transcribe = service.handlers[TRANSCRIBE_JOB_KIND].current()
+    assert transcribe.ytdlp_interpreter == str(python)
+    assert transcribe.textflowkit_program == str(program)
+    watch = service.handlers[WATCH_CHANNEL_JOB_KIND].current()
+    assert watch.ladder.ytdlp.interpreter == str(python)
+    service.close()
+
+
+def test_the_update_job_updates_the_tool_its_payload_names(settings: Settings) -> None:
+    """One runtime_update kind, and the payload says which tool (spec 8.9).
+
+    Nothing installed TextFlowKit in the live run, because the one handler was
+    built for yt-dlp and ignored the payload's ``tool``.
+    """
+    from townrecord.runtime.settings import TEXTFLOWKIT_TOOL, TOOL_NAME
+
+    service = build_service(settings, clock=lambda: BEFORE_THE_DAY)
+    update = service.handlers[RUNTIME_UPDATE_KIND]
+
+    assert update.for_payload({"tool": TEXTFLOWKIT_TOOL}).tool == TEXTFLOWKIT_TOOL
+    assert update.for_payload({"tool": TOOL_NAME}).tool == TOOL_NAME
+    assert update.for_payload(None).tool == TOOL_NAME
+    with pytest.raises(ValueError, match="does not manage"):
+        update.for_payload({"tool": "left-pad"})
+    service.close()
+
+
+def test_a_watch_waits_for_the_yt_dlp_runtime_instead_of_failing(
+    settings: Settings, conn: sqlite3.Connection
+) -> None:
+    """A watch that runs before yt-dlp is installed waits for it (spec 8.9).
+
+    The live run of 2026-11-09 queued a watch at start, beside the first
+    ``runtime_update``. The watch ran nine seconds before the install finished,
+    the channel's feed answered 404, and the last rung ran yt-dlp with this
+    process's interpreter, which has no yt_dlp: the job failed with "No module
+    named yt_dlp" and the channel was not watched. Nothing here is faked but
+    the feed's 404, which is what YouTube answered for both Longmont channels.
+    """
+    import httpx
+
+    from townrecord.jobs import Runner
+    from townrecord.records import portal
+    from townrecord.repo import insert_jurisdiction, insert_source
+    from townrecord.video.watch import LANE as WATCH_LANE
+
+    city = insert_jurisdiction(conn, type="city", name="Longmont")
+    source = insert_source(
+        conn,
+        jurisdiction_id=city,
+        type=portal.VIDEO_CHANNEL,
+        origin="https://www.youtube.com/channel/UCH5ilm2TwUm2C9-pc8ejNKw",
+        suggested_by="a person",
+        reason="the city's channel",
+        status="accepted",
+        body_id=None,
+        settings="{}",
+    )
+    feed_404 = httpx.MockTransport(lambda request: httpx.Response(404))
+    client = httpx.Client(transport=feed_404, trust_env=False)
+    service = build_service(settings, clock=lambda: BEFORE_THE_DAY, client=client)
+    try:
+        job_id = enqueue(
+            conn, WATCH_CHANNEL_JOB_KIND, {"source_id": source}, registry=service.registry
+        )
+        conn.commit()
+        Runner(settings.db_path, registry=service.registry, clock=lambda: BEFORE_THE_DAY).run_once(
+            WATCH_LANE
+        )
+    finally:
+        service.close()
+
+    row = get(conn, job_id)
+    assert row["state"] == QUEUED, row["last_error"]
+    assert "yt-dlp" in row["last_error"] and "not installed" in row["last_error"]
+    assert row["run_after"] > BEFORE_THE_DAY.isoformat()

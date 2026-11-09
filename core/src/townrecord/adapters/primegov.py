@@ -473,7 +473,7 @@ class PrimeGovAdapter:
                 items.append(
                     _agenda_item(
                         _number_stem(section_number) + ".",
-                        _clean(_text_of(section, tag="td", class_name="section-heading")),
+                        _clean(_title_of(section, tag="td", class_name="section-heading")),
                         _seconds(section.attrs.get("data-videolocation")),
                         video_duration_s,
                     )
@@ -488,7 +488,7 @@ class PrimeGovAdapter:
                 items.append(
                     _agenda_item(
                         number,
-                        _clean(_text_of(element, class_name="agenda-item")),
+                        _clean(_title_of(element, class_name="agenda-item")),
                         _seconds(element.attrs.get("data-videolocation")),
                         video_duration_s,
                     )
@@ -531,6 +531,39 @@ def _agenda_item(
 def _text_of(node: _Node, **keys: Any) -> str:
     found = node.find(**keys)
     return found.text() if found is not None else ""
+
+
+def _title_of(node: _Node, **keys: Any) -> str:
+    """The title in the matching node: its text up to the first paragraph break.
+
+    Two things the portal puts in the same cell are not the title, measured on
+    the Historic Preservation Commission agenda of November 2026: a note after a
+    paragraph break ("Adjournment", then the special assistance notice), and the
+    hidden list of a section's attachments ("Approval of October, 2026, Regular
+    Meeting Minutes", then "100126 HPC draft minutes").
+    """
+    found = node.find(**keys)
+    if found is None:
+        return ""
+    parts: list[str] = []
+    _text_before_paragraph_break(found, parts)
+    return "".join(parts)
+
+
+def _text_before_paragraph_break(node: _Node, parts: list[str]) -> bool:
+    """Add the text under `node` to `parts`, and return True at a paragraph break."""
+    for child in node.children:
+        if isinstance(child, str):
+            parts.append(child)
+            continue
+        classes = child.attrs.get("class", "").split()
+        if child.tag == "br" and "paragraph-break" in classes:
+            return True
+        if "item_contents" in classes:
+            continue
+        if _text_before_paragraph_break(child, parts):
+            return True
+    return False
 
 
 def _as_date(value: date | datetime) -> date:

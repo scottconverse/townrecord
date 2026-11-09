@@ -14,8 +14,10 @@ skips silently).
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import httpx
 
@@ -70,6 +72,80 @@ class RuntimeUpdate:
         logger.info("The %s update check finished: %s", self.manager.tool, outcome.reason)
         if outcome.failed:
             ctx.pause(outcome.reason)
+
+
+@dataclass
+class RuntimeUpdates:
+    """The ``runtime_update`` handler when TownRecord manages more than one tool.
+
+    The job kind is one, and the payload's ``tool`` says which tool a run
+    updates (spec 8.9). A payload with no tool means yt-dlp, which is what every
+    job enqueued before TextFlowKit had a runtime of its own carried. A tool
+    TownRecord does not manage is a plain error rather than a silent yt-dlp run.
+    """
+
+    updates: Mapping[str, RuntimeUpdate]
+
+    def for_payload(self, payload: Any) -> RuntimeUpdate:
+        """The update a job with this payload runs."""
+        tool = payload.get("tool") if isinstance(payload, Mapping) else None
+        name = str(tool or TOOL_NAME).strip()
+        try:
+            return self.updates[name]
+        except KeyError:
+            managed = ", ".join(sorted(self.updates))
+            raise ValueError(
+                f"TownRecord does not manage a tool called {name!r}; it manages {managed}."
+            ) from None
+
+    def __call__(self, ctx: JobContext) -> None:
+        self.for_payload(ctx.payload)(ctx)
+
+
+def program_probe(program: str) -> Probe:
+    """The test of a tool that is run as its own program, such as TextFlowKit.
+
+    The install already asked the program for its version through the program
+    itself, so a runtime that reached the test has a program that runs. The
+    test checks the program is in the venv being tested, next to its python,
+    which is the one thing a later step could still have lost.
+    """
+    from . import tools
+
+    def probe(python: str) -> bool:
+        venv = Path(python).parent.parent
+        return tools.program_in(venv, program).is_file()
+
+    return probe
+
+
+def register_tools(
+    *,
+    root: str | Path,
+    client: httpx.Client,
+    probes: Mapping[str, Probe],
+    test_video_urls: Mapping[str, str],
+    registry: Registry | None = None,
+    settings: RuntimeSettings | None = None,
+    uv_path: str | None = None,
+) -> RuntimeUpdates:
+    """Register one ``runtime_update`` handler that updates every tool in `probes`."""
+    runtime = settings or RuntimeSettings()
+    handler = RuntimeUpdates(
+        updates={
+            tool: RuntimeUpdate(
+                manager=RuntimeManager(
+                    root=Path(root), settings=runtime, uv_path=uv_path, tool=tool
+                ),
+                client=client,
+                probe=probe,
+                test_video_url=test_video_urls.get(tool, ""),
+            )
+            for tool, probe in probes.items()
+        }
+    )
+    (default_registry if registry is None else registry).register(JOB_KIND, handler, lane=LANE)
+    return handler
 
 
 def register(

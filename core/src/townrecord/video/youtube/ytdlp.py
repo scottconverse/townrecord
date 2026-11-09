@@ -91,12 +91,12 @@ def _published(entry: Mapping[str, Any]) -> str | None:
 
 
 class YtdlpFlatLister:
-    """Reads a channel with yt-dlp, first the streams tab, then the videos tab."""
+    """Reads a channel with yt-dlp: the streams tab, then the videos tab."""
 
     def __init__(
         self,
         *,
-        runner: Runner = proc.run_allowlisted,
+        runner: Runner = proc.run,
         interpreter: str | None = None,
         timeout_s: float = YTDLP_TIMEOUT_S,
         js_runtime: str | None = None,
@@ -111,12 +111,17 @@ class YtdlpFlatLister:
         self.js_runtime = js_runtime or resolve(self.interpreter).argument
 
     def list_videos(self, channel_url: str) -> list[VideoListing]:
-        """The channel's newest streams or videos, in one of the two tabs.
+        """The channel's newest streams and videos, from both tabs.
 
-        Both tabs failing is a failure that carries both reasons: zero videos
-        from yt-dlp is never read as "this channel posts nothing".
+        A city posts a meeting it streamed to /streams and a meeting it
+        uploaded afterwards to /videos, so one tab alone misses meetings. The
+        videos of both are kept once each, streams first. One tab that fails
+        does not hide the other; both failing is a failure that carries both
+        reasons: zero videos from yt-dlp is never read as "this channel posts
+        nothing".
         """
         reasons: list[str] = []
+        found: dict[str, VideoListing] = {}
         for tab in YTDLP_TABS:
             argv = ytdlp_argv(self.interpreter, channel_url, tab, js_runtime=self.js_runtime)
             # Spec 8.10: each tab is its own YouTube request, so each one waits
@@ -154,8 +159,11 @@ class YtdlpFlatLister:
             if not videos:
                 reasons.append(f"{tab}: yt-dlp listed 0 videos")
                 continue
-            return videos
+            for video in videos:
+                found.setdefault(video.video_id, video)
 
+        if found:
+            return list(found.values())
         raise ListingFailed("the yt-dlp listing found no videos: " + "; ".join(reasons))
 
     def _from_flat_payload(self, payload: Mapping[str, Any]) -> list[VideoListing]:

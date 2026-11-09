@@ -128,3 +128,59 @@ def test_a_pypi_lookup_that_fails_leaves_the_job_failed_and_not_paused(
     with pytest.raises(pypi.RuntimeLookupFailed, match="503"):
         handler(ctx)
     assert get(conn, ctx.job_id)["state"] != PAUSED
+
+
+# -- one kind, more than one tool -------------------------------------------
+
+
+def test_a_job_whose_payload_names_textflowkit_installs_textflowkit(
+    conn: sqlite3.Connection, app_root: Path
+) -> None:
+    """The payload's tool picks the runtime, and TextFlowKit's test is its program."""
+    import dataclasses
+
+    from townrecord.runtime.job import RuntimeUpdates, program_probe
+    from townrecord.runtime.settings import TEXTFLOWKIT_PROGRAM, TEXTFLOWKIT_TOOL, TOOL_NAME
+
+    from .fakes import pypi_url
+
+    calls: list[str] = []
+    textflowkit = RuntimeUpdate(
+        manager=manager_for(
+            app_root, FakeUV(reported="0.1.19", program=TEXTFLOWKIT_PROGRAM), tool=TEXTFLOWKIT_TOOL
+        ),
+        client=pypi_client("0.1.19", calls=calls),
+        probe=program_probe(TEXTFLOWKIT_PROGRAM),
+        test_video_url="its own program",
+    )
+    ytdlp_probe = FakeProbe(passed=True)
+    handler = RuntimeUpdates(
+        updates={TEXTFLOWKIT_TOOL: textflowkit, TOOL_NAME: handler_for(app_root, probe=ytdlp_probe)}
+    )
+    ctx = dataclasses.replace(
+        claimed_job(conn, JOB_KIND, FakeClock()), payload={"tool": TEXTFLOWKIT_TOOL}
+    )
+
+    handler(ctx)
+
+    checkpoint = checkpoint_of(conn, ctx.job_id)
+    assert checkpoint["tool"] == TEXTFLOWKIT_TOOL
+    assert checkpoint["switched"] is True
+    assert checkpoint["active"] == "0.1.19"
+    assert calls == [pypi_url(TEXTFLOWKIT_TOOL)]
+    assert ytdlp_probe.seen == []
+    assert (
+        manager_for(app_root, tool=TEXTFLOWKIT_TOOL)
+        .program()
+        .endswith(tuple(f"{TEXTFLOWKIT_PROGRAM}{suffix}" for suffix in ("", ".exe")))
+    )
+
+
+def test_the_program_test_fails_when_the_program_is_missing(app_root: Path) -> None:
+    from townrecord.runtime.job import program_probe
+    from townrecord.runtime.settings import TEXTFLOWKIT_PROGRAM, TEXTFLOWKIT_TOOL
+
+    python = make_venv(app_root, "0.1.19", tool=TEXTFLOWKIT_TOOL)
+    assert program_probe(TEXTFLOWKIT_PROGRAM)(str(python)) is False
+    make_venv(app_root, "0.1.19", tool=TEXTFLOWKIT_TOOL, program=TEXTFLOWKIT_PROGRAM)
+    assert program_probe(TEXTFLOWKIT_PROGRAM)(str(python)) is True

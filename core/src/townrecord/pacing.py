@@ -104,6 +104,9 @@ DEFAULT_MINIMUM_GAP_S = 10.0
 
 #: Seconds every YouTube request waits after one of them was answered 429.
 DEFAULT_RATE_LIMIT_BACKOFF_S = 900.0
+#: The longest a growing hold gets: each 429 after a lifted hold doubles the
+#: next one, up to this many seconds (six hours).
+DEFAULT_RATE_LIMIT_BACKOFF_MAX_S = 21600.0
 
 #: What yt-dlp says when YouTube rate limits it. The wording is not fixed by
 #: anything, so the check is a case-insensitive search for any of these and the
@@ -164,6 +167,7 @@ class PaceSettings:
 
     minimum_gap_s: float = DEFAULT_MINIMUM_GAP_S
     rate_limit_backoff_s: float = DEFAULT_RATE_LIMIT_BACKOFF_S
+    rate_limit_backoff_max_s: float = DEFAULT_RATE_LIMIT_BACKOFF_MAX_S
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> PaceSettings:
@@ -173,6 +177,11 @@ class PaceSettings:
             minimum_gap_s=_number(source, "TOWNRECORD_PACE_MINIMUM_GAP", DEFAULT_MINIMUM_GAP_S),
             rate_limit_backoff_s=_number(
                 source, "TOWNRECORD_PACE_RATE_LIMIT_BACKOFF", DEFAULT_RATE_LIMIT_BACKOFF_S
+            ),
+            rate_limit_backoff_max_s=_number(
+                source,
+                "TOWNRECORD_PACE_RATE_LIMIT_BACKOFF_MAX",
+                DEFAULT_RATE_LIMIT_BACKOFF_MAX_S,
             ),
         )
 
@@ -265,7 +274,7 @@ class Pacer:
         self._clock = clock
         self._sleep = sleep
         self._lock = threading.Lock()
-        self._next_allowed, self._reason = self._read_state()
+        self._next_allowed, self._reason, self._strikes, self._hold_until = self._read_state()
 
     # -- the two things a caller does ---------------------------------------
 
@@ -348,15 +357,34 @@ class Pacer:
         with the one that was refused, because a 429 is YouTube answering for
         the address. An already-longer hold is kept rather than shortened.
         """
-        seconds = self.settings.rate_limit_backoff_s if delay_s is None else max(0.0, delay_s)
+        base = self.settings.rate_limit_backoff_s if delay_s is None else max(0.0, delay_s)
         with self._lock:
             now = self._clock()
+            # A 429 that comes after the last hold lifted is YouTube refusing
+            # again, so the next hold is twice as long. One inside a hold that
+            # is still running is the same refusal, heard by another job.
+            if self._hold_until is None or now >= self._hold_until:
+                self._strikes += 1
+            seconds = min(
+                base * 2 ** max(0, self._strikes - 1),
+                max(base, self.settings.rate_limit_backoff_max_s),
+            )
             until = now + timedelta(seconds=seconds)
+            if self._hold_until is None or until > self._hold_until:
+                self._hold_until = until
             if self._next_allowed is None or until > self._next_allowed:
                 self._next_allowed = until
             self._reason = f"{what} was rate limited" + (f" ({marker})" if marker else "")
             self._write_state()
             return until
+
+    def answered(self) -> None:
+        """Say YouTube answered a request, so the next hold starts short again."""
+        with self._lock:
+            if self._strikes == 0:
+                return
+            self._strikes = 0
+            self._write_state()
 
     # -- what the pacer is holding, for a person and for a test --------------
 
@@ -385,10 +413,10 @@ class Pacer:
         self._reason = f"{what} was the last request"
         self._write_state()
 
-    def _read_state(self) -> tuple[datetime | None, str]:
+    def _read_state(self) -> tuple[datetime | None, str, int, datetime | None]:
         """Read the hold a previous run left behind, or nothing."""
         if self.state_path is None or not self.state_path.is_file():
-            return None, ""
+            return None, "", 0, None
         try:
             data = json.loads(self.state_path.read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:
@@ -397,10 +425,16 @@ class Pacer:
                 self.state_path,
                 exc,
             )
-            return None, ""
+            return None, "", 0, None
         if not isinstance(data, Mapping):
-            return None, ""
-        return _parse_stamp(data.get("next_allowed_at")), str(data.get("reason") or "")
+            return None, "", 0, None
+        strikes = data.get("strikes")
+        return (
+            _parse_stamp(data.get("next_allowed_at")),
+            str(data.get("reason") or ""),
+            strikes if isinstance(strikes, int) and strikes >= 0 else 0,
+            _parse_stamp(data.get("hold_until")),
+        )
 
     def _write_state(self) -> None:
         """Write the hold where a restart reads it. Called with the lock held.
@@ -419,6 +453,10 @@ class Pacer:
                     "version": PACE_VERSION,
                     "next_allowed_at": None if moment is None else stamp_text(moment),
                     "reason": self._reason,
+                    "strikes": self._strikes,
+                    "hold_until": None
+                    if self._hold_until is None
+                    else stamp_text(self._hold_until),
                 },
             )
         except OSError as exc:
@@ -483,6 +521,7 @@ def pacer() -> Pacer:
 
 __all__ = [
     "DEFAULT_MINIMUM_GAP_S",
+    "DEFAULT_RATE_LIMIT_BACKOFF_MAX_S",
     "DEFAULT_RATE_LIMIT_BACKOFF_S",
     "PACE_FILE_NAME",
     "PACE_VERSION",

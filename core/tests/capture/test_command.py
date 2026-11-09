@@ -246,3 +246,20 @@ def test_a_retry_keeps_the_runtime_it_was_given() -> None:
     assert argv[argv.index("--js-runtimes") + 1] == "deno:/opt/venv/bin/deno"
     assert argv[argv.index("--extractor-args") - 1] == "deno:/opt/venv/bin/deno"
     assert argv[argv.index("--extractor-args") + 1] == "youtube:player_client=tv_embedded"
+
+
+def test_a_command_youtube_answered_resets_the_growing_hold(the_process_pace) -> None:
+    """A capture that worked is YouTube answering again (spec 8.10)."""
+    pace = the_process_pace
+    pace.rate_limited(what="a caption capture", marker="http error 429")
+    pace.clock.now = pace.next_allowed_at()
+    pace.rate_limited(what="a caption capture", marker="http error 429")
+    pace.clock.now = pace.next_allowed_at()
+
+    def runner(argv, *, timeout_s, env):
+        return proc.ProcessResult(argv=tuple(argv), returncode=0, stdout=b"", stderr="")
+
+    run_capture(runner, SPEC_8_3, timeout_s=30.0)
+    pace.rate_limited(what="a caption capture", marker="http error 429")
+
+    assert pace.held_for() == 900.0

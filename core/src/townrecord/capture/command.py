@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from .. import proc
+from .. import pacing, proc
 from ..pacing import RATE_LIMIT_MARKERS as RATE_LIMIT_MARKERS
 from ..pacing import rate_limit_marker as rate_limit_marker
 from ..runtime.javascript import FALLBACK_RUNTIME
@@ -167,4 +167,8 @@ def run_capture(runner: Runner, argv: Sequence[str], *, timeout_s: float) -> pro
     secret in it: :func:`townrecord.proc.allowed_environment` keeps only the
     names on the allow-list.
     """
-    return runner(argv, timeout_s=timeout_s, env=proc.allowed_environment())
+    result = runner(argv, timeout_s=timeout_s, env=proc.allowed_environment())
+    if result.ok:
+        # YouTube answered, so a later 429 starts the hold short again (spec 8.10).
+        pacing.pacer().answered()
+    return result

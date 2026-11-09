@@ -16,6 +16,7 @@ import sqlite3
 import threading
 import time
 from collections.abc import Callable
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from ..db import connect as default_connect
@@ -141,9 +142,16 @@ class Runner:
         try:
             while not self._stop.is_set():
                 self._reclaim_if_due(conn)
-                taken = queue.claim(
-                    conn, lane, worker_id, settings=self._settings, clock=self._clock
-                )
+                try:
+                    taken = queue.claim(
+                        conn, lane, worker_id, settings=self._settings, clock=self._clock
+                    )
+                except sqlite3.OperationalError as exc:
+                    # A busy database is a wait. A worker that died here left
+                    # its lane unserved for the rest of the run.
+                    logger.warning("The %s worker could not claim a job: %s", worker_id, exc)
+                    self._stop.wait(self._settings.poll_interval)
+                    continue
                 if taken is None:
                     self._stop.wait(self._settings.poll_interval)
                     continue
@@ -246,6 +254,18 @@ class Runner:
                 "Job %s: another worker holds the claim, so this result was dropped.",
                 taken.job_id,
             )
+        except sqlite3.OperationalError as exc:
+            if not _is_busy(exc):
+                logger.exception("Job %s (%s) failed", taken.job_id, taken.kind)
+                self._close(conn, taken, queue.FAILED, queue.short_reason(exc))
+            else:
+                logger.warning("Job %s found the database busy and will run again.", taken.job_id)
+                self._requeue(
+                    conn,
+                    taken,
+                    BUSY_REASON.format(error=exc),
+                    run_after=self._clock() + timedelta(seconds=BUSY_RETRY_S),
+                )
         except Exception as exc:  # noqa: BLE001 - one bad job must not stop the worker
             logger.exception("Job %s (%s) failed", taken.job_id, taken.kind)
             self._close(conn, taken, queue.FAILED, queue.short_reason(exc))
@@ -265,10 +285,37 @@ class Runner:
                 taken.job_id,
             )
 
-    def _requeue(self, conn: sqlite3.Connection, taken: Claim, reason: str) -> None:
+    def _requeue(
+        self,
+        conn: sqlite3.Connection,
+        taken: Claim,
+        reason: str,
+        *,
+        run_after: datetime | None = None,
+    ) -> None:
         try:
-            queue.return_to_queue(conn, taken.job_id, taken.token, reason=reason, clock=self._clock)
+            queue.return_to_queue(
+                conn,
+                taken.job_id,
+                taken.token,
+                reason=reason,
+                clock=self._clock,
+                run_after=run_after,
+            )
         except ClaimLost:
             logger.warning(
                 "Job %s: another worker holds the claim, so it was left alone.", taken.job_id
             )
+
+
+#: How long a job that found the database busy waits before it runs again.
+BUSY_RETRY_S = 30.0
+
+#: The reason a job that found the database busy carries until it runs again.
+BUSY_REASON = "The database was busy ({error}), so this job will run again in 30 seconds."
+
+
+def _is_busy(exc: sqlite3.OperationalError) -> bool:
+    """True when SQLite refused because another connection held the file."""
+    text = str(exc).lower()
+    return "locked" in text or "busy" in text

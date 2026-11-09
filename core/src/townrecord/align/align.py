@@ -89,6 +89,26 @@ _RULE_ITEM_NUMBER = 1
 _RULE_WRITTEN_IDENTIFIER = 2
 _RULE_TITLE = 3
 
+#: Words a chair uses to move the meeting on to the next item. A title the
+#: captioner breaks across lines counts only after one of these, because the
+#: chair reading the rules names item titles across lines too ("speak during
+#: first call public invited / to be heard") without reaching any item.
+_TRANSITION_CUE = re.compile(
+    r"\b(?:(?:now|move|moving|go|going|turn|turning)\s+on\s+to|"
+    r"(?:move|moving|go|going|turn|turning)\s+to|"
+    r"(?:first|next)\s+item(?:\s+(?:for|of)\s+(?:discussion|business))?"
+    r"(?:\s+(?:will\s+be|is))?|"
+    r"next\s+up(?:\s+is)?)\b",
+    re.IGNORECASE,
+)
+
+#: The agenda's notes in brackets, which a chair does not read out.
+_BRACKETED_NOTE = re.compile(r"\([^)]*\)")
+
+#: A dash between two parts of a title: a hyphen with spaces round it, or an
+#: en or em dash, which the Longmont agendas use.
+_TITLE_DASH = re.compile(r"\s-\s|[\u2013\u2014]")
+
 #: One or more dots or spaces separate the parts of an agenda item number.
 _NUMBER_SEPARATOR = re.compile(r"[.\s]+")
 
@@ -122,6 +142,7 @@ class AlignmentSettings:
     title_min_word_length: int = 4
     title_min_words: int = 2
     identifier_kind_window_words: int = 4
+    title_window_s: float = 15.0
 
 
 @dataclass(frozen=True)
@@ -214,6 +235,7 @@ class _Item:
     title: str
     parts: tuple[str, ...]
     title_words: tuple[str, ...]
+    announced_titles: tuple[tuple[str, ...], ...]
     identifiers: dict[tuple[int, int], str | None]
     agenda_seconds: int | None
     video_time_status: str
@@ -237,6 +259,15 @@ class _Item:
         if len(self.title_words) < settings.title_min_words:
             return False
         return all(word in segment_words for word in self.title_words)
+
+    def announced_reading(
+        self, words: set[str], settings: AlignmentSettings
+    ) -> tuple[str, ...] | None:
+        """The first way of announcing the title whose every word was said."""
+        for reading in self.announced_titles:
+            if len(reading) >= settings.title_min_words and all(word in words for word in reading):
+                return reading
+        return None
 
     def mentioned_words(self, words: set[str], settings: AlignmentSettings) -> tuple[str, ...]:
         """The item's title words the transcript says near a published time.
@@ -266,6 +297,21 @@ class _Boundary:
     rule: int
 
 
+def _announced_titles(title: str) -> tuple[tuple[str, ...], ...]:
+    """The ways a chair announces a title, as the words over four letters of each.
+
+    The agenda's note in brackets, such as "(3 minute limitation per speaker)",
+    is never read out, so it is left out. A title with a dash in it, such as
+    "Public Invited to be Heard - for topics other than public hearings", is
+    announced by either side, so each side is offered on its own as well.
+    """
+    plain = _BRACKETED_NOTE.sub(" ", title)
+    readings: dict[tuple[str, ...], None] = {significant_words(plain): None}
+    for side in _TITLE_DASH.split(plain):
+        readings.setdefault(significant_words(side), None)
+    return tuple(words for words in readings if words)
+
+
 def _build_item(index: int, item: AgendaItem) -> _Item:
     """Work out an agenda item's number parts, title words and identifiers once."""
     identifiers: dict[tuple[int, int], str | None] = {}
@@ -277,6 +323,7 @@ def _build_item(index: int, item: AgendaItem) -> _Item:
         title=item.title,
         parts=_item_parts(item.number),
         title_words=significant_words(item.title),
+        announced_titles=_announced_titles(item.title),
         identifiers=identifiers,
         agenda_seconds=item.video_seconds,
         video_time_status=item.video_time_status,
@@ -350,6 +397,66 @@ def _candidates_in_segment(
     return found
 
 
+def _announced_title_candidates(
+    items: Sequence[_Item],
+    segments: Sequence[Segment],
+    settings: AlignmentSettings,
+    already: set[tuple[int, int]],
+) -> list[_Boundary]:
+    """Titles the chair announces that the captioner broke across lines.
+
+    Spec 10.2's title rule asks for every title word in one segment, and a
+    caption line holds about seven words, so a title such as "Public Invited
+    To Be Heard" is often split. This reads on from a transition cue through
+    the segments that start within ``title_window_s`` of it, and stops at the
+    next cue, because that is the chair moving on again. The title counts
+    when every word of some way of announcing it is said in that stretch, and
+    the item starts at the line where its words start, not at the cue: on
+    September 8, 2026 "move on to city manager report" was followed by
+    "special reports and presentations" with no cue of its own.
+    """
+    found: list[_Boundary] = []
+    for position, segment in enumerate(segments):
+        cue = _TRANSITION_CUE.search(segment.text)
+        if cue is None:
+            continue
+        stretch: list[tuple[int, set[str], str]] = [
+            (
+                segment.start_ms,
+                set(words_of(segment.text[cue.start() :])),
+                segment.text[cue.start() :],
+            )
+        ]
+        limit_ms = segment.start_ms + round(settings.title_window_s * 1000)
+        for later in segments[position + 1 :]:
+            if later.start_ms > limit_ms:
+                break
+            next_cue = _TRANSITION_CUE.search(later.text)
+            text = later.text if next_cue is None else later.text[: next_cue.start()]
+            stretch.append((later.start_ms, set(words_of(text)), text))
+            if next_cue is not None:
+                break
+        said: set[str] = set().union(*(words for _, words, _ in stretch))
+        for item in items:
+            reading = item.announced_reading(said, settings)
+            if reading is None:
+                continue
+            first = next(i for i, (_, words, _) in enumerate(stretch) if words & set(reading))
+            start_ms = stretch[first][0]
+            if (item.index, start_ms) in already:
+                continue
+            matched = " ".join(text.strip() for _, _, text in stretch[first:])
+            found.append(
+                _Boundary(
+                    item_index=item.index,
+                    start_ms=start_ms,
+                    matched_text=matched,
+                    rule=_RULE_TITLE,
+                )
+            )
+    return found
+
+
 @dataclass(frozen=True)
 class _ChainNode:
     """One candidate boundary as a link in a chain of items in order."""
@@ -416,6 +523,13 @@ def _spoken_boundaries(
     for segment in segments:
         for candidate in _candidates_in_segment(items, segment, settings):
             candidates.setdefault(candidate.item_index, []).append(candidate)
+    already = {
+        (candidate.item_index, candidate.start_ms)
+        for found in candidates.values()
+        for candidate in found
+    }
+    for candidate in _announced_title_candidates(items, segments, settings, already):
+        candidates.setdefault(candidate.item_index, []).append(candidate)
     chain = _longest_orderly_chain(candidates)
     taken = {boundary.item_index: boundary for boundary in chain}
 

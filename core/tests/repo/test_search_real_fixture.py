@@ -61,6 +61,9 @@ def fixture_path() -> Path | None:
     """Return the caption file, from the environment or from a known place."""
     named = os.environ.get("TOWNRECORD_SEPT8_SRV3", "").strip()
     paths = (Path(named), *CANDIDATES) if named else CANDIDATES
+    evidence = os.environ.get("TOWNRECORD_EVIDENCE", "").strip()
+    if evidence:
+        paths = (*paths, Path(evidence) / "youtube" / "captions" / FIXTURE_NAME)
     for path in paths:
         if path.is_file():
             return path

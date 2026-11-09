@@ -16,6 +16,7 @@ that function is the only thing that can prove the promise.
 
 from __future__ import annotations
 
+from collections import Counter
 from pathlib import Path
 
 from townrecord.capture import JOB_KIND, register
@@ -28,10 +29,10 @@ from townrecord.repo import (
 )
 
 from ..capture.fakes import INFO_AUTO_CAPTIONS, FakeYtDlp
+from ..september_8 import expected_placement
 from .conftest import (
     AGENDA_16805,
     CAPTIONS_16805,
-    MEASURED_COUNTS,
     MEASURED_OFFSET_S,
     MEETING_3709,
     VIDEO_3709,
@@ -114,13 +115,14 @@ def test_a_real_capture_revives_the_paused_alignment(
     row = sync.job(align_id)
     assert row["state"] == DONE
     checkpoint = read_checkpoint(sync.conn, align_id)
-    assert checkpoint["counts_by_method"] == MEASURED_COUNTS
     assert checkpoint["offset_s"] == MEASURED_OFFSET_S
     alignment = get_meeting_alignment(sync.conn, meeting.id)
     assert alignment is not None
     assert alignment.video_id == video.id
     assert alignment.transcript_id == stored[0]["id"], "the alignment read the captured transcript"
-    placed = [item for item in agenda_items(sync.conn, meeting.id) if item.start_ms is not None]
-    assert len(placed) == (
-        MEASURED_COUNTS["spoken_transitions"] + MEASURED_COUNTS["html_video_times"]
+    items = agenda_items(sync.conn, meeting.id)
+    placement = {item.number: (item.alignment_method, item.start_ms) for item in items}
+    assert placement == expected_placement(placement), "each item starts where the captions say"
+    assert checkpoint["counts_by_method"] == dict(
+        Counter(method for method, _ in placement.values())
     )

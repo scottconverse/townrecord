@@ -312,19 +312,30 @@ def test_a_channel_the_watch_would_refuse_pauses_with_the_watchs_own_reason(
 def test_the_daily_update_check_runs_once_with_a_test_video(
     db_path: Path, conn: sqlite3.Connection, clock: FakeClock
 ) -> None:
+    """One check per managed tool: yt-dlp and TextFlowKit (spec 8.9).
+
+    The live run of 2026-11-08 had no TextFlowKit at all, because the day
+    owed a check for yt-dlp only.
+    """
     scheduler = build(db_path, clock)
     scheduler.tick()
     jobs = update_jobs(conn)
-    assert len(jobs) == 1
-    assert jobs[0]["origin"] == ORIGIN_SCHEDULED
-    row = conn.execute(
-        "SELECT * FROM schedule_runs WHERE task = ?", (TASK_RUNTIME_UPDATE,)
-    ).fetchone()
-    assert row["subject"] == tool_subject("yt-dlp")
-    assert row["state"] == "enqueued"
+    assert [json.loads(job["payload"]) for job in jobs] == [
+        {"tool": "yt-dlp"},
+        {"tool": "textflowkit"},
+    ]
+    assert all(job["origin"] == ORIGIN_SCHEDULED for job in jobs)
+    rows = conn.execute(
+        "SELECT * FROM schedule_runs WHERE task = ? ORDER BY id", (TASK_RUNTIME_UPDATE,)
+    ).fetchall()
+    assert [row["subject"] for row in rows] == [
+        tool_subject("yt-dlp"),
+        tool_subject("textflowkit"),
+    ]
+    assert all(row["state"] == "enqueued" for row in rows)
 
     scheduler.tick()
-    assert len(update_jobs(conn)) == 1
+    assert len(update_jobs(conn)) == 2
 
 
 def test_a_scheduled_run_and_a_manual_one_are_recorded_separately(
@@ -398,9 +409,11 @@ def test_the_update_check_says_which_setting_is_missing(
     scheduler = build(db_path, clock, test_video_url="")
     scheduler.tick()
 
-    assert update_jobs(conn) == []
+    # TextFlowKit's test is its own program, so only yt-dlp waits on the video.
+    assert [json.loads(job["payload"]) for job in update_jobs(conn)] == [{"tool": "textflowkit"}]
     row = conn.execute(
-        "SELECT * FROM schedule_runs WHERE task = ?", (TASK_RUNTIME_UPDATE,)
+        "SELECT * FROM schedule_runs WHERE task = ? AND subject = ?",
+        (TASK_RUNTIME_UPDATE, tool_subject("yt-dlp")),
     ).fetchone()
     assert row["state"] == "paused"
     assert row["reason"] == NO_TEST_VIDEO_REASON

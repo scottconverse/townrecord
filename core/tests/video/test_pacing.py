@@ -71,15 +71,16 @@ def test_a_rate_limited_status_ask_holds_the_other_youtube_jobs(
 
 
 def test_a_listing_waits_once_for_each_tab(pace: RecordingPacer) -> None:
-    """Two tabs are two requests, so the second one waits too."""
+    """Both tabs are read, and two tabs are two requests, so each one waits."""
     runner = FakeRunner()
     runner.answers["streams"] = (listing_bytes([an_entry("vid00000001", "A meeting")]), 0, "")
+    runner.answers["videos"] = (listing_bytes([an_entry("vid00000002", "An upload")]), 0, "")
 
     YtdlpFlatLister(runner=runner, interpreter="python").list_videos(
         f"https://www.youtube.com/channel/{CITY_CHANNEL_ID}"
     )
 
-    assert pace.waits == [LISTING]
+    assert pace.waits == [LISTING, LISTING]
 
 
 def test_a_listing_that_tries_both_tabs_waits_for_both(pace: RecordingPacer) -> None:

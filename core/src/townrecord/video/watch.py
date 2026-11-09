@@ -148,6 +148,7 @@ class _Tally:
     captures_queued: int = 0
     already_captured: int = 0
     not_ready: int = 0
+    before_window: int = 0
     not_ready_titles: list[str] = field(default_factory=list)
     skipped_total: int = 0
     skipped: list[str] = field(default_factory=list)
@@ -163,6 +164,23 @@ class _Tally:
         self.skipped_total += 1
         if len(self.skipped) < portal.MAX_REPORTED_SKIPS:
             self.skipped.append(sentence)
+
+
+def watch_window_start(payload: Any, *, today: date) -> date:
+    """The first day a watch captures meeting videos from.
+
+    A payload may name it as ``from_date`` (YYYY-MM-DD), the key a portal sync
+    takes. A watch nobody gave one captures the last
+    :data:`townrecord.records.portal.DEFAULT_WINDOW_DAYS` days, the first
+    capture of spec 7.1 step 5.
+    """
+    text = payload.get("from_date") if isinstance(payload, Mapping) else None
+    if not text:
+        return today - timedelta(days=portal.DEFAULT_WINDOW_DAYS)
+    try:
+        return date.fromisoformat(str(text))
+    except ValueError as exc:
+        raise WatchRefused(f"The start of the window {text!r} is not a YYYY-MM-DD date.") from exc
 
 
 def watch_request(payload: Any) -> int:
@@ -348,6 +366,7 @@ def register(*, registry: Any = None, ladder: ListingLadder | None = None) -> Wa
 def watch_channel(ctx: JobContext, ladder: ListingLadder) -> None:
     """List one channel source, store what it posted, and queue its captures."""
     source_id = watch_request(ctx.payload)
+    first_day = watch_window_start(ctx.payload, today=ctx.clock().date())
     try:
         source = watchable_source(ctx.conn, source_id)
         channel = channel_of(source.origin)
@@ -376,12 +395,17 @@ def watch_channel(ctx: JobContext, ladder: ListingLadder) -> None:
         tally.skip(note)
     for listing in result.videos:
         ctx.heartbeat()
-        _watch_video(ctx, source, listing, classifier, tally)
+        _watch_video(ctx, source, listing, classifier, tally, first_day)
     ctx.save_checkpoint(_checkpoint(tally, source, channel, result))
 
 
 def _watch_video(
-    ctx: JobContext, source: Source, listing: Any, classifier: MeetingClassifier, tally: _Tally
+    ctx: JobContext,
+    source: Source,
+    listing: Any,
+    classifier: MeetingClassifier,
+    tally: _Tally,
+    first_day: date,
 ) -> None:
     """Store one listed video, link it when it names a meeting, queue its capture."""
     tally.listed += 1
@@ -420,6 +444,23 @@ def _watch_video(
     if _already_captured(ctx, video):
         tally.already_captured += 1
         return
+    day = published_day(listing.published) or title_day(listing.title)
+    if day is None or day < first_day:
+        tally.before_window += 1
+        when = "has no date in its listing or its title" if day is None else f"is from {day}"
+        tally.skip(
+            f"Video {listing.video_id} ({listing.title!r}) {when}, so it is not inside the "
+            f"window that starts {first_day} and is not captured."
+        )
+        return
+    other = _meeting_recording(ctx, video)
+    if other is not None:
+        tally.already_captured += 1
+        tally.skip(
+            f"Video {video.id} ({listing.video_id}) is another recording of meeting "
+            f"{video.meeting_id}, which video {other} already covers, so it is not captured."
+        )
+        return
 
     queued = portal.enqueue_once(ctx, capture_job_kind(), {"video_id": video.id})
     if queued is None:
@@ -430,6 +471,40 @@ def _watch_video(
         )
     else:
         tally.captures_queued += 1
+
+
+def _meeting_recording(ctx: JobContext, video: repo.Video) -> int | None:
+    """Return another video of this video's meeting that is captured or being captured.
+
+    A meeting needs one recording. The portal often links one YouTube video and
+    the city's channel posts another of the same sitting; capturing both doubles
+    the YouTube requests for nothing, and on an address YouTube is already
+    refusing that is another 429. A video of the meeting that nobody captured and
+    nobody is capturing does not count, so a dead portal link never stops the
+    channel's copy from being captured.
+
+    The primary video is never the one passed over. The alignment, the minutes
+    and the speakers all read the primary's transcript, and the clerk's video
+    times are times in that video, so a copy another channel posted does not
+    cover it.
+    """
+    if video.meeting_id is None or video.is_primary:
+        return None
+    kind = capture_job_kind()
+    for other in ctx.conn.execute(
+        "SELECT id FROM videos WHERE meeting_id = ? AND id != ? ORDER BY is_primary DESC, id",
+        (video.meeting_id, video.id),
+    ).fetchall():
+        row = repo.get_video(ctx.conn, other["id"])
+        if row is not None and _already_captured(ctx, row):
+            return row.id
+        busy = ctx.conn.execute(
+            "SELECT 1 FROM jobs WHERE kind = ? AND payload = ? AND state IN ('queued', 'running')",
+            (kind, json.dumps({"video_id": other["id"]})),
+        ).fetchone()
+        if busy is not None:
+            return other["id"]
+    return None
 
 
 def _already_captured(ctx: JobContext, video: repo.Video) -> bool:
@@ -561,9 +636,14 @@ def _meeting_for(conn: sqlite3.Connection, source: Source, listing: Any) -> tupl
         )
     day = published_day(listing.published)
     if day is None:
+        # yt-dlp's flat listing carries no date; the city's titles carry the
+        # sitting's own day ("City Council Regular Session - November 3, 2026").
+        day = title_day(listing.title)
+    if day is None:
         return None, (
             f"Video {listing.video_id} ({listing.title!r}) is not linked to a meeting: its "
-            f"published date {listing.published!r} is not a date this watch can read."
+            f"published date {listing.published!r} is not a date this watch can read, and "
+            "its title names no date."
         )
 
     where = f"body {body.id} ({body.name!r})"
@@ -636,10 +716,68 @@ def published_day(published: str | None) -> date | None:
     "the time exactly as the source gave it").
     """
     text = (published or "").strip()
+    if _COMPACT_DAY.fullmatch(text):
+        # yt-dlp's own spelling of an upload date: 20261103.
+        text = f"{text[:4]}-{text[4:6]}-{text[6:]}"
     if len(text) < 10:
         return None
     try:
         return date.fromisoformat(text[:10])
+    except ValueError:
+        return None
+
+
+_MONTH_NUMBERS = {
+    name: number
+    for number, name in enumerate(
+        (
+            "january",
+            "february",
+            "march",
+            "april",
+            "may",
+            "june",
+            "july",
+            "august",
+            "september",
+            "october",
+            "november",
+            "december",
+        ),
+        start=1,
+    )
+}
+_MONTH = "|".join(_MONTH_NUMBERS)
+#: "November 3, 2026" and "3 November 2026", the two spellings the Longmont
+#: channels title a sitting with, and "11/3/26" from the portal's own titles.
+_MONTH_DAY_YEAR = re.compile(rf"\b({_MONTH})\s+(\d{{1,2}}),?\s+(\d{{4}})\b", re.IGNORECASE)
+_DAY_MONTH_YEAR = re.compile(rf"\b(\d{{1,2}})\s+({_MONTH})\s+(\d{{4}})\b", re.IGNORECASE)
+_SLASH_DATE = re.compile(r"\b(\d{1,2})/(\d{1,2})/(\d{2}|\d{4})\b")
+_COMPACT_DAY = re.compile(r"\d{8}")
+
+
+def title_day(title: str | None) -> date | None:
+    """The one day a video's title names, or None.
+
+    Two different days in one title name no single sitting, so they are None
+    too: the watch links on a date only when the title leaves one.
+    """
+    text = title or ""
+    days: set[date] = set()
+    for month, day, year in _MONTH_DAY_YEAR.findall(text):
+        days.add(_day_or_none(int(year), _MONTH_NUMBERS[month.casefold()], int(day)))
+    for day, month, year in _DAY_MONTH_YEAR.findall(text):
+        days.add(_day_or_none(int(year), _MONTH_NUMBERS[month.casefold()], int(day)))
+    for month, day, year in _SLASH_DATE.findall(text):
+        full_year = int(year) + 2000 if len(year) == 2 else int(year)
+        days.add(_day_or_none(full_year, int(month), int(day)))
+    days.discard(None)  # type: ignore[arg-type]
+    return days.pop() if len(days) == 1 else None
+
+
+def _day_or_none(year: int, month: int, day: int) -> date | None:
+    try:
+        return date(year, month, day)
     except ValueError:
         return None
 
@@ -671,6 +809,7 @@ def _checkpoint(tally: _Tally, source: Source, channel: ChannelRef, result: Any)
         "captures_queued": tally.captures_queued,
         "already_captured": tally.already_captured,
         "not_ready": tally.not_ready,
+        "before_window": tally.before_window,
         "skipped_total": tally.skipped_total,
         "skipped": list(tally.skipped),
     }

@@ -264,3 +264,86 @@ def test_the_stamp_is_the_queues_own_format() -> None:
     """One reader knows the pace file and the job rows (spec 16.1)."""
     assert stamp_text(START) == queue_stamp(START) == "2026-09-27T12:00:00.000000Z"
     assert stamp_text(START.replace(tzinfo=None)) == queue_stamp(START)
+
+
+# -- a hold that grows while YouTube keeps refusing -------------------------
+#
+# The live run of 2026-11-05 held 900 seconds after each 429, and the first
+# capture after every hold was refused again: five holds in 80 minutes and one
+# transcript between them. A hold that does not grow never lets the address
+# cool down, so each 429 that follows a lifted hold doubles the next one, and
+# a request YouTube answers puts it back to the first length.
+
+
+def lift(pace: Pacer, clock: StepClock) -> None:
+    """Move the clock to the moment the current hold ends."""
+    clock.now = pace.next_allowed_at() or clock.now
+
+
+def test_each_429_after_a_hold_lifts_doubles_the_hold() -> None:
+    pace, clock = a_pacer()
+
+    held = []
+    for _ in range(4):
+        pace.rate_limited(what="a caption capture", marker="http error 429")
+        held.append(pace.held_for())
+        lift(pace, clock)
+
+    assert held == [900.0, 1800.0, 3600.0, 7200.0]
+
+
+def test_the_growing_hold_stops_at_the_cap() -> None:
+    pace, clock = a_pacer()
+
+    for _ in range(10):
+        pace.rate_limited(what="a caption capture", marker="http error 429")
+        lift(pace, clock)
+    pace.rate_limited(what="a caption capture", marker="http error 429")
+
+    assert pace.held_for() == PaceSettings().rate_limit_backoff_max_s == 6 * 3600.0
+
+
+def test_two_429s_inside_one_hold_count_once() -> None:
+    """Two jobs refused in the same breath are one refusal, not two."""
+    pace, clock = a_pacer()
+
+    pace.rate_limited(what="a caption capture", marker="http error 429")
+    pace.rate_limited(what="a recheck", marker="http error 429")
+    lift(pace, clock)
+    pace.rate_limited(what="a caption capture", marker="http error 429")
+
+    assert pace.held_for() == 1800.0
+
+
+def test_an_answered_request_puts_the_hold_back_to_its_first_length() -> None:
+    pace, clock = a_pacer()
+
+    pace.rate_limited(what="a caption capture", marker="http error 429")
+    lift(pace, clock)
+    pace.rate_limited(what="a caption capture", marker="http error 429")
+    lift(pace, clock)
+    pace.answered()
+    pace.rate_limited(what="a caption capture", marker="http error 429")
+
+    assert pace.held_for() == 900.0
+
+
+def test_the_growing_hold_survives_a_restart(tmp_path: Path) -> None:
+    path = tmp_path / PACE_FILE_NAME
+    pace, clock = a_pacer(state_path=path)
+    pace.rate_limited(what="a caption capture", marker="http error 429")
+    lift(pace, clock)
+    pace.rate_limited(what="a caption capture", marker="http error 429")
+
+    restarted, again = a_pacer(state_path=path)
+    again.now = clock.now
+    lift(restarted, again)
+    restarted.rate_limited(what="a caption capture", marker="http error 429")
+
+    assert restarted.held_for() == 3600.0
+
+
+def test_the_cap_comes_from_the_environment() -> None:
+    settings = PaceSettings.from_env({"TOWNRECORD_PACE_RATE_LIMIT_BACKOFF_MAX": "7200"})
+
+    assert settings.rate_limit_backoff_max_s == 7200.0

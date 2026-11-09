@@ -689,3 +689,19 @@ def test_a_payload_that_is_not_a_video_id_fails_with_a_reason(
     with pytest.raises(CaptureFailed) as caught:
         capture(storage_root, FakeYtDlp())(ctx)
     assert "not a video id" in str(caught.value)
+
+
+def test_a_capture_writes_the_videos_length_onto_its_row(
+    conn: sqlite3.Connection, storage_root: Path, video: int
+) -> None:
+    """The live run of 2026-11-05 aligned no clerk time at all.
+
+    The align job reads the video's length off its row to place the agenda's
+    published times, and every captured row still had none: a portal link and a
+    channel feed do not state one. The sidecar the capture just read does.
+    """
+    assert repo.get_video(conn, video).duration_s is None
+
+    capture(storage_root, FakeYtDlp())(claimed_job(conn, video, FakeClock()))
+
+    assert repo.get_video(conn, video).duration_s == 7200

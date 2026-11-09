@@ -213,6 +213,21 @@ def set_capture_state(conn: sqlite3.Connection, video_id: int, state: str) -> No
     conn.execute("UPDATE videos SET capture_state = ? WHERE id = ?", (state, video_id))
 
 
+def record_duration(conn: sqlite3.Connection, video_id: int, duration_s: float | None) -> None:
+    """Write a video's length onto its row when the row has none yet.
+
+    A portal link and a channel feed rarely state the length; the capture's
+    sidecar does. The align job places the agenda's published times with it
+    (spec 10.2), so a row with no length aligns no clerk time at all.
+    """
+    if duration_s is None:
+        return
+    conn.execute(
+        "UPDATE videos SET duration_s = ? WHERE id = ? AND duration_s IS NULL",
+        (round(duration_s), video_id),
+    )
+
+
 def set_readiness(conn: sqlite3.Connection, video_id: int, readiness: str) -> None:
     """Say what a listing last read about a video's broadcast state (spec 8.2).
 

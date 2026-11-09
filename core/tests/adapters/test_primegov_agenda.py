@@ -131,3 +131,34 @@ def test_a_sample_of_statuses(
     items = {item.number: item for item in parse(portal, agenda_16805)}
 
     assert items[number].video_time_status == status
+
+
+#: The last two sections of a Historic Preservation Commission agenda
+#: (template 17539, November 2026), cut down: a section whose cell holds the
+#: hidden list of its attachments, and the last one, whose cell holds the
+#: special assistance notice after a paragraph break.
+HPC_SECTIONS = b"""<html><body>
+<div data-sectionid='47034'><table><tr class='section-row'>
+<td class='number-cell-section'>3.</td>
+<td class='section-heading'><div class='item-cell'>Approval of October, 2026, Regular Meeting
+Minutes</div><div style="display:none;" class="item_contents"><div class="attachment-holder">
+<a title="View 100126 HPC draft minutes">100126 HPC draft minutes</a></div></div></td>
+</tr></table></div>
+<div data-sectionid='47043'><table><tr class='section-row'>
+<td class='number-cell-section'>12.</td>
+<td class='section-heading'><div class='item-cell'>Adjournment<br class="paragraph-break">IF YOU
+NEED SPECIAL ASSISTANCE IN ORDER TO PARTICIPATE, PLEASE CONTACT PLANNING.</div></td>
+</tr></table></div>
+</body></html>"""
+
+
+def test_a_note_after_a_paragraph_break_is_not_part_of_the_title(portal: FakePortal) -> None:
+    items = {item.number: item for item in parse(portal, HPC_SECTIONS)}
+
+    assert items["12."].title == "Adjournment"
+
+
+def test_a_sections_hidden_attachment_list_is_not_part_of_its_title(portal: FakePortal) -> None:
+    items = {item.number: item for item in parse(portal, HPC_SECTIONS)}
+
+    assert items["3."].title == "Approval of October, 2026, Regular Meeting Minutes"

@@ -32,6 +32,7 @@ from townrecord.align import (
 )
 from townrecord.captions.parse import parse_srv3
 
+from ..september_8 import CLERK_TIMED, HAND_CHECKED_STARTS
 from .conftest import (
     AGENDA_16095,
     AGENDA_16805,
@@ -45,20 +46,8 @@ from .conftest import (
 #: The adapter is never asked to make a request here; the agenda is a file.
 BASE_URL = "https://portal.test.invalid"
 
-#: What the September 8, 2026 meeting was measured to align as, item by item.
-MEASURED_COUNTS = {
-    SPOKEN_TRANSITIONS: 22,
-    HTML_VIDEO_TIMES: 6,
-    NO_ALIGNMENT: 12,
-}
-
 #: The offset the clerk's times run ahead of the video clock, in seconds.
 MEASURED_OFFSET_S = 466
-
-#: The items that stay unplaced, by the numbers the agenda gives them. The
-#: last two are the appendix entries, numbered "1" and "2" with no dot, which
-#: is how the agenda numbers them and how they are reported.
-MEASURED_UNALIGNED = {"2.", "4.", "6.", "7.", "9.", "9.I", "10.", "15.", "16.", "17.", "1", "2"}
 
 #: The reading of the council's rules, 74 s to 95 s. Nothing may start there.
 RULES_READING_MS = (74_000, 95_000)
@@ -94,8 +83,17 @@ def test_the_september_meeting_measures_its_own_offset(september: AlignmentResul
     assert offset.offset_s == MEASURED_OFFSET_S
     assert offset.tolerance_s == MEASURED_TOLERANCE_S
     assert offset.min_anchors == MEASURED_MIN_ANCHORS
-    assert len(offset.anchors) == 22, "every item named in speech and on the agenda is an anchor"
-    assert len(offset.agreeing) == 10
+    spoken_and_timed = {
+        item.number
+        for item in september.items
+        if item.method == SPOKEN_TRANSITIONS and item.agenda_seconds is not None
+    }
+    assert {anchor.item_number for anchor in offset.anchors} == spoken_and_timed, (
+        "every item named in speech and on the agenda is an anchor"
+    )
+    for anchor in offset.anchors:
+        assert anchor.spoken_ms == HAND_CHECKED_STARTS[anchor.item_number]
+    assert len(offset.agreeing) == 13
     assert f"{MEASURED_OFFSET_S} s ahead of the video" in offset.reason
     for anchor in offset.agreeing:
         assert abs(anchor.difference_s - MEASURED_OFFSET_S) <= MEASURED_TOLERANCE_S
@@ -106,7 +104,18 @@ def test_the_september_meeting_measures_its_own_offset(september: AlignmentResul
 def test_the_september_meeting_aligns_by_all_three_methods(september: AlignmentResult) -> None:
     """Spec 18's count, for the one meeting where all three methods apply."""
     assert len(september.items) == 40
-    assert september.counts_by_method() == MEASURED_COUNTS
+    expected = {
+        item.number: (
+            NO_ALIGNMENT
+            if item.number not in HAND_CHECKED_STARTS
+            else HTML_VIDEO_TIMES
+            if item.number in CLERK_TIMED
+            else SPOKEN_TRANSITIONS,
+            HAND_CHECKED_STARTS.get(item.number),
+        )
+        for item in september.items
+    }
+    assert {item.number: (item.method, item.start_ms) for item in september.items} == expected
     assert september.spoken_reason is None
     assert september.html_reason is None
 
@@ -124,6 +133,11 @@ def test_the_september_meeting_puts_the_measured_items_where_they_were_said(
 
     consent = next(item for item in september.items if item.number == "9.A")
     assert consent.start_ms == 3_668_240
+
+    # The chair announces item 10 across two caption lines at 3967.5 s.
+    ordinances = next(item for item in september.items if item.number == "10.")
+    assert ordinances.method == SPOKEN_TRANSITIONS
+    assert ordinances.start_ms == 3_967_520
 
     # Method 1's own placements, moved by the measured offset.
     council_comments = next(item for item in september.items if item.number == "13.")
@@ -178,7 +192,10 @@ def test_the_september_meeting_reports_the_readings_it_passed_over(
 @needs(AGENDA_16805, CAPTIONS_16805)
 def test_the_item_of_a_moment_is_answered_by_the_boundaries(september: AlignmentResult) -> None:
     """Spec 10.2: the item of a segment is kept in one place, and asked for here."""
-    assert september.item_for(219_000) == "8."
+    # The chair says "special reports and presentations" at 215.2 s and moves
+    # on to the first call at 219.3 s.
+    assert september.item_for(219_000) == "7."
+    assert september.item_for(219_280) == "8."
     assert september.item_for(1_776_160) == "8.", "a public speaker is not a boundary"
     assert september.item_for(3_978_160) == "10.A.1"
     assert september.item_for(4_657_920) == "11."
@@ -194,7 +211,9 @@ def test_the_september_meeting_says_why_each_unplaced_item_was_unplaced(
 ) -> None:
     """An unplaced item carries a reason, and the reason is one of the known ones."""
     unplaced = september.unaligned_items()
-    assert {item.number for item in unplaced} == MEASURED_UNALIGNED
+    assert {item.number for item in unplaced} == {
+        item.number for item in september.items
+    } - HAND_CHECKED_STARTS.keys()
     for item in unplaced:
         assert item.method == NO_ALIGNMENT
         assert item.start_ms is None
@@ -202,17 +221,15 @@ def test_the_september_meeting_says_why_each_unplaced_item_was_unplaced(
         assert "no spoken transition matched" in item.reason, item.reason
 
     reasons = {item.number: item.reason.lower() for item in unplaced}
-    # No published time at all: the six items of the agenda proper, and the two
-    # appendix entries the agenda numbers without a dot.
-    for number in ("2.", "4.", "6.", "7.", "15.", "16.", "1", "2"):
+    # No published time at all: the five items of the agenda proper, and the
+    # two appendix entries the agenda numbers without a dot.
+    for number in ("2.", "4.", "6.", "15.", "16.", "1", "2"):
         assert "the agenda carries no video time for it" in reasons[number], reasons[number]
     # Two placeholder times on this agenda, both longer than the video, and
     # the last item's real time, which is past the end of the recording.
     assert "585015" in reasons["9."] and "outside the 14407 s video" in reasons["9."]
     assert "585021" in reasons["9.I"] and "outside the 14407 s video" in reasons["9.I"]
     assert "14864" in reasons["17."]
-    # Item 10's published time gives way to the spoken transition at 10.A.
-    assert "10.a" in reasons["10."] and "3972.4 s" in reasons["10."]
 
 
 @needs(AGENDA_16095)

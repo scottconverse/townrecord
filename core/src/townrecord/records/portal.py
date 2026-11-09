@@ -221,6 +221,10 @@ _MEETING_TYPES = (
 #: kind of record a meeting's minutes are looked for in.
 PACKET_KIND = "packet"
 
+#: The kind of a meeting's agenda. A meeting with no HTML agenda is aligned
+#: against the items of this record's pages (spec 10.2).
+AGENDA_KIND = "agenda"
+
 #: The record kinds migration ``0005_core_model.sql`` allows, with the words a
 #: portal template name uses for them. Longest first: "Agenda Packet" is a
 #: packet, and the adapter's own size rule reads "packet" the same way.
@@ -231,7 +235,7 @@ _TEMPLATE_KINDS = (
     ("packet", PACKET_KIND),
     ("budget", "budget"),
     ("report", "report"),
-    ("agenda", "agenda"),
+    ("agenda", AGENDA_KIND),
 )
 
 #: Spec 9.5: the document a clerk publishes to cancel a meeting.
