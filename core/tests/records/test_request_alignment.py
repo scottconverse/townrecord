@@ -43,10 +43,10 @@ from townrecord.repo import (
     upsert_meeting,
 )
 
+from ..september_8 import expected_placement
 from .conftest import (
     AGENDA_16805,
     CAPTIONS_16805,
-    MEASURED_COUNTS,
     MEASURED_OFFSET_S,
     VIDEO_3709,
     VIDEO_3709_DURATION_S,
@@ -181,15 +181,13 @@ def test_a_paused_alignment_that_is_asked_for_runs_through_the_runner(
     assert sync.job(job_id)["state"] == DONE
     checkpoint = read_checkpoint(sync.conn, job_id)
     assert checkpoint["meeting_id"] == meeting_id
-    assert checkpoint["counts_by_method"] == MEASURED_COUNTS
     assert checkpoint["offset_s"] == MEASURED_OFFSET_S
     alignment = get_meeting_alignment(sync.conn, meeting_id)
     assert alignment is not None
     assert alignment.video_id == video_id
-    placed = [item for item in agenda_items(sync.conn, meeting_id) if item.start_ms is not None]
-    assert len(placed) == (
-        MEASURED_COUNTS["spoken_transitions"] + MEASURED_COUNTS["html_video_times"]
-    )
+    items = agenda_items(sync.conn, meeting_id)
+    placement = {item.number: (item.alignment_method, item.start_ms) for item in items}
+    assert placement == expected_placement(placement), "each item starts where the captions say"
 
 
 def test_the_paused_message_says_what_will_make_it_run(
@@ -331,11 +329,9 @@ def test_the_sync_runs_a_revived_alignment_all_the_way(
     assert sync.job(sync_id)["state"] == DONE
     assert ran.count(job_id) == 1
     assert sync.job(job_id)["state"] == DONE, "the sync alone made the alignment run"
-    assert read_checkpoint(sync.conn, job_id)["counts_by_method"] == MEASURED_COUNTS
-    placed = [item for item in agenda_items(sync.conn, meeting_id) if item.start_ms is not None]
-    assert len(placed) == (
-        MEASURED_COUNTS["spoken_transitions"] + MEASURED_COUNTS["html_video_times"]
-    )
+    items = agenda_items(sync.conn, meeting_id)
+    placement = {item.number: (item.alignment_method, item.start_ms) for item in items}
+    assert placement == expected_placement(placement), "each item starts where the captions say"
 
 
 def test_the_sync_counts_a_revived_alignment_as_queued(

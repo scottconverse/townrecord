@@ -9,6 +9,7 @@ test here runs it on the real September 8, 2026 meeting, where unit F measured
 
 from __future__ import annotations
 
+from collections import Counter
 from pathlib import Path
 
 from townrecord.artifacts import store
@@ -25,11 +26,11 @@ from townrecord.repo import (
     upsert_meeting,
 )
 
+from ..september_8 import expected_placement
 from .conftest import (
     AGENDA_16805,
     AGENDA_16805_PDF,
     CAPTIONS_16805,
-    MEASURED_COUNTS,
     MEASURED_OFFSET_S,
     VIDEO_3709,
     VIDEO_3709_DURATION_S,
@@ -42,11 +43,6 @@ from .conftest import (
 #: The portal's own ids for the fixture meeting.
 A_MEETING = 3709
 AGENDA_TEMPLATE_ID = 16805
-
-#: What the September 8, 2026 meeting was measured to align as with only its
-#: PDF agenda: the same forty items with no clerk times, so none is placed by
-#: one, and the spoken record places the same 26 it places with the HTML.
-PDF_ONLY_COUNTS = {"spoken_transitions": 26, "html_video_times": 0, "none": 14}
 
 
 def a_meeting(
@@ -239,15 +235,14 @@ def test_an_agenda_page_that_cannot_be_read_pauses_with_the_reason(
 
 
 @needs(AGENDA_16805, CAPTIONS_16805)
-def test_the_real_meeting_aligns_the_way_unit_f_measured(
+def test_the_real_meeting_aligns_each_item_where_the_captions_say_it_starts(
     area: Area, wired: FakePortal, sync: Sync, storage_root: Path
 ) -> None:
-    """The recorded September 8, 2026 meeting, with unit F's counts.
+    """The recorded September 8, 2026 meeting, item by item.
 
-    Unit F measured this meeting's agenda against this video's captions on the
-    same recorded bytes: 22 items placed by a spoken transition, 6 by a time the
-    clerk published, 12 by neither. The job is held to those numbers here, and
-    to the offset of 466 seconds the anchors agree on.
+    Each item's method and start are held to the table checked by hand against
+    the captions (tests/september_8.py), and the offset to the 466 seconds the
+    anchors agree on. The stored counts are the items' own counts.
     """
     wired.html_agenda = AGENDA_16805.read_bytes()
     meeting_id = a_meeting(sync, area)
@@ -258,9 +253,22 @@ def test_the_real_meeting_aligns_the_way_unit_f_measured(
     job_id = align(sync, meeting_id, area.portal_id)
 
     assert sync.job(job_id)["state"] == DONE
+    items = agenda_items(sync.conn, meeting_id)
+    placement = {item.number: (item.alignment_method, item.start_ms) for item in items}
+    assert placement == expected_placement(placement)
+    assert all(
+        item.end_ms is not None and item.end_ms > item.start_ms
+        for item in items
+        if item.start_ms is not None
+    )
+    assert all(item.alignment_reason for item in items if item.alignment_method == "none"), (
+        "an unplaced item says why"
+    )
+
+    counts = Counter(method for method, _ in placement.values())
     checkpoint = read_checkpoint(sync.conn, job_id)
-    assert checkpoint["counts_by_method"] == MEASURED_COUNTS
-    assert checkpoint["agenda_items"] == sum(MEASURED_COUNTS.values())
+    assert checkpoint["counts_by_method"] == dict(counts)
+    assert checkpoint["agenda_items"] == len(items)
     assert checkpoint["offset_s"] == MEASURED_OFFSET_S
     assert checkpoint["offset_accepted"] is True
 
@@ -268,34 +276,17 @@ def test_the_real_meeting_aligns_the_way_unit_f_measured(
     assert stored is not None
     assert stored.video_id == video_id
     assert stored.transcript_id == transcript_id
-    assert stored.agenda_item_count == sum(MEASURED_COUNTS.values())
+    assert stored.agenda_item_count == len(items)
     assert (stored.spoken_transitions, stored.html_video_times, stored.no_alignment) == (
-        MEASURED_COUNTS["spoken_transitions"],
-        MEASURED_COUNTS["html_video_times"],
-        MEASURED_COUNTS["none"],
+        counts["spoken_transitions"],
+        counts["html_video_times"],
+        counts["none"],
     )
     assert stored.offset_s == MEASURED_OFFSET_S
     assert stored.offset_accepted is True
     assert stored.anchors, "an accepted offset rests on anchors, and they are stored"
     assert stored.anchors_agreeing > 0
     assert all("item_number" in anchor and "agreeing" in anchor for anchor in stored.anchors)
-
-    # The items themselves carry the boundaries, and they add up to the counts.
-    items = agenda_items(sync.conn, meeting_id)
-    by_method: dict[str, int] = {}
-    for item in items:
-        by_method[item.alignment_method] = by_method.get(item.alignment_method, 0) + 1
-    assert by_method == MEASURED_COUNTS
-    placed = [item for item in items if item.start_ms is not None]
-    placed_count = MEASURED_COUNTS["spoken_transitions"] + MEASURED_COUNTS["html_video_times"]
-    assert len(placed) == placed_count
-    assert all(item.end_ms is not None and item.end_ms > item.start_ms for item in placed)
-    # An item with no boundary says what was missing for it; an item that was
-    # placed carries the evidence the aligner matched instead of a reason, so
-    # only the unplaced ones are held to a sentence here.
-    unplaced = [item for item in items if item.alignment_method == "none"]
-    assert len(unplaced) == MEASURED_COUNTS["none"]
-    assert all(item.alignment_reason for item in unplaced), "an unplaced item says why"
 
 
 @needs(AGENDA_16805_PDF, CAPTIONS_16805)
@@ -326,11 +317,17 @@ def test_a_meeting_with_only_an_agenda_pdf_aligns_once_its_pages_are_read(
     assert len(sync.jobs_of_kind("align_meeting")) == 1
     checkpoint = read_checkpoint(sync.conn, job_id)
     assert checkpoint["agenda_items"] == 40
-    assert checkpoint["counts_by_method"] == PDF_ONLY_COUNTS
     assert wired.requests == [], "the PDF's pages are read from the store, not the portal"
-    items = {item.number: item for item in agenda_items(sync.conn, meeting_id)}
-    assert len(items) == 40
-    assert items["10.A"].alignment_method == "spoken_transitions"
+    items = agenda_items(sync.conn, meeting_id)
+    placement = {item.number: (item.alignment_method, item.start_ms) for item in items}
+    assert len(placement) == 40
+    assert placement == expected_placement(placement, clerk_times=False), (
+        "a PDF has no clerk times, so the four items the clerk timed are not placed"
+    )
+    counts = Counter(method for method, _ in placement.values())
+    assert checkpoint["counts_by_method"] == {"html_video_times": 0, **counts}, (
+        "the checkpoint names the clerk-times method even when it placed nothing"
+    )
 
 
 @needs(AGENDA_16805, CAPTIONS_16805)

@@ -69,8 +69,9 @@ from townrecord.video.youtube.listing import (
 )
 from townrecord.video.youtube.readiness import READINESS_WAITING_REASON
 from townrecord.video.youtube.rss import RssLister
+from townrecord.video.youtube.ytdlp import YtdlpFlatLister
 
-from .conftest import CITY_CHANNEL_ID, offline_client
+from .conftest import CITY_CHANNEL_ID, FIXTURE_FOLDER, FakeRunner, offline_client
 
 #: The recorded fixtures of the oversight repository. Override the folder with
 #: ``TOWNRECORD_EVIDENCE`` when the recordings live somewhere else, and every
@@ -110,6 +111,10 @@ DENVER = "America/Denver"
 #: The published value the recorded City feed carries for its 22 September
 #: session, used as the default so a stub listing is dated like the real one.
 A_PUBLISHED = "2026-09-23T18:53:52+00:00"
+
+#: The day the City feed was recorded. A watch here runs as of that day, so the
+#: first-capture window is the 30 days before it and not before the wall clock.
+RECORDED_AT = datetime(2026, 9, 24, 12, 0, tzinfo=UTC)
 
 
 def needs(*paths: Path) -> pytest.MarkDecorator:
@@ -214,8 +219,10 @@ class Watch:
         *,
         ladder: ListingLadder,
         capture: str = CAPTURED,
+        clock: Any = None,
     ) -> None:
         self.db_path = db_path
+        self.clock = clock
         self.conn = conn
         self.ladder = ladder
         self.capture = capture
@@ -241,15 +248,20 @@ class Watch:
             return
         set_capture_state(ctx.conn, video_id, self.capture)
 
-    def queue(self, source_id: int, *, origin: str = ORIGIN_MANUAL) -> int:
+    def queue(self, source_id: int, *, origin: str = ORIGIN_MANUAL, **window: str) -> int:
         """Queue one watch of one source, on the lane its kind belongs to."""
         return enqueue(
-            self.conn, JOB_KIND, {"source_id": source_id}, origin=origin, registry=self.registry
+            self.conn,
+            JOB_KIND,
+            {"source_id": source_id, **window},
+            origin=origin,
+            registry=self.registry,
         )
 
     def run_one(self) -> int | None:
         """Run the next claimable job of the watch's lane, if there is one."""
-        return Runner(self.db_path, registry=self.registry).run_once(LANE)
+        clock = self.clock or (lambda: RECORDED_AT)
+        return Runner(self.db_path, registry=self.registry, clock=clock).run_once(LANE)
 
     def run_until(self, job_id: int) -> None:
         """Run the lane until the named job has settled.
@@ -271,9 +283,11 @@ class Watch:
                 return ran
             ran.append(job_id)
 
-    def watch(self, source_id: int, *, origin: str = ORIGIN_MANUAL) -> tuple[int, Any]:
+    def watch(
+        self, source_id: int, *, origin: str = ORIGIN_MANUAL, **window: str
+    ) -> tuple[int, Any]:
         """Queue one watch, run it, and return its job id and its checkpoint."""
-        job_id = self.queue(source_id, origin=origin)
+        job_id = self.queue(source_id, origin=origin, **window)
         self.run_until(job_id)
         return job_id, read_checkpoint(self.conn, job_id)
 
@@ -894,50 +908,141 @@ def test_a_second_video_is_captured_when_the_meetings_own_one_never_was(
     assert checkpoint["captures_queued"] == 1
 
 
-# -- a listing with no published date ------------------------------------------
+# -- a listing with no published date, and the first-capture window -----------
 #
-# The live run of 2026-11-08: the channel feed answered 404, yt-dlp's flat
-# listing carries no date at all (``timestamp`` and ``upload_date`` are absent),
-# and not one of the 97 channel videos was linked to its meeting, so nothing
-# aligned. The meeting's date is in the video's own title.
+# The live run of 2026-11-08: the channel feed answered 404 and the watch fell
+# back to yt-dlp. Its flat listing carries no date (``timestamp`` is null, there
+# is no ``upload_date``), so not one channel video was linked to its meeting,
+# and the watch queued a capture for every meeting video in the newest 50 --
+# 58 of its 63 captures were outside the 30 days spec 7.1 step 5 asks for, and
+# they ran the address into YouTube's 429 holds.
+#
+# The listing below is the real one yt-dlp printed for the City of Longmont
+# channel. The expected videos are read off its titles and live statuses by
+# hand, not off what this code returned.
+
+#: The meeting videos of the recorded listing that were already held (was_live)
+#: and whose titles date them September 1, 2026 or later.
+SEPTEMBER_MEETING_VIDEOS = {
+    "mJOf8rQS1Vc",  # Planning and Zoning Commission 9/23/26
+    "jhsFsEz0P5A",  # City Council Regular Session - 22 September 2026
+    "skwd58zm6jk",  # Planning and Zoning Commission 9/16/26
+    "CWsUv1L4vAU",  # City Council Study Session - 15 September 2026
+    "7R9nlQOxw3U",  # City Council Regular Session - 01 September 2026
+}
 
 
-@pytest.mark.parametrize(
-    "title",
-    [
-        "City Council Regular Session - November 3, 2026",
-        "City Council Regular Session - 3 November 2026",
-        "City Council Regular Session - 11/3/26",
-    ],
-)
-def test_an_undated_listing_is_linked_by_the_date_in_its_title(
-    db_path: Path, conn: sqlite3.Connection, world: World, title: str
-) -> None:
-    meeting = world.meeting(world.body_id, "2026-11-03T19:00:00", "City Council Regular Session")
-    world.meeting(world.body_id, "2026-10-20T19:00:00", "City Council Regular Session")
-    source = world.channel()
-    undated = listed("6ZBB8Kmt5gU", title, None, method=SOURCE_YTDLP)
-    watch = Watch(db_path, conn, ladder=ListingLadder(rss=StubLister([undated])))
-
-    _, checkpoint = watch.watch(source)
-
-    assert watch.row("6ZBB8Kmt5gU").meeting_id == meeting
-    assert checkpoint["videos_linked"] == 1
+def the_recorded_channel() -> ListingLadder:
+    """The ladder with only yt-dlp, answering with the recorded flat listing."""
+    fake = FakeRunner()
+    fake.answers["streams"] = ((FIXTURE_FOLDER / "flat-UCH5-streams.json").read_bytes(), 0, "")
+    return ListingLadder(ytdlp=YtdlpFlatLister(runner=fake))
 
 
-def test_an_undated_listing_whose_title_names_no_date_is_not_linked(
+def captured_platform_ids(watch: Watch) -> set[str]:
+    """The YouTube ids of the videos the watch queued a capture for."""
+    ids = set()
+    for job in watch.captures():
+        video = get_video(watch.conn, int(json.loads(job["payload"])["video_id"]))
+        ids.add(video.platform_video_id)
+    return ids
+
+
+def test_a_watch_captures_only_the_meeting_videos_inside_the_window_it_is_given(
     db_path: Path, conn: sqlite3.Connection, world: World
 ) -> None:
-    world.meeting(world.body_id, "2026-11-03T19:00:00", "City Council Regular Session")
     source = world.channel()
-    undated = listed("6ZBB8Kmt5gU", "City Council Regular Session", None, method=SOURCE_YTDLP)
-    watch = Watch(db_path, conn, ladder=ListingLadder(rss=StubLister([undated])))
+    watch = Watch(db_path, conn, ladder=the_recorded_channel())
+
+    watch.watch(source, from_date="2026-09-01")
+
+    assert captured_platform_ids(watch) == SEPTEMBER_MEETING_VIDEOS
+
+
+def test_a_watch_with_no_window_captures_the_last_30_days(
+    db_path: Path, conn: sqlite3.Connection, world: World
+) -> None:
+    """Spec 7.1 step 5: the first capture covers the last 30 days."""
+    source = world.channel()
+    october_first = datetime(2026, 10, 1, 18, 0, tzinfo=UTC)
+    watch = Watch(db_path, conn, ladder=the_recorded_channel(), clock=lambda: october_first)
 
     watch.watch(source)
 
-    assert watch.row("6ZBB8Kmt5gU").meeting_id is None, "no date is never a guessed date"
+    assert captured_platform_ids(watch) == SEPTEMBER_MEETING_VIDEOS
+
+
+def test_an_undated_channel_video_is_linked_by_the_date_in_its_title(
+    db_path: Path, conn: sqlite3.Connection, world: World
+) -> None:
+    """The September 22 council video of the recorded listing finds its meeting."""
+    meeting = world.meeting(world.body_id, "2026-09-22T19:00:00", "City Council Regular Session")
+    world.meeting(world.body_id, "2026-09-15T19:00:00", "City Council Study Session")
+    source = world.channel()
+    watch = Watch(db_path, conn, ladder=the_recorded_channel())
+
+    watch.watch(source, from_date="2026-09-01")
+
+    assert watch.row("jhsFsEz0P5A").meeting_id == meeting
+    assert watch.row("CWsUv1L4vAU").meeting_id != meeting, "the study session is its own sitting"
 
 
 def test_yt_dlps_own_date_spelling_is_read() -> None:
     """yt-dlp spells an upload date ``20261103``; that is a day, not "unreadable"."""
     assert published_day("20261103") == date(2026, 11, 3)
+
+
+def test_the_portals_own_video_is_captured_when_another_channels_copy_came_first(
+    db_path: Path, conn: sqlite3.Connection, world: World
+) -> None:
+    """The alignment reads the primary video, so the primary is never passed over.
+
+    The live run of 2026-11-09: the portal linked oWZpzjzjwnE (video 1, primary)
+    to the City Council meeting of November 3. The second Longmont channel
+    watched first and queued Q3Cpd52hWa4 (video 3) of the same sitting. The City
+    channel's watch then skipped video 1 as "another recording of meeting 2,
+    which video 3 already covers", and the meeting's alignment paused for good:
+    it asks for the primary video's transcript, and the clerk's video times are
+    times in that video, not in the copy.
+    """
+    portal_id = world.source(type=portal.MEETING_PORTAL, origin="https://portal.test.invalid")
+    meeting = world.meeting(world.body_id, "2026-11-03T19:00:00", "City Council Regular Session")
+    primary = insert_video(
+        conn,
+        source_id=portal_id,
+        platform_video_id="oWZpzjzjwnE",
+        meeting_id=meeting,
+        url="https://www.youtube.com/watch?v=oWZpzjzjwnE",
+        published_at="2026-11-03T19:00:00",
+        is_primary=True,
+        source_note="Listed by the meeting portal source.",
+    )
+    other_channel = world.channel(origin=OTHER_CHANNEL_URL)
+    insert_video(
+        conn,
+        source_id=other_channel,
+        platform_video_id="Q3Cpd52hWa4",
+        meeting_id=meeting,
+        title="City Council Regular Session - November 3, 2026",
+        capture_state=CAPTURED,
+    )
+    conn.commit()
+    city = world.channel()
+    listing = listed(
+        "oWZpzjzjwnE",
+        "City Council Regular Session - November 3, 2026",
+        "2026-11-04T02:00:00+00:00",
+    )
+    watch = Watch(
+        db_path,
+        conn,
+        ladder=ListingLadder(rss=StubLister([listing])),
+        clock=lambda: datetime(2026, 11, 9, 4, 15, tzinfo=UTC),
+    )
+
+    _, checkpoint = watch.watch(city)
+
+    assert [json.loads(row["payload"])["video_id"] for row in watch.captures()] == [primary], (
+        checkpoint["skipped"]
+    )
+    assert checkpoint["captures_queued"] == 1

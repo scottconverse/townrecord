@@ -327,9 +327,8 @@ def test_the_default_runner_takes_the_call_the_asker_makes() -> None:
     The asker passes ``env=``; a default that refuses it fails every status ask
     the moment a real service uses it (live run, November 8, 2026).
     """
+    # This process's Python has no yt_dlp, so the real child runs and says so:
+    # the call reached the child, which is what the old default never let it do.
     asker = StatusAsker(interpreter=sys.executable)
-    result = asker.runner(
-        [sys.executable, "-c", "print('ok')"], timeout_s=60, env=proc.allowed_environment()
-    )
-    assert result.returncode == 0
-    assert result.stdout.strip() == b"ok"
+    answer = asker.ask(video_id="3qfQAkAAC9U", url="https://www.youtube.com/watch?v=3qfQAkAAC9U")
+    assert "No module named yt_dlp" in answer.asks[-1].reason

@@ -249,3 +249,54 @@ def test_the_update_job_updates_the_tool_its_payload_names(settings: Settings) -
     with pytest.raises(ValueError, match="does not manage"):
         update.for_payload({"tool": "left-pad"})
     service.close()
+
+
+def test_a_watch_waits_for_the_yt_dlp_runtime_instead_of_failing(
+    settings: Settings, conn: sqlite3.Connection
+) -> None:
+    """A watch that runs before yt-dlp is installed waits for it (spec 8.9).
+
+    The live run of 2026-11-09 queued a watch at start, beside the first
+    ``runtime_update``. The watch ran nine seconds before the install finished,
+    the channel's feed answered 404, and the last rung ran yt-dlp with this
+    process's interpreter, which has no yt_dlp: the job failed with "No module
+    named yt_dlp" and the channel was not watched. Nothing here is faked but
+    the feed's 404, which is what YouTube answered for both Longmont channels.
+    """
+    import httpx
+
+    from townrecord.jobs import Runner
+    from townrecord.records import portal
+    from townrecord.repo import insert_jurisdiction, insert_source
+    from townrecord.video.watch import LANE as WATCH_LANE
+
+    city = insert_jurisdiction(conn, type="city", name="Longmont")
+    source = insert_source(
+        conn,
+        jurisdiction_id=city,
+        type=portal.VIDEO_CHANNEL,
+        origin="https://www.youtube.com/channel/UCH5ilm2TwUm2C9-pc8ejNKw",
+        suggested_by="a person",
+        reason="the city's channel",
+        status="accepted",
+        body_id=None,
+        settings="{}",
+    )
+    feed_404 = httpx.MockTransport(lambda request: httpx.Response(404))
+    client = httpx.Client(transport=feed_404, trust_env=False)
+    service = build_service(settings, clock=lambda: BEFORE_THE_DAY, client=client)
+    try:
+        job_id = enqueue(
+            conn, WATCH_CHANNEL_JOB_KIND, {"source_id": source}, registry=service.registry
+        )
+        conn.commit()
+        Runner(settings.db_path, registry=service.registry, clock=lambda: BEFORE_THE_DAY).run_once(
+            WATCH_LANE
+        )
+    finally:
+        service.close()
+
+    row = get(conn, job_id)
+    assert row["state"] == QUEUED, row["last_error"]
+    assert "yt-dlp" in row["last_error"] and "not installed" in row["last_error"]
+    assert row["run_after"] > BEFORE_THE_DAY.isoformat()

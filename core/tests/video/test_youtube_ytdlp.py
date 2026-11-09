@@ -17,7 +17,12 @@ import pytest
 from townrecord import proc
 from townrecord.runtime.javascript import FALLBACK_RUNTIME
 from townrecord.runtime.tools import program_in, python_in
-from townrecord.video.youtube.listing import SOURCE_YTDLP, VideoError, VideoListing
+from townrecord.video.youtube.listing import (
+    SOURCE_YTDLP,
+    ListingFailed,
+    VideoError,
+    VideoListing,
+)
 from townrecord.video.youtube.ytdlp import (
     YTDLP_MODULE,
     YTDLP_PLAYLIST_END,
@@ -28,7 +33,7 @@ from townrecord.video.youtube.ytdlp import (
     ytdlp_argv,
 )
 
-from .conftest import CITY_CHANNEL_ID, CITY_UPLOADS_PLAYLIST, FakeRunner
+from .conftest import CITY_CHANNEL_ID, CITY_UPLOADS_PLAYLIST, FIXTURE_FOLDER, FakeRunner
 
 CHANNEL_URL = f"https://www.youtube.com/channel/{CITY_CHANNEL_ID}"
 
@@ -189,15 +194,17 @@ def test_the_runner_gets_a_list_a_timeout_and_an_allow_listed_environment(
     assert "PATH" in {name.upper() for name in call["env"]}
 
 
-def test_streams_is_tried_before_videos(runner: FakeRunner) -> None:
+def test_streams_is_read_before_videos(runner: FakeRunner) -> None:
     runner.answers["streams"] = (listing_bytes([an_entry("aaa", "One")]), 0, "")
     runner.answers["videos"] = (listing_bytes([an_entry("bbb", "Two")]), 0, "")
 
     videos = YtdlpFlatLister(runner=runner).list_videos(CHANNEL_URL)
 
-    assert [video.video_id for video in videos] == ["aaa"]
-    assert len(runner.calls) == 1
-    assert runner.calls[0]["argv"][-1].endswith("/streams")
+    assert [video.video_id for video in videos] == ["aaa", "bbb"]
+    assert [call["argv"][-1] for call in runner.calls] == [
+        f"{CHANNEL_URL}/streams",
+        f"{CHANNEL_URL}/videos",
+    ]
 
 
 def test_videos_is_tried_when_streams_is_empty(runner: FakeRunner) -> None:
@@ -309,9 +316,45 @@ def test_the_default_runner_takes_the_call_the_lister_makes() -> None:
     listing failed with ``run_allowlisted() got an unexpected keyword argument
     'env'`` (live run, November 8, 2026).
     """
+    # This process's Python has no yt_dlp, so the real child runs and says so:
+    # the call reached the child, which is what the old default never let it do.
     lister = YtdlpFlatLister(interpreter=sys.executable)
-    result = lister.runner(
-        [sys.executable, "-c", "print('ok')"], timeout_s=60, env=proc.allowed_environment()
-    )
-    assert result.returncode == 0
-    assert result.stdout.strip() == b"ok"
+    with pytest.raises(ListingFailed, match="No module named yt_dlp") as failed:
+        lister.list_videos(CHANNEL_URL)
+    assert "unexpected keyword argument" not in str(failed.value)
+
+
+def test_both_tabs_are_read_because_a_city_posts_meetings_to_each() -> None:
+    """A meeting uploaded after the fact is on /videos, not /streams (spec 8.1).
+
+    The live run of 2026-11-09 read the City of Longmont's /streams tab, found
+    fifty videos there, and stopped. The Planning and Zoning Commission meeting
+    of October 21 was uploaded on October 23, so it is only on /videos
+    (unNcPhKJ45o), and the portal's own video of that meeting was never
+    captured. Both listings are the channel's own, recorded with yt-dlp.
+    """
+    streams = (FIXTURE_FOLDER / "flat-UCH5-streams.json").read_bytes()
+    uploads = (FIXTURE_FOLDER / "flat-UCH5-videos.json").read_bytes()
+    fake = FakeRunner()
+    fake.answers["streams"] = (streams, 0, "")
+    fake.answers["videos"] = (uploads, 0, "")
+
+    listed = YtdlpFlatLister(runner=fake, interpreter="python").list_videos(CHANNEL_URL)
+
+    ids = [video.video_id for video in listed]
+    expected = [e["id"] for e in json.loads(streams)["entries"]]
+    expected += [e["id"] for e in json.loads(uploads)["entries"] if e["id"] not in expected]
+    assert ids == expected, "every video of both tabs, once each, streams first"
+    assert "unNcPhKJ45o" in ids
+
+
+def test_one_tab_that_fails_does_not_hide_the_other() -> None:
+    """A refused /videos read still leaves the streams listed, and the reverse."""
+    streams = (FIXTURE_FOLDER / "flat-UCH5-streams.json").read_bytes()
+    fake = FakeRunner()
+    fake.answers["streams"] = (b"", 1, "ERROR: Sign in to confirm you're not a bot")
+    fake.answers["videos"] = (streams, 0, "")
+
+    listed = YtdlpFlatLister(runner=fake, interpreter="python").list_videos(CHANNEL_URL)
+
+    assert [video.video_id for video in listed] == [e["id"] for e in json.loads(streams)["entries"]]

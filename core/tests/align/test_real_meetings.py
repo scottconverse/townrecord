@@ -32,6 +32,7 @@ from townrecord.align import (
 )
 from townrecord.captions.parse import parse_srv3
 
+from ..september_8 import CLERK_TIMED, HAND_CHECKED_STARTS
 from .conftest import (
     AGENDA_16095,
     AGENDA_16805,
@@ -45,20 +46,8 @@ from .conftest import (
 #: The adapter is never asked to make a request here; the agenda is a file.
 BASE_URL = "https://portal.test.invalid"
 
-#: What the September 8, 2026 meeting was measured to align as, item by item.
-MEASURED_COUNTS = {
-    SPOKEN_TRANSITIONS: 26,
-    HTML_VIDEO_TIMES: 4,
-    NO_ALIGNMENT: 10,
-}
-
 #: The offset the clerk's times run ahead of the video clock, in seconds.
 MEASURED_OFFSET_S = 466
-
-#: The items that stay unplaced, by the numbers the agenda gives them. The
-#: last two are the appendix entries, numbered "1" and "2" with no dot, which
-#: is how the agenda numbers them and how they are reported.
-MEASURED_UNALIGNED = {"2.", "4.", "6.", "9.", "9.I", "15.", "16.", "17.", "1", "2"}
 
 #: The reading of the council's rules, 74 s to 95 s. Nothing may start there.
 RULES_READING_MS = (74_000, 95_000)
@@ -94,7 +83,16 @@ def test_the_september_meeting_measures_its_own_offset(september: AlignmentResul
     assert offset.offset_s == MEASURED_OFFSET_S
     assert offset.tolerance_s == MEASURED_TOLERANCE_S
     assert offset.min_anchors == MEASURED_MIN_ANCHORS
-    assert len(offset.anchors) == 25, "every item named in speech and on the agenda is an anchor"
+    spoken_and_timed = {
+        item.number
+        for item in september.items
+        if item.method == SPOKEN_TRANSITIONS and item.agenda_seconds is not None
+    }
+    assert {anchor.item_number for anchor in offset.anchors} == spoken_and_timed, (
+        "every item named in speech and on the agenda is an anchor"
+    )
+    for anchor in offset.anchors:
+        assert anchor.spoken_ms == HAND_CHECKED_STARTS[anchor.item_number]
     assert len(offset.agreeing) == 13
     assert f"{MEASURED_OFFSET_S} s ahead of the video" in offset.reason
     for anchor in offset.agreeing:
@@ -106,7 +104,18 @@ def test_the_september_meeting_measures_its_own_offset(september: AlignmentResul
 def test_the_september_meeting_aligns_by_all_three_methods(september: AlignmentResult) -> None:
     """Spec 18's count, for the one meeting where all three methods apply."""
     assert len(september.items) == 40
-    assert september.counts_by_method() == MEASURED_COUNTS
+    expected = {
+        item.number: (
+            NO_ALIGNMENT
+            if item.number not in HAND_CHECKED_STARTS
+            else HTML_VIDEO_TIMES
+            if item.number in CLERK_TIMED
+            else SPOKEN_TRANSITIONS,
+            HAND_CHECKED_STARTS.get(item.number),
+        )
+        for item in september.items
+    }
+    assert {item.number: (item.method, item.start_ms) for item in september.items} == expected
     assert september.spoken_reason is None
     assert september.html_reason is None
 
@@ -202,7 +211,9 @@ def test_the_september_meeting_says_why_each_unplaced_item_was_unplaced(
 ) -> None:
     """An unplaced item carries a reason, and the reason is one of the known ones."""
     unplaced = september.unaligned_items()
-    assert {item.number for item in unplaced} == MEASURED_UNALIGNED
+    assert {item.number for item in unplaced} == {
+        item.number for item in september.items
+    } - HAND_CHECKED_STARTS.keys()
     for item in unplaced:
         assert item.method == NO_ALIGNMENT
         assert item.start_ms is None

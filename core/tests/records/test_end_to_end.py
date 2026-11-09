@@ -13,6 +13,7 @@ hold the jobs to.
 
 from __future__ import annotations
 
+from collections import Counter
 from pathlib import Path
 
 from townrecord.artifacts import store
@@ -28,10 +29,10 @@ from townrecord.repo import (
     records_of_meeting,
 )
 
+from ..september_8 import expected_placement
 from .conftest import (
     AGENDA_16805,
     CAPTIONS_16805,
-    MEASURED_COUNTS,
     MEASURED_OFFSET_S,
     MEETING_3709,
     VIDEO_3709,
@@ -128,35 +129,29 @@ def test_the_real_meeting_runs_through_all_four_jobs(
     done = [row for row in align_jobs if row["state"] == DONE]
     assert len(done) == 1, f"one align job ran to its end, of {len(align_jobs)}"
     checkpoint = read_checkpoint(sync.conn, done[0]["id"])
-    assert checkpoint["counts_by_method"] == MEASURED_COUNTS, _report(
-        checkpoint["counts_by_method"], MEASURED_COUNTS, f"({len(lines)} caption lines were read)"
-    )
+
+    # -- each item starts where the captions say it does ----------------------
+    items = agenda_items(sync.conn, meeting.id)
+    placement = {item.number: (item.alignment_method, item.start_ms) for item in items}
+    assert placement == expected_placement(placement), f"({len(lines)} caption lines were read)"
+    counts = Counter(method for method, _ in placement.values())
+    assert checkpoint["counts_by_method"] == dict(counts)
 
     alignment = get_meeting_alignment(sync.conn, meeting.id)
     assert alignment is not None
     assert alignment.video_id == video.id
     assert alignment.transcript_id == transcript_id
-    assert alignment.agenda_item_count == sum(MEASURED_COUNTS.values())
+    assert alignment.agenda_item_count == len(items)
     assert (
         alignment.spoken_transitions,
         alignment.html_video_times,
         alignment.no_alignment,
-    ) == (
-        MEASURED_COUNTS["spoken_transitions"],
-        MEASURED_COUNTS["html_video_times"],
-        MEASURED_COUNTS["none"],
-    )
+    ) == (counts["spoken_transitions"], counts["html_video_times"], counts["none"])
     assert alignment.offset_s == MEASURED_OFFSET_S, _report(
         alignment.offset_s, MEASURED_OFFSET_S, f"(reason: {alignment.offset_reason!r})"
     )
     assert alignment.offset_accepted is True
     assert alignment.anchors, "the offset rests on anchors, and they are stored"
-
-    # -- and the items carry it -----------------------------------------------
-    counts: dict[str, int] = {}
-    for item in agenda_items(sync.conn, meeting.id):
-        counts[item.alignment_method] = counts.get(item.alignment_method, 0) + 1
-    assert counts == MEASURED_COUNTS, _report(counts, MEASURED_COUNTS)
 
 
 @needs(AGENDA_16805, CAPTIONS_16805)

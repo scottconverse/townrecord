@@ -100,11 +100,6 @@ MEETING_3709 = 3709
 VIDEO_3709 = "3qfQAkAAC9U"
 VIDEO_3709_DURATION_S = 14407
 
-#: The counts measured on that meeting, by method (spec 10.2). Since the
-#: aligner finds an item where the chair announces its title, 26 items are
-#: placed by the spoken record (tests/align/test_real_meetings.py).
-MEASURED_COUNTS = {"spoken_transitions": 26, "html_video_times": 4, "none": 10}
-
 #: The offset unit F measured on that meeting, in seconds.
 MEASURED_OFFSET_S = 466
 
@@ -434,7 +429,6 @@ __all__ = [
     "CAPTIONS_SEP22",
     "EVIDENCE_FOLDER",
     "FakePortal",
-    "MEASURED_COUNTS",
     "MEASURED_OFFSET_S",
     "MEETING_3709",
     "OTHER_URL",

@@ -60,6 +60,7 @@ from .runtime import (
 from .runtime.settings import TEXTFLOWKIT_PROGRAM, TEXTFLOWKIT_TOOL, TOOL_NAME
 from .schedule import Scheduler
 from .video.watch import JOB_KIND as WATCH_CHANNEL_JOB_KIND
+from .video.watch import LANE as WATCH_CHANNEL_LANE
 from .video.watch import register as register_watch_channel
 from .video.watch import service_ladder
 
@@ -286,6 +287,33 @@ class FollowsRuntime:
         self.current()(ctx)
 
 
+#: How long a job that needs a runtime waits before it asks again. The first
+#: install takes about ten seconds, so a minute is not a long wait.
+RUNTIME_WAIT_S = 60.0
+
+
+@dataclass(frozen=True)
+class WaitsForRuntime:
+    """The handler for a job whose program is not installed yet (spec 8.9).
+
+    A watch's last listing step is yt-dlp, and before the first
+    ``runtime_update`` finishes there is no yt-dlp to run: this process's
+    interpreter cannot import it. The job goes back in the queue with a plain
+    reason, and :class:`FollowsRuntime` builds the real handler once the
+    pointer names an install.
+    """
+
+    tool: str
+    delay_s: float = RUNTIME_WAIT_S
+
+    def __call__(self, ctx: Any) -> None:
+        ctx.defer(
+            f"The {self.tool} runtime is not installed yet, so this job waits for "
+            "the runtime update to finish.",
+            delay_s=self.delay_s,
+        )
+
+
 def _follow(
     registry: Registry, kind: str, build: Builder, resolve: Callable[[], Programs]
 ) -> FollowsRuntime:
@@ -345,6 +373,10 @@ def _register_handlers(
         )
 
     def watch(reg: Registry, py: str | None, _tfk: str | None) -> Callable[[Any], None]:
+        if py is None:
+            waiting = WaitsForRuntime(tool=TOOL_NAME)
+            reg.register(WATCH_CHANNEL_JOB_KIND, waiting, lane=WATCH_CHANNEL_LANE)
+            return waiting
         return register_watch_channel(
             registry=reg, ladder=service_ladder(client=client, interpreter=py)
         )

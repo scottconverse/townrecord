@@ -62,6 +62,7 @@ from townrecord.repo import (
     upsert_seat,
 )
 
+from ..september_8 import HAND_CHECKED_STARTS
 from .conftest import (
     AGENDA_16805,
     CAPTIONS_16805,
@@ -770,7 +771,7 @@ MEASURED_SEGMENTS = 5787
 MEASURED_LABELS = 58
 MEASURED_IDENTIFIED = 53
 MEASURED_UNIDENTIFIED = 5
-MEASURED_PLACED_ITEMS = 30
+
 MEASURED_MOTIONS_CHECKED = 14
 MEASURED_CONFIRMED = 9
 MEASURED_CONFLICTS = 6
@@ -883,7 +884,8 @@ def test_the_real_september_8_speakers_read_the_way_the_captions_hold_them(
     align_id = align(sync, meeting_id, area.portal_id)
     assert sync.job(align_id)["state"] == DONE
     placed = [item for item in agenda_items(sync.conn, meeting_id) if item.start_ms is not None]
-    assert len(placed) == MEASURED_PLACED_ITEMS, "the cross-check reads the items that were placed"
+    starts = {item.number: item.start_ms for item in placed}
+    assert starts == HAND_CHECKED_STARTS, "each item starts where the captions say it does"
 
     follow = a_meeting(sync, area, starts_at=SEPT_22)
     reader = PdfReader(PACKET_MINUTES_SEP08)

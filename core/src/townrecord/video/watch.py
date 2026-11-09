@@ -148,6 +148,7 @@ class _Tally:
     captures_queued: int = 0
     already_captured: int = 0
     not_ready: int = 0
+    before_window: int = 0
     not_ready_titles: list[str] = field(default_factory=list)
     skipped_total: int = 0
     skipped: list[str] = field(default_factory=list)
@@ -163,6 +164,23 @@ class _Tally:
         self.skipped_total += 1
         if len(self.skipped) < portal.MAX_REPORTED_SKIPS:
             self.skipped.append(sentence)
+
+
+def watch_window_start(payload: Any, *, today: date) -> date:
+    """The first day a watch captures meeting videos from.
+
+    A payload may name it as ``from_date`` (YYYY-MM-DD), the key a portal sync
+    takes. A watch nobody gave one captures the last
+    :data:`townrecord.records.portal.DEFAULT_WINDOW_DAYS` days, the first
+    capture of spec 7.1 step 5.
+    """
+    text = payload.get("from_date") if isinstance(payload, Mapping) else None
+    if not text:
+        return today - timedelta(days=portal.DEFAULT_WINDOW_DAYS)
+    try:
+        return date.fromisoformat(str(text))
+    except ValueError as exc:
+        raise WatchRefused(f"The start of the window {text!r} is not a YYYY-MM-DD date.") from exc
 
 
 def watch_request(payload: Any) -> int:
@@ -348,6 +366,7 @@ def register(*, registry: Any = None, ladder: ListingLadder | None = None) -> Wa
 def watch_channel(ctx: JobContext, ladder: ListingLadder) -> None:
     """List one channel source, store what it posted, and queue its captures."""
     source_id = watch_request(ctx.payload)
+    first_day = watch_window_start(ctx.payload, today=ctx.clock().date())
     try:
         source = watchable_source(ctx.conn, source_id)
         channel = channel_of(source.origin)
@@ -376,12 +395,17 @@ def watch_channel(ctx: JobContext, ladder: ListingLadder) -> None:
         tally.skip(note)
     for listing in result.videos:
         ctx.heartbeat()
-        _watch_video(ctx, source, listing, classifier, tally)
+        _watch_video(ctx, source, listing, classifier, tally, first_day)
     ctx.save_checkpoint(_checkpoint(tally, source, channel, result))
 
 
 def _watch_video(
-    ctx: JobContext, source: Source, listing: Any, classifier: MeetingClassifier, tally: _Tally
+    ctx: JobContext,
+    source: Source,
+    listing: Any,
+    classifier: MeetingClassifier,
+    tally: _Tally,
+    first_day: date,
 ) -> None:
     """Store one listed video, link it when it names a meeting, queue its capture."""
     tally.listed += 1
@@ -420,6 +444,15 @@ def _watch_video(
     if _already_captured(ctx, video):
         tally.already_captured += 1
         return
+    day = published_day(listing.published) or title_day(listing.title)
+    if day is None or day < first_day:
+        tally.before_window += 1
+        when = "has no date in its listing or its title" if day is None else f"is from {day}"
+        tally.skip(
+            f"Video {listing.video_id} ({listing.title!r}) {when}, so it is not inside the "
+            f"window that starts {first_day} and is not captured."
+        )
+        return
     other = _meeting_recording(ctx, video)
     if other is not None:
         tally.already_captured += 1
@@ -449,8 +482,13 @@ def _meeting_recording(ctx: JobContext, video: repo.Video) -> int | None:
     refusing that is another 429. A video of the meeting that nobody captured and
     nobody is capturing does not count, so a dead portal link never stops the
     channel's copy from being captured.
+
+    The primary video is never the one passed over. The alignment, the minutes
+    and the speakers all read the primary's transcript, and the clerk's video
+    times are times in that video, so a copy another channel posted does not
+    cover it.
     """
-    if video.meeting_id is None:
+    if video.meeting_id is None or video.is_primary:
         return None
     kind = capture_job_kind()
     for other in ctx.conn.execute(
@@ -771,6 +809,7 @@ def _checkpoint(tally: _Tally, source: Source, channel: ChannelRef, result: Any)
         "captures_queued": tally.captures_queued,
         "already_captured": tally.already_captured,
         "not_ready": tally.not_ready,
+        "before_window": tally.before_window,
         "skipped_total": tally.skipped_total,
         "skipped": list(tally.skipped),
     }
