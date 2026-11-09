@@ -598,9 +598,14 @@ def _meeting_for(conn: sqlite3.Connection, source: Source, listing: Any) -> tupl
         )
     day = published_day(listing.published)
     if day is None:
+        # yt-dlp's flat listing carries no date; the city's titles carry the
+        # sitting's own day ("City Council Regular Session - November 3, 2026").
+        day = title_day(listing.title)
+    if day is None:
         return None, (
             f"Video {listing.video_id} ({listing.title!r}) is not linked to a meeting: its "
-            f"published date {listing.published!r} is not a date this watch can read."
+            f"published date {listing.published!r} is not a date this watch can read, and "
+            "its title names no date."
         )
 
     where = f"body {body.id} ({body.name!r})"
@@ -673,10 +678,68 @@ def published_day(published: str | None) -> date | None:
     "the time exactly as the source gave it").
     """
     text = (published or "").strip()
+    if _COMPACT_DAY.fullmatch(text):
+        # yt-dlp's own spelling of an upload date: 20261103.
+        text = f"{text[:4]}-{text[4:6]}-{text[6:]}"
     if len(text) < 10:
         return None
     try:
         return date.fromisoformat(text[:10])
+    except ValueError:
+        return None
+
+
+_MONTH_NUMBERS = {
+    name: number
+    for number, name in enumerate(
+        (
+            "january",
+            "february",
+            "march",
+            "april",
+            "may",
+            "june",
+            "july",
+            "august",
+            "september",
+            "october",
+            "november",
+            "december",
+        ),
+        start=1,
+    )
+}
+_MONTH = "|".join(_MONTH_NUMBERS)
+#: "November 3, 2026" and "3 November 2026", the two spellings the Longmont
+#: channels title a sitting with, and "11/3/26" from the portal's own titles.
+_MONTH_DAY_YEAR = re.compile(rf"\b({_MONTH})\s+(\d{{1,2}}),?\s+(\d{{4}})\b", re.IGNORECASE)
+_DAY_MONTH_YEAR = re.compile(rf"\b(\d{{1,2}})\s+({_MONTH})\s+(\d{{4}})\b", re.IGNORECASE)
+_SLASH_DATE = re.compile(r"\b(\d{1,2})/(\d{1,2})/(\d{2}|\d{4})\b")
+_COMPACT_DAY = re.compile(r"\d{8}")
+
+
+def title_day(title: str | None) -> date | None:
+    """The one day a video's title names, or None.
+
+    Two different days in one title name no single sitting, so they are None
+    too: the watch links on a date only when the title leaves one.
+    """
+    text = title or ""
+    days: set[date] = set()
+    for month, day, year in _MONTH_DAY_YEAR.findall(text):
+        days.add(_day_or_none(int(year), _MONTH_NUMBERS[month.casefold()], int(day)))
+    for day, month, year in _DAY_MONTH_YEAR.findall(text):
+        days.add(_day_or_none(int(year), _MONTH_NUMBERS[month.casefold()], int(day)))
+    for month, day, year in _SLASH_DATE.findall(text):
+        full_year = int(year) + 2000 if len(year) == 2 else int(year)
+        days.add(_day_or_none(full_year, int(month), int(day)))
+    days.discard(None)  # type: ignore[arg-type]
+    return days.pop() if len(days) == 1 else None
+
+
+def _day_or_none(year: int, month: int, day: int) -> date | None:
+    try:
+        return date(year, month, day)
     except ValueError:
         return None
 

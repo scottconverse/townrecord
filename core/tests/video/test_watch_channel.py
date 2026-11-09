@@ -23,7 +23,7 @@ import json
 import os
 import sqlite3
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from datetime import time as clock_time
 from pathlib import Path
 from typing import Any
@@ -58,7 +58,7 @@ from townrecord.repo import (
     videos_of_platform,
 )
 from townrecord.schedule import TASK_WATCH, Scheduler
-from townrecord.video.watch import JOB_KIND, LANE, ZERO_VIDEOS_NOTE, register
+from townrecord.video.watch import JOB_KIND, LANE, ZERO_VIDEOS_NOTE, published_day, register
 from townrecord.video.youtube.classify import MeetingClassifier
 from townrecord.video.youtube.ladder import ListingLadder
 from townrecord.video.youtube.listing import (
@@ -892,3 +892,52 @@ def test_a_second_video_is_captured_when_the_meetings_own_one_never_was(
     _, checkpoint = watch.watch(source)
 
     assert checkpoint["captures_queued"] == 1
+
+
+# -- a listing with no published date ------------------------------------------
+#
+# The live run of 2026-11-08: the channel feed answered 404, yt-dlp's flat
+# listing carries no date at all (``timestamp`` and ``upload_date`` are absent),
+# and not one of the 97 channel videos was linked to its meeting, so nothing
+# aligned. The meeting's date is in the video's own title.
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "City Council Regular Session - November 3, 2026",
+        "City Council Regular Session - 3 November 2026",
+        "City Council Regular Session - 11/3/26",
+    ],
+)
+def test_an_undated_listing_is_linked_by_the_date_in_its_title(
+    db_path: Path, conn: sqlite3.Connection, world: World, title: str
+) -> None:
+    meeting = world.meeting(world.body_id, "2026-11-03T19:00:00", "City Council Regular Session")
+    world.meeting(world.body_id, "2026-10-20T19:00:00", "City Council Regular Session")
+    source = world.channel()
+    undated = listed("6ZBB8Kmt5gU", title, None, method=SOURCE_YTDLP)
+    watch = Watch(db_path, conn, ladder=ListingLadder(rss=StubLister([undated])))
+
+    _, checkpoint = watch.watch(source)
+
+    assert watch.row("6ZBB8Kmt5gU").meeting_id == meeting
+    assert checkpoint["videos_linked"] == 1
+
+
+def test_an_undated_listing_whose_title_names_no_date_is_not_linked(
+    db_path: Path, conn: sqlite3.Connection, world: World
+) -> None:
+    world.meeting(world.body_id, "2026-11-03T19:00:00", "City Council Regular Session")
+    source = world.channel()
+    undated = listed("6ZBB8Kmt5gU", "City Council Regular Session", None, method=SOURCE_YTDLP)
+    watch = Watch(db_path, conn, ladder=ListingLadder(rss=StubLister([undated])))
+
+    watch.watch(source)
+
+    assert watch.row("6ZBB8Kmt5gU").meeting_id is None, "no date is never a guessed date"
+
+
+def test_yt_dlps_own_date_spelling_is_read() -> None:
+    """yt-dlp spells an upload date ``20261103``; that is a day, not "unreadable"."""
+    assert published_day("20261103") == date(2026, 11, 3)
