@@ -56,7 +56,7 @@ from .. import repo
 from ..jobs import JobContext
 from ..records import portal
 from ..repo import Source
-from .youtube.classify import MeetingClassifier
+from .youtube.classify import MeetingClassifier, MeetingVerdict
 from .youtube.ladder import YOUTUBE_CHANNEL_URL, ListingLadder
 from .youtube.listing import SOURCE_LABELS, NoVideosFound, source_label
 from .youtube.readiness import READINESS_LIVE, READINESS_UNKNOWN, READINESS_UPCOMING
@@ -409,7 +409,7 @@ def _watch_video(
 ) -> None:
     """Store one listed video, link it when it names a meeting, queue its capture."""
     tally.listed += 1
-    verdict = classifier.verdict(listing.title)
+    verdict = _body_verdict(ctx.conn, source, classifier.verdict(listing.title))
     readiness = listing.readiness()
     # A video that does not read as a meeting is stored and not linked: it was
     # posted by the channel and a row records that it was seen and passed over,
@@ -614,6 +614,33 @@ def _source_note(source: Source, listing: Any, verdict: Any, meeting_id: int | N
     return f"Listed by watched channel source {source.id}, linked to no meeting. {verdict.reason}"
 
 
+def _body_verdict(conn: sqlite3.Connection, source: Source, verdict: Any) -> Any:
+    """The verdict, read as a meeting when the title names a body of the area.
+
+    The keyword list is the neutral seed (spec 7.2 step 6), and the bodies the
+    user accepted are the area's own words for its meetings: "Water Board
+    Meeting Oct. 19, 2026" names the Water Board, which no seed keyword does.
+    A skip phrase still wins, and a title is only read this way when the name
+    it carries is a body of the source's jurisdiction, never the source's own
+    body standing in for a title that names none.
+    """
+    if verdict.is_meeting or verdict.matched_skips:
+        return verdict
+    title = verdict.title
+    if not portal.body_name(title):
+        return verdict
+    body = portal.resolve_body(conn, source, title)
+    if body is None:
+        return verdict
+    return MeetingVerdict(
+        title,
+        True,
+        f"Read as a meeting: the title names body {body.id} ({body.name!r}).",
+        verdict.matched_keywords,
+        (),
+    )
+
+
 def _meeting_for(conn: sqlite3.Connection, source: Source, listing: Any) -> tuple[int | None, str]:
     """The meeting a listed video records, or a plain sentence saying why none.
 
@@ -634,11 +661,14 @@ def _meeting_for(conn: sqlite3.Connection, source: Source, listing: Any) -> tupl
             f"names no body of jurisdiction {source.jurisdiction_id}, and source {source.id} "
             "names none of its own."
         )
-    day = published_day(listing.published)
+    # The title names the sitting's own day ("Sustainability Advisory Board -
+    # October 21, 2026"), and the published day is only when it was uploaded,
+    # which for a board can be days later. So the title's day comes first, and
+    # the published day is used when the title names none (spec 7.2 step 7:
+    # "Match on date and body name").
+    day = title_day(listing.title)
     if day is None:
-        # yt-dlp's flat listing carries no date; the city's titles carry the
-        # sitting's own day ("City Council Regular Session - November 3, 2026").
-        day = title_day(listing.title)
+        day = published_day(listing.published)
     if day is None:
         return None, (
             f"Video {listing.video_id} ({listing.title!r}) is not linked to a meeting: its "
@@ -687,21 +717,18 @@ def _nearby_window(day: date) -> tuple[str, str]:
 def _title_matches(meetings: Sequence[Any], title: str) -> list[Any]:
     """The meetings of one body a video's title could be about.
 
-    Two readings, and the body is already settled by the caller, so what is
-    compared is the name the video's title carries -- when it carries one -- and
-    the kind of sitting both titles name. "City Council Regular Session" and
-    "City Council - Regular Session 9/22/26" are that one meeting, while the
-    study session of the same body on the next day is not, which is why the type
-    is part of the reading and not only the name.
+    The body is already settled by the caller, through the same reader the
+    portal's titles are resolved with, so the names are not compared again as
+    strings: "Longmont Planning & Zoning" and "Planning and Zoning Commission
+    (livestreamed)" are one body written two ways. What is compared is the kind
+    of sitting both titles name. "City Council Regular Session" and "City
+    Council - Regular Session 9/22/26" are that one meeting, while the study
+    session of the same body on the next day is not.
     """
-    wanted = portal.body_name(title).casefold().strip()
     wanted_type = portal.meeting_type(title)
     matches: list[Any] = []
     for meeting in meetings:
         meeting_title = meeting.title or ""
-        named = portal.body_name(meeting_title).casefold().strip()
-        if wanted and named and named != wanted:
-            continue
         if portal.meeting_type(meeting_title) != wanted_type:
             continue
         matches.append(meeting)
@@ -747,11 +774,17 @@ _MONTH_NUMBERS = {
         start=1,
     )
 }
-_MONTH = "|".join(_MONTH_NUMBERS)
+_MONTH_NUMBERS.update(
+    {name[:3]: number for name, number in list(_MONTH_NUMBERS.items()) if name != "may"}
+)
+_MONTH_NUMBERS["sept"] = 9
+#: The full names first, so "October" is read whole and not as "Oct".
+_MONTH = "|".join(sorted(_MONTH_NUMBERS, key=len, reverse=True))
 #: "November 3, 2026" and "3 November 2026", the two spellings the Longmont
-#: channels title a sitting with, and "11/3/26" from the portal's own titles.
-_MONTH_DAY_YEAR = re.compile(rf"\b({_MONTH})\s+(\d{{1,2}}),?\s+(\d{{4}})\b", re.IGNORECASE)
-_DAY_MONTH_YEAR = re.compile(rf"\b(\d{{1,2}})\s+({_MONTH})\s+(\d{{4}})\b", re.IGNORECASE)
+#: channels title a sitting with, the short "Oct. 19, 2026" one of them also
+#: uses, and "11/3/26" from the portal's own titles.
+_MONTH_DAY_YEAR = re.compile(rf"\b({_MONTH})\.?\s+(\d{{1,2}}),?\s+(\d{{4}})\b", re.IGNORECASE)
+_DAY_MONTH_YEAR = re.compile(rf"\b(\d{{1,2}})\s+({_MONTH})\.?\s+(\d{{4}})\b", re.IGNORECASE)
 _SLASH_DATE = re.compile(r"\b(\d{1,2})/(\d{1,2})/(\d{2}|\d{4})\b")
 _COMPACT_DAY = re.compile(r"\d{8}")
 
