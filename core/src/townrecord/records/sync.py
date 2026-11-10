@@ -32,6 +32,14 @@ from ..jobs import JobContext
 from ..repo import Source, record_source_failure, record_source_success
 from . import portal
 
+#: The capture job's kind. It is spelled here, not imported, because the capture
+#: package imports this one; a test checks the two spellings agree.
+CAPTURE_CAPTIONS = "capture_captions"
+#: The capture states a sync still asks a capture for. A captured video has its
+#: words, and a failed one says why on its row; a sync that asked again each
+#: run would repeat a refused YouTube request on every pass.
+CAPTURABLE_STATES: tuple[str, ...] = ("pending", "skipped")
+
 
 @dataclass
 class _Tally:
@@ -44,6 +52,7 @@ class _Tally:
     continued: int = 0
     videos_created: int = 0
     videos_linked: int = 0
+    captures_queued: int = 0
     documents_queued: int = 0
     documents_pending: int = 0
     html_agendas_read: int = 0
@@ -77,6 +86,7 @@ class _Tally:
             "meetings_continued": self.continued,
             "videos_created": self.videos_created,
             "videos_linked": self.videos_linked,
+            "captures_queued": self.captures_queued,
             "documents_queued": self.documents_queued,
             "documents_pending": self.documents_pending,
             "html_agendas_read": self.html_agendas_read,
@@ -148,7 +158,7 @@ def _sync_meeting(ctx: JobContext, source: Source, listed: ListedMeeting, tally:
     tally.meetings_updated += 0 if created else 1
 
     if listed.video_url:
-        _sync_video(ctx, source, meeting_id, listed, tally)
+        _sync_video(ctx, source, meeting_id, listed, tally, cancelled=signal is not None)
     for document in listed.documents:
         _sync_document(ctx, source, meeting_id, listed, document, tally)
     _queue_alignment(ctx, meeting_id, source, tally)
@@ -181,7 +191,13 @@ def _upsert(
 
 
 def _sync_video(
-    ctx: JobContext, source: Source, meeting_id: int, listed: ListedMeeting, tally: _Tally
+    ctx: JobContext,
+    source: Source,
+    meeting_id: int,
+    listed: ListedMeeting,
+    tally: _Tally,
+    *,
+    cancelled: bool = False,
 ) -> None:
     """Record the meeting's video, adopting the row a channel already made.
 
@@ -191,6 +207,12 @@ def _sync_video(
     only what the row was missing: the meeting, the primary flag and the URL.
     The title and the source of that row are never rewritten (spec 7.2 step 7),
     which is why no title is invented here for a new row either.
+
+    The video the portal lists is the meeting's primary video, and the
+    alignment and the clerk's video times read that video's transcript. So its
+    capture is queued here: a channel's listing reaches back only so far, and a
+    primary that no watched channel happened to list would otherwise never be
+    captured, and its meeting never aligned.
     """
     from ..repo import all_sources, attach_video, insert_video, primary_video, videos_of_platform
 
@@ -220,22 +242,58 @@ def _sync_video(
             url=listed.video_url,
         )
         tally.videos_linked += 1
+        if is_primary:
+            _queue_capture(ctx, chosen.id, listed, tally, cancelled=cancelled)
         return
 
-    insert_video(
+    is_primary = primary_video(ctx.conn, meeting_id) is None
+    video_id = insert_video(
         ctx.conn,
         source_id=source.id,
         platform_video_id=platform_id,
         meeting_id=meeting_id,
         url=listed.video_url,
         published_at=listed.start.isoformat(),
-        is_primary=primary_video(ctx.conn, meeting_id) is None,
+        is_primary=is_primary,
         source_note=(
             f"Listed by the meeting portal source {source.id} for meeting {listed.id}. "
             "No watched channel owns this video yet."
         ),
     )
     tally.videos_created += 1
+    if is_primary:
+        _queue_capture(ctx, video_id, listed, tally, cancelled=cancelled)
+
+
+def _queue_capture(
+    ctx: JobContext, video_id: int, listed: ListedMeeting, tally: _Tally, *, cancelled: bool
+) -> None:
+    """Queue the capture of a meeting's primary video, once, when it can have one.
+
+    A cancelled meeting has no recording, and a meeting that has not started
+    has none yet, so neither is asked about: every ask is a YouTube request.
+    A video that is captured or failed, or whose capture is queued or running,
+    is left alone. The capture job itself still reads the video's readiness first
+    (spec 8.2), so a meeting that is live when this runs is retried, not lost.
+    """
+    from ..repo import get_video, latest_transcript
+
+    if cancelled:
+        tally.skip(f"Meeting {listed.id} is cancelled, so the capture of its video is not queued.")
+        return
+    if listed.start.date() > ctx.clock().date():
+        tally.skip(
+            f"Meeting {listed.id} starts {listed.start.isoformat()}, so its video is not "
+            "captured yet."
+        )
+        return
+    video = get_video(ctx.conn, video_id)
+    if video is None:  # pragma: no cover - the row was just written
+        return
+    if video.capture_state not in CAPTURABLE_STATES or latest_transcript(ctx.conn, video_id):
+        return
+    if portal.enqueue_once(ctx, CAPTURE_CAPTIONS, {"video_id": video_id}) is not None:
+        tally.captures_queued += 1
 
 
 def _channel_row(sources: list[Source], rows: list[Any]) -> Any | None:

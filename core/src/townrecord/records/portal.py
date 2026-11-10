@@ -188,6 +188,29 @@ _MONTHS = (
 #: Authority (LURA) 5/5/26").
 _TRAILING_DATE = re.compile(r"[\s(]*\d{1,2}/\d{1,2}/\d{2,4}\)?\s*$")
 
+#: The short month spellings a channel titles a sitting with ("Oct. 21, 2026").
+_SHORT_MONTHS = (
+    "jan",
+    "feb",
+    "mar",
+    "apr",
+    "jun",
+    "jul",
+    "aug",
+    "sep",
+    "sept",
+    "oct",
+    "nov",
+    "dec",
+)
+
+#: A spelled-out date a channel hangs off the end of a name, with the word
+#: "Meeting" that may stand in front of it ("Water Board Meeting Oct. 19, 2026").
+_TRAILING_WORDED_DATE = re.compile(
+    rf"(\s+meeting)?\s+({'|'.join(_MONTHS + _SHORT_MONTHS)})\.?\s+\d{{1,2}},?\s+\d{{4}}\s*$",
+    re.IGNORECASE,
+)
+
 #: A month a portal hangs off the end of a name.
 _TRAILING_MONTH = re.compile(rf"\s+({'|'.join(_MONTHS)})\s*$", re.IGNORECASE)
 
@@ -695,13 +718,15 @@ def _clean_name(text: str) -> str:
     """A name with the annotations a portal hangs on it taken off.
 
     Three of them, and each is something the portal says about the sitting
-    rather than a part of a body's name: a date ("5/5/26"), the month a
+    rather than a part of a body's name: a date ("5/5/26", or "Meeting Oct.
+    19, 2026" as a channel writes it), the month a
     sitting is named by ("Transportation Advisory Board May Meeting"), and an
     acronym in brackets that repeats the name in front of it ("Longmont Urban
     Renewal Authority (LURA)"). What a marker leaves behind once its word has
     been read out is tidied away with them.
     """
     text = _TRAILING_DATE.sub("", text)
+    text = _TRAILING_WORDED_DATE.sub("", text)
     text = _TRAILING_MONTH.sub("", text)
     text = _without_repeating_acronym(text)
     text = _EMPTY_BRACKETS.sub(" ", text)

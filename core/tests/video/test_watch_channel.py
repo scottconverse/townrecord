@@ -1046,3 +1046,145 @@ def test_the_portals_own_video_is_captured_when_another_channels_copy_came_first
         checkpoint["skipped"]
     )
     assert checkpoint["captures_queued"] == 1
+
+
+# -- The live run of 2026-11-10 (live-m1g): board videos that found no meeting --
+
+#: The day the live-m1g run watched the two channels.
+LIVE_M1G = datetime(2026, 11, 10, 15, 0, tzinfo=UTC)
+
+
+def _board_world(world: World) -> dict[str, int]:
+    """The bodies and meetings the live-m1g portal listed for October 19-21."""
+    bodies = {
+        name: world.body(name)
+        for name in (
+            "Planning and Zoning Commission",
+            "Water Board",
+            "Sustainability Advisory Board",
+        )
+    }
+    return {
+        "sab": world.meeting(
+            bodies["Sustainability Advisory Board"],
+            "2026-10-21T16:30:00",
+            "IN PERSON Sustainability Advisory Board",
+        ),
+        "pz": world.meeting(
+            bodies["Planning and Zoning Commission"],
+            "2026-10-21T19:00:00",
+            "Planning and Zoning Commission (livestreamed)",
+        ),
+        "water": world.meeting(bodies["Water Board"], "2026-10-19T15:00:00", "Water Board"),
+    }
+
+
+def _live_watch(db_path: Path, conn: sqlite3.Connection, listings: list[VideoListing]) -> Watch:
+    return Watch(
+        db_path,
+        conn,
+        ladder=ListingLadder(rss=StubLister(listings)),
+        clock=lambda: LIVE_M1G,
+    )
+
+
+def test_a_board_video_uploaded_two_days_late_finds_its_meeting_by_its_title_date(
+    db_path: Path, conn: sqlite3.Connection, world: World
+) -> None:
+    """qkZxO5zzi0A: the Oct 21 board meeting, uploaded Oct 23 UTC.
+
+    The watch looked between Oct 22 and Oct 24 (the published day and one day
+    either side) and found nothing; the title names the sitting's own day.
+    """
+    meetings = _board_world(world)
+    channel = world.channel(body_id=world.body_id)
+    watch = _live_watch(
+        db_path,
+        conn,
+        [
+            listed(
+                "qkZxO5zzi0A",
+                "Sustainability Advisory Board - October 21, 2026",
+                "2026-10-23T00:35:11+00:00",
+            )
+        ],
+    )
+
+    _, checkpoint = watch.watch(channel)
+
+    assert watch.row("qkZxO5zzi0A").meeting_id == meetings["sab"], checkpoint["skipped"]
+
+
+def test_a_city_led_short_name_links_to_the_body_the_portal_names_in_full(
+    db_path: Path, conn: sqlite3.Connection, world: World
+) -> None:
+    """U_EYKxV_0Bk: "Longmont Planning & Zoning" is the Planning and Zoning Commission.
+
+    The body was resolved (PR #31's rule), but the meeting was then dropped
+    because the two titles' names were compared again as strings.
+    """
+    world_named = World(conn, name="Longmont")
+    meetings = _board_world(world_named)
+    channel = world_named.channel(body_id=world_named.body_id)
+    watch = _live_watch(
+        db_path,
+        conn,
+        [
+            listed(
+                "U_EYKxV_0Bk",
+                "Longmont Planning & Zoning - Regular Session - October 21, 2026",
+                "2026-10-22T17:40:13+00:00",
+            )
+        ],
+    )
+
+    _, checkpoint = watch.watch(channel)
+
+    assert watch.row("U_EYKxV_0Bk").meeting_id == meetings["pz"], checkpoint["skipped"]
+
+
+def test_a_title_with_a_short_month_and_the_word_meeting_names_its_body(
+    db_path: Path, conn: sqlite3.Connection, world: World
+) -> None:
+    """nYT8LOdpskY and k-zM0rlPCKg: "... Board Meeting Oct. 21, 2026".
+
+    The name read as "Sustainability Advisory Board Oct. 21, 2026", which is no
+    body, and the Water Board's title matched no seed keyword, so it was not
+    read as a meeting at all.
+    """
+    meetings = _board_world(world)
+    channel = world.channel(origin=OTHER_CHANNEL_URL, body_id=world.body_id)
+    watch = _live_watch(
+        db_path,
+        conn,
+        [
+            listed(
+                "nYT8LOdpskY",
+                "Sustainability Advisory Board Meeting Oct. 21, 2026",
+                "2026-10-24T07:45:05+00:00",
+            ),
+            listed("k-zM0rlPCKg", "Water Board Meeting Oct. 19, 2026", "2026-10-24T07:30:29+00:00"),
+        ],
+    )
+
+    _, checkpoint = watch.watch(channel)
+
+    assert watch.row("nYT8LOdpskY").meeting_id == meetings["sab"], checkpoint["skipped"]
+    assert watch.row("k-zM0rlPCKg").meeting_id == meetings["water"], checkpoint["skipped"]
+    assert checkpoint["captures_queued"] == 2
+
+
+def test_a_title_naming_no_body_of_the_area_is_still_not_a_meeting(
+    db_path: Path, conn: sqlite3.Connection, world: World
+) -> None:
+    """Reading body names as meeting words adds the area's bodies and nothing else."""
+    _board_world(world)
+    channel = world.channel(body_id=world.body_id)
+    watch = _live_watch(
+        db_path, conn, [listed("zzzzzzzzzzz", "Fall Leaf Pickup Oct. 19, 2026", None)]
+    )
+
+    _, checkpoint = watch.watch(channel)
+
+    assert watch.row("zzzzzzzzzzz").meeting_id is None
+    assert checkpoint["captures_queued"] == 0

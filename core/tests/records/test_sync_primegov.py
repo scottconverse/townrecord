@@ -23,6 +23,7 @@ from townrecord.records.portal import (
     SyncRefused,
     sync_request,
 )
+from townrecord.records.sync import CAPTURE_CAPTIONS
 from townrecord.repo import (
     agenda_items,
     all_sources,
@@ -815,3 +816,103 @@ def test_a_window_that_ends_before_it_starts_is_refused_by_name() -> None:
             {"source_id": 7, "from_date": "2026-09-30", "to_date": "2026-09-01"},
             today=date(2026, 9, 27),
         )
+
+
+# -- The portal's own video is captured (live-m1g, 2026-11-10) -----------------
+
+
+def _captures(sync: Sync) -> list[int]:
+    return [json.loads(row["payload"])["video_id"] for row in sync.jobs_of_kind(CAPTURE_CAPTIONS)]
+
+
+def test_the_capture_kind_is_the_capture_jobs_own() -> None:
+    """The sync spells the kind; the capture package owns it. They must agree."""
+    from townrecord.capture.command import JOB_KIND
+
+    assert CAPTURE_CAPTIONS == JOB_KIND
+
+
+def test_a_held_meetings_portal_video_is_queued_for_capture(
+    area: Area, wired: FakePortal, sync: Sync
+) -> None:
+    """Meetings 4 and 6 of live-m1g: the portal's primary video stayed pending.
+
+    No watched channel listed uHFuCfd5MVQ or unNcPhKJ45o (a feed lists only its
+    newest uploads), so nothing ever asked for their captions, and the meetings'
+    alignment paused for good on "has no transcript".
+    """
+    one_meeting(wired, video_url=A_VIDEO_URL)
+    job_id = sync.queue_sync(area.portal_id)
+    sync.lane("normal")
+
+    video = videos_of_platform(sync.conn, "3qfQAkAAC9U")[0]
+    assert _captures(sync) == [video.id]
+    assert read_checkpoint(sync.conn, job_id)["captures_queued"] == 1
+
+
+def test_a_second_sync_queues_no_second_capture(area: Area, wired: FakePortal, sync: Sync) -> None:
+    """While the first capture waits (spec 8.2 defers it), a re-sync adds none."""
+
+    def waiting_capture(ctx: Any) -> None:
+        ctx.defer("waiting for status metadata (will retry)", delay_s=3600.0)
+
+    sync.registry.register(CAPTURE_CAPTIONS, waiting_capture, lane="normal")
+    one_meeting(wired, video_url=A_VIDEO_URL)
+    sync.queue_sync(area.portal_id)
+    sync.lane("normal")
+    second = sync.queue_sync(area.portal_id)
+    sync.lane("normal")
+
+    assert len(_captures(sync)) == 1
+    assert read_checkpoint(sync.conn, second)["captures_queued"] == 0
+
+
+def test_a_captured_channel_row_the_sync_adopts_is_not_captured_again(
+    area: Area, wired: FakePortal, sync: Sync
+) -> None:
+    insert_video(
+        sync.conn,
+        source_id=area.channel_id,
+        platform_video_id="3qfQAkAAC9U",
+        title="City Council Regular Session, September 8 2026",
+        capture_state="captions",
+        readiness="finished",
+    )
+    one_meeting(wired, video_url=A_VIDEO_URL)
+    sync.queue_sync(area.portal_id)
+    sync.lane("normal")
+
+    assert _captures(sync) == []
+
+
+def test_a_cancelled_or_future_meetings_video_is_not_captured(
+    area: Area, wired: FakePortal, sync: Sync
+) -> None:
+    """Every ask is a YouTube request; a meeting with no recording yet gets none."""
+    ahead = date.today() + timedelta(days=FUTURE_DAYS)
+    wired.meetings = [
+        meeting(
+            A_MEETING,
+            "2026-09-08T19:00:00",
+            "CANCELLED City Council Regular Session",
+            video_url=A_VIDEO_URL,
+        ),
+        meeting(
+            A_MEETING + 1,
+            days_from_today(FUTURE_DAYS),
+            "City Council Regular Session",
+            video_url="https://www.youtube.com/watch?v=unNcPhKJ45o",
+        ),
+    ]
+    sync.queue(
+        "sync_primegov",
+        {
+            "source_id": area.portal_id,
+            "from_date": "2026-09-01",
+            "to_date": (ahead + timedelta(days=1)).isoformat(),
+        },
+    )
+    sync.lane("normal")
+
+    assert sync.conn.execute("SELECT COUNT(*) FROM videos").fetchone()[0] == 2
+    assert _captures(sync) == []
