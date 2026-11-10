@@ -143,6 +143,42 @@ def test_publisher_captions_are_told_from_automatic_ones(
     assert transcripts(conn, video)[0]["origin"] == "publisher_captions"
 
 
+def test_a_publisher_track_is_fetched_by_a_second_request_and_stored(
+    conn: sqlite3.Connection, storage_root: Path, video: int
+) -> None:
+    """Spec 8.3: the first request asks for en-orig; an uploaded track is a second one.
+
+    The stored file is the publisher's ``.en.`` file, not YouTube's ``.en-orig.``
+    one, which sorts first by name.
+    """
+    clock = FakeClock()
+    fake = FakeYtDlp(info=dict(INFO_PUBLISHER_CAPTIONS))
+    capture(storage_root, fake)(claimed_job(conn, video, clock))
+
+    first, second = (call["argv"] for call in fake.capture_calls)
+    assert first[first.index("--sub-langs") + 1] == "en-orig"
+    assert second[second.index("--sub-langs") + 1] == "en"
+    assert "--write-auto-subs" not in second
+    assert "--download-archive" not in second
+    stored = conn.execute(
+        "SELECT rel_path FROM artifacts WHERE id = ?",
+        (transcripts(conn, video)[0]["artifact_id"],),
+    ).fetchone()["rel_path"]
+    assert stored.endswith(f"{PLATFORM_VIDEO_ID}.en.srv3")
+
+
+def test_a_video_with_only_youtube_captions_makes_one_request(
+    conn: sqlite3.Connection, storage_root: Path, video: int
+) -> None:
+    """No uploaded track, no second request: YouTube is asked once (spec 8.10)."""
+    clock = FakeClock()
+    fake = FakeYtDlp()
+    capture(storage_root, fake)(claimed_job(conn, video, clock))
+
+    assert len(fake.capture_calls) == 1
+    assert fake.argv[fake.argv.index("--sub-langs") + 1] == "en-orig"
+
+
 def test_a_vtt_caption_file_is_parsed_when_there_is_no_srv3(
     conn: sqlite3.Connection, storage_root: Path, video: int
 ) -> None:

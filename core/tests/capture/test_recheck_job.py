@@ -18,6 +18,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -63,7 +64,15 @@ from townrecord.jobs.queue import stamp
 from townrecord.records.portal import ALIGN_MEETING
 from townrecord.status import collect, render
 
-from .fakes import FIXTURE_SRV3, PLATFORM_VIDEO_ID, FakeClock, FakeYtDlp, claimed_job, fake_429
+from .fakes import (
+    FIXTURE_SRV3,
+    INFO_PUBLISHER_CAPTIONS,
+    PLATFORM_VIDEO_ID,
+    FakeClock,
+    FakeYtDlp,
+    claimed_job,
+    fake_429,
+)
 
 #: The moment the first capture of these tests is dated, and the moment the
 #: meeting it belongs to ended. Both are the test's, because every rule of spec
@@ -194,6 +203,7 @@ def recheck_at(
     at: datetime,
     *,
     caption: bytes | None = None,
+    info: dict[str, Any] | None = None,
 ) -> tuple[str | None, FakeYtDlp]:
     """Move the clock to `at`, run one recheck, and say how it ended.
 
@@ -206,6 +216,8 @@ def recheck_at(
     fake = FakeYtDlp()
     if caption is not None:
         fake.caption = caption
+    if info is not None:
+        fake.info = info
     handler = CaptionRecheck(
         storage_root=storage_root, settings=CaptureSettings(), runner=fake, interpreter="python"
     )
@@ -740,3 +752,23 @@ def test_status_shows_the_provisional_captures_and_when_they_are_looked_at_again
     assert "captions settled under churn" in after
     assert "no capture is provisional" in after
     assert f"  {PLATFORM_VIDEO_ID}:" not in after
+
+
+def test_a_recheck_of_a_publisher_track_reads_that_track_again(
+    conn: sqlite3.Connection, storage_root: Path, video: int, meeting: int
+) -> None:
+    """Spec 8.3: when the video has an uploaded track, the recheck fetches it too."""
+    clock = ready_for_recheck(conn, storage_root, video, meeting)
+
+    _, fake = recheck_at(
+        conn,
+        storage_root,
+        clock,
+        CAPTURED + timedelta(minutes=10),
+        info=dict(INFO_PUBLISHER_CAPTIONS),
+    )
+
+    first, second = (call["argv"] for call in fake.capture_calls)
+    assert first[first.index("--sub-langs") + 1] == "en-orig"
+    assert second[second.index("--sub-langs") + 1] == "en"
+    assert "--write-auto-subs" not in second

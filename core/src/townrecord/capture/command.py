@@ -15,6 +15,7 @@ from .. import pacing, proc
 from ..pacing import RATE_LIMIT_MARKERS as RATE_LIMIT_MARKERS
 from ..pacing import rate_limit_marker as rate_limit_marker
 from ..runtime.javascript import FALLBACK_RUNTIME
+from .sidecar import AUTO_TRACK, UPLOADED_TRACK
 
 #: The job kind this module builds the command for.
 JOB_KIND = "capture_captions"
@@ -139,7 +140,7 @@ def capture_argv(
         "--write-auto-subs",
         "--write-info-json",
         "--sub-langs",
-        "en",
+        AUTO_TRACK,
         "--sub-format",
         "srv3/vtt/best",
         "--js-runtimes",
@@ -157,6 +158,23 @@ def capture_argv(
         argv.append("--continue")
     argv += ["-o", f"{folder}/%(id)s.%(ext)s", url]
     return with_player_client(argv, player_client) if player_client else argv
+
+
+def uploaded_argv(argv: Sequence[str]) -> list[str]:
+    """The second request of spec 8.3: the same command, for the publisher's own track.
+
+    It asks for ``en`` among the uploaded tracks only (no ``--write-auto-subs``, so
+    YouTube's translated "en" is never asked for), and it carries no download
+    archive: the first request has just added this video to the archive, and
+    yt-dlp would skip it.
+    """
+    parts = [str(part) for part in argv]
+    parts.remove("--write-auto-subs")
+    parts[parts.index("--sub-langs") + 1] = UPLOADED_TRACK
+    if "--download-archive" in parts:
+        at = parts.index("--download-archive")
+        del parts[at : at + 2]
+    return parts
 
 
 def run_capture(runner: Runner, argv: Sequence[str], *, timeout_s: float) -> proc.ProcessResult:

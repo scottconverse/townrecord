@@ -23,8 +23,14 @@ from typing import Any
 PUBLISHER_CAPTIONS = "publisher_captions"
 AUTO_CAPTIONS = "auto_captions"
 
-#: The language the job asks for (spec 8.3: --sub-langs en).
-LANGUAGE = "en"
+#: The publisher's own English track: the name ``subtitles`` uses (spec 8.3).
+UPLOADED_TRACK = "en"
+LANGUAGE = UPLOADED_TRACK
+
+#: YouTube's own automatic English track (spec 8.3). In ``automatic_captions``
+#: the name "en" can be a translation of this track, and YouTube refuses a
+#: translation with HTTP 429: Longmont video qkZxO5zzi0A, November 9, 2026.
+AUTO_TRACK = "en-orig"
 
 #: The names a caption track's own revision time is stated under. Two
 #: spellings, because this is a fact of somebody else's document: yt-dlp's
@@ -36,8 +42,21 @@ REVISION_KEYS: tuple[str, ...] = ("last_modified", "modified")
 
 
 def _has_language(tracks: Any) -> bool:
-    """Return True when a track table holds the language the job asked for."""
-    return isinstance(tracks, Mapping) and LANGUAGE in tracks
+    """Return True when a track table holds an English track."""
+    return isinstance(tracks, Mapping) and (UPLOADED_TRACK in tracks or AUTO_TRACK in tracks)
+
+
+def _track_name(table: str, tracks: Mapping[str, Any]) -> str:
+    """The name the capture asked for in this table: en-orig first among YouTube's own."""
+    if table == "automatic_captions" and AUTO_TRACK in tracks:
+        return AUTO_TRACK
+    return UPLOADED_TRACK if UPLOADED_TRACK in tracks else AUTO_TRACK
+
+
+def has_uploaded_track(info: Mapping[str, Any]) -> bool:
+    """True when the publisher uploaded an English track of its own (spec 8.3)."""
+    tracks = info.get("subtitles")
+    return isinstance(tracks, Mapping) and UPLOADED_TRACK in tracks
 
 
 def caption_track(info: Mapping[str, Any]) -> dict[str, Any] | None:
@@ -51,7 +70,7 @@ def caption_track(info: Mapping[str, Any]) -> dict[str, Any] | None:
         tracks = info.get(table)
         if not _has_language(tracks):
             continue
-        entries = tracks[LANGUAGE]
+        entries = tracks[_track_name(table, tracks)]
         if isinstance(entries, Sequence) and not isinstance(entries, (str, bytes)) and entries:
             first = entries[0]
             if isinstance(first, Mapping):
@@ -69,7 +88,7 @@ def caption_origin(info: Mapping[str, Any]) -> str | None:
     ``automatic_captions`` means auto captions. A sidecar with neither cannot
     decide, and the job does not guess: it stops with a reason.
     """
-    if _has_language(info.get("subtitles")):
+    if has_uploaded_track(info):
         return PUBLISHER_CAPTIONS
     if _has_language(info.get("automatic_captions")):
         return AUTO_CAPTIONS
