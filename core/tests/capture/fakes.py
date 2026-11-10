@@ -43,7 +43,12 @@ INFO_AUTO_CAPTIONS: dict[str, Any] = {
     "duration": 7200,
     "live_status": "was_live",
     "subtitles": {},
-    "automatic_captions": {"en": [{"ext": "srv3", "name": "English"}]},
+    # A real sidecar lists YouTube's original track as "en-orig" and "en" beside
+    # it, which on some videos is a translation (spec 8.3).
+    "automatic_captions": {
+        "en-orig": [{"ext": "srv3", "name": "English (Original)"}],
+        "en": [{"ext": "srv3", "name": "English"}],
+    },
 }
 
 #: A sidecar with a publisher track: ``subtitles`` holds the one the city
@@ -88,6 +93,8 @@ class FakeYtDlp:
     returncode: int = 0
     stderr: str = ""
     write_caption: bool = True
+    #: Bytes for one named track (``--sub-langs`` value), instead of ``caption``.
+    track_captions: dict[str, bytes] = field(default_factory=dict)
     padding_bytes: int = 0
     #: The real yt-dlp skips a video the archive already records, which is the
     #: whole reason a stale archive file can hide a meeting.
@@ -226,8 +233,10 @@ class FakeYtDlp:
         folder = Path(command[command.index("--paths") + 1])
         folder.mkdir(parents=True, exist_ok=True)
         if self.write_caption:
-            name = f"{self.platform_video_id}.en.{self.caption_ext}"
-            (folder / name).write_bytes(self.caption)
+            # yt-dlp names the file after the track it was asked for.
+            track = command[command.index("--sub-langs") + 1]
+            name = f"{self.platform_video_id}.{track}.{self.caption_ext}"
+            (folder / name).write_bytes(self.track_captions.get(track, self.caption))
         if self.info is not None:
             sidecar = folder / f"{self.platform_video_id}.info.json"
             sidecar.write_text(json.dumps(self.info), encoding="utf-8")

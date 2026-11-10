@@ -15,6 +15,7 @@ from townrecord.capture.command import (
     capture_argv,
     rate_limit_marker,
     run_capture,
+    uploaded_argv,
     with_player_client,
 )
 from townrecord.runtime.javascript import FALLBACK_RUNTIME
@@ -35,7 +36,7 @@ SPEC_8_3 = [
     "--write-auto-subs",
     "--write-info-json",
     "--sub-langs",
-    "en",
+    "en-orig",
     "--sub-format",
     "srv3/vtt/best",
     "--js-runtimes",
@@ -263,3 +264,32 @@ def test_a_command_youtube_answered_resets_the_growing_hold(the_process_pace) ->
     pace.rate_limited(what="a caption capture", marker="http error 429")
 
     assert pace.held_for() == 900.0
+
+
+def test_the_second_request_asks_only_for_the_publishers_own_track() -> None:
+    """Spec 8.3: "en" among uploaded tracks only, and no archive that would skip it.
+
+    YouTube's automatic "en" can be a translation it refuses with HTTP 429, so
+    the second request never asks for automatic captions at all.
+    """
+    first = capture_argv(
+        interpreter=INTERPRETER, work_dir=FOLDER, archive=ARCHIVE, url=URL, resume=False
+    )
+    second = uploaded_argv(first)
+    assert "--write-auto-subs" not in second
+    assert second[second.index("--sub-langs") + 1] == "en"
+    assert "--download-archive" not in second
+    assert str(ARCHIVE.as_posix()) not in second
+    # Everything else is the first request, in its order.
+    rest = [p for p in first if p not in ("--write-auto-subs", "--download-archive")]
+    rest = [p for p in rest if p not in ("en-orig", ARCHIVE.as_posix())]
+    assert [p for p in second if p != "en"] == rest
+
+
+def test_the_second_request_keeps_the_player_client_that_answered() -> None:
+    """A retry's client stays on the second request, so it asks the same way."""
+    first = with_player_client(
+        capture_argv(interpreter=INTERPRETER, work_dir=FOLDER, archive=ARCHIVE, url=URL),
+        "visionos",
+    )
+    assert "youtube:player_client=visionos" in uploaded_argv(first)

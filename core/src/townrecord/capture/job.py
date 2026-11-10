@@ -119,6 +119,8 @@ class Attempt:
     #: The YouTube player client this run named, or "" for the plain command
     #: that named none and got whatever YouTube serves by default.
     player_client: str = ""
+    #: The command that ran, so the second request of spec 8.3 is built from it.
+    argv: tuple[str, ...] = ()
 
 
 def video_id_from(payload: Any) -> int:
@@ -200,6 +202,8 @@ class CaptionCapture:
             return
         folder = work.work_dir(self.storage_root, video.platform_video_id)
         attempt = self._run(ctx, video, folder)
+        if attempt.result.ok:
+            attempt = self._uploaded_track(ctx, video, folder, attempt)
         if not attempt.result.ok:
             self._handle_failure(ctx, attempt)
         state = self._store(ctx, video, folder, attempt)
@@ -361,7 +365,25 @@ class CaptionCapture:
             pacing.pacer().wait(what=PACE_WHAT)
         ctx.heartbeat()
         result = command.run_capture(self.runner, argv, timeout_s=self.settings.process_timeout_s)
-        return Attempt(result=result, player_client=client)
+        return Attempt(result=result, player_client=client, argv=tuple(str(a) for a in argv))
+
+    def _uploaded_track(
+        self, ctx: JobContext, video: repo.Video, folder: Path, attempt: Attempt
+    ) -> Attempt:
+        """Spec 8.3's second request: the publisher's own track, when the video has one.
+
+        The first request asked for YouTube's automatic track only. When the
+        sidecar it wrote lists a track the publisher uploaded, that track is
+        fetched too, with the player client that answered, and it is the one
+        stored. A video with no uploaded track makes no second request.
+        """
+        info_path = work.info_file(folder)
+        if info_path is None or work.uploaded_caption_file(folder) is not None:
+            return attempt
+        if not sidecar.has_uploaded_track(work.read_info(info_path)):
+            return attempt
+        logger.info("Video %s has captions its publisher uploaded; fetching that track.", video.id)
+        return self._attempt(ctx, command.uploaded_argv(attempt.argv), attempt.player_client)
 
     @staticmethod
     def _needs_another_client(result: proc.ProcessResult) -> bool:

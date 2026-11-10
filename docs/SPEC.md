@@ -168,7 +168,7 @@ Captions are small. TownReporter measured about 136 KB of captions for a two-hou
 
 ```
 python -m yt_dlp --skip-download --write-subs --write-auto-subs --write-info-json
-  --sub-langs en --sub-format srv3/vtt/best --js-runtimes node
+  --sub-langs en-orig --sub-format srv3/vtt/best --js-runtimes node
   --sleep-subtitles 2 --sleep-requests 1
   --download-archive <archive file> --paths <dir> [--continue]
   -o <dir>/%(id)s.%(ext)s <watch url>
@@ -177,6 +177,9 @@ python -m yt_dlp --skip-download --write-subs --write-auto-subs --write-info-jso
 Rules:
 
 - Parse srv3 (and VTT) into timed segments.
+- Ask for "en-orig", YouTube's original English track. Never ask for YouTube's automatic "en": on some videos it is a translation, and YouTube refuses translations with HTTP 429. Longmont's Sustainability Advisory Board video qkZxO5zzi0A got 429 on "en" for a day while other videos downloaded normally, and its "en-orig" track downloaded at once (November 9, 2026).
+- When the info.json lists an English track the publisher uploaded (`subtitles` has "en"), make a second request for that track only: the same command without --write-auto-subs and without --download-archive, with --sub-langs en. The uploaded track is the one stored. A video with no uploaded track gets one request.
+- A 429 on one video while other videos download normally is not a rate limit on the address. Check the track that was asked for before waiting out a hold.
 - HTTP 429 means "rate limited." It is a paced retry on a later pass. It is NOT a reason to download audio.
 - Stop kills the process. A stopped capture resumes with --continue in the same folder.
 - Size and length limits: default 8 hours and 500 MB. Larger meetings need the user's confirmation, and a refusal is recorded with its reason.

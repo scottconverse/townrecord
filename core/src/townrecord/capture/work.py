@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from .command import SRV3, VTT
+from .sidecar import UPLOADED_TRACK
 
 #: The work folder inside the storage root.
 WORK_DIR_NAME = "work"
@@ -99,8 +100,24 @@ def files_with_extension(folder: str | Path, extension: str) -> list[Path]:
     return sorted(entry for entry in path.iterdir() if entry.suffix == f".{extension}")
 
 
+def uploaded_caption_file(folder: str | Path) -> Path | None:
+    """Return the publisher's own caption file (``<id>.en.<ext>``), srv3 first, or None."""
+    for extension in CAPTION_EXTENSIONS:
+        for found in files_with_extension(folder, extension):
+            if found.name.endswith(f".{UPLOADED_TRACK}.{extension}"):
+                return found
+    return None
+
+
 def caption_file(folder: str | Path) -> Path | None:
-    """Return the caption file to parse: srv3 first, else vtt (spec 8.3)."""
+    """Return the caption file to parse (spec 8.3).
+
+    The publisher's own track comes first, whatever its format, because that is
+    the track ``sidecar.caption_origin`` names. Then srv3, else vtt.
+    """
+    uploaded = uploaded_caption_file(folder)
+    if uploaded is not None:
+        return uploaded
     for extension in CAPTION_EXTENSIONS:
         found = files_with_extension(folder, extension)
         if found:

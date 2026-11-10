@@ -296,9 +296,25 @@ class CaptionRecheck:
         attempt = Attempt(
             result=command.run_capture(self.runner, argv, timeout_s=self.settings.process_timeout_s)
         )
+        info_path = work.info_file(folder)
+        if (
+            attempt.result.ok
+            and info_path is not None
+            and sidecar.has_uploaded_track(work.read_info(info_path))
+        ):
+            # Spec 8.3's second request: the stored capture is the publisher's own
+            # track, so the recheck reads that same track again.
+            pacing.pacer().wait(what=RECHECK_PACE_WHAT)
+            ctx.heartbeat()
+            attempt = Attempt(
+                result=command.run_capture(
+                    self.runner,
+                    command.uploaded_argv(argv),
+                    timeout_s=self.settings.process_timeout_s,
+                )
+            )
         if not attempt.result.ok:
             self._handle_failure(ctx, video, attempt)
-        info_path = work.info_file(folder)
         caption_path = work.caption_file(folder)
         if info_path is None or caption_path is None:
             ctx.defer(
