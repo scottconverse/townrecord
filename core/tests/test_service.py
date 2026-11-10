@@ -202,16 +202,18 @@ def test_a_runtime_installed_after_start_is_used_without_a_restart(settings: Set
     so every capture ran this process's interpreter, which has no yt_dlp, until
     the service was restarted. The handlers follow the active runtime instead.
     """
-    import sys
 
     from townrecord.runtime.settings import TEXTFLOWKIT_PROGRAM, TEXTFLOWKIT_TOOL
     from townrecord.runtime.tools import program_in
+    from townrecord.service import WaitsForRuntime
 
     from .runtime.fakes import installed, make_venv, write_installed
 
     service = build_service(settings, clock=lambda: BEFORE_THE_DAY)
     capture = service.handlers[CAPTURE_JOB_KIND]
-    assert capture.current().interpreter == sys.executable
+    # Before the install there is no yt-dlp, so the capture waits for it
+    # rather than running this process's interpreter.
+    assert isinstance(capture.current(), WaitsForRuntime)
 
     root = settings.runtime_root
     python = make_venv(root, "2026.11.1")
@@ -300,3 +302,67 @@ def test_a_watch_waits_for_the_yt_dlp_runtime_instead_of_failing(
     assert row["state"] == QUEUED, row["last_error"]
     assert "yt-dlp" in row["last_error"] and "not installed" in row["last_error"]
     assert row["run_after"] > BEFORE_THE_DAY.isoformat()
+
+
+def test_a_capture_waits_for_the_yt_dlp_runtime_instead_of_using_this_interpreter(
+    settings: Settings, conn: sqlite3.Connection
+) -> None:
+    """A capture that runs before yt-dlp is installed waits a minute for it (spec 8.9).
+
+    The live run of 2026-11-10 (live-m1h) started capture job 11 at 18:32:41Z,
+    five seconds before the first ``runtime_update`` finished. The job asked the
+    video's status with this process's interpreter, which has no yt_dlp, read
+    the answer as ``unknown`` and waited the readiness hour of spec 8.2, so
+    meeting 4 aligned an hour late. With no runtime there is no yt-dlp to ask:
+    the job waits for the install, as a watch does, and asks nothing.
+    """
+    from townrecord.jobs import Runner
+    from townrecord.records import portal
+    from townrecord.repo import insert_jurisdiction, insert_source
+    from townrecord.repo.meetings import insert_video
+
+    from .capture.fakes import FakeYtDlp
+
+    city = insert_jurisdiction(conn, type="city", name="Longmont")
+    source = insert_source(
+        conn,
+        jurisdiction_id=city,
+        type=portal.VIDEO_CHANNEL,
+        origin="https://www.youtube.com/channel/UCH5ilm2TwUm2C9-pc8ejNKw",
+        suggested_by="a person",
+        reason="the city's channel",
+        status="accepted",
+        body_id=None,
+        settings="{}",
+    )
+    video = insert_video(conn, source_id=source, platform_video_id="uHFuCfd5MVQ")
+    conn.commit()
+    fake = FakeYtDlp(platform_video_id="uHFuCfd5MVQ")
+    service = build_service(settings, clock=lambda: BEFORE_THE_DAY, capture_runner=fake)
+    try:
+        job_id = enqueue(conn, CAPTURE_JOB_KIND, {"video_id": video}, registry=service.registry)
+        conn.commit()
+        Runner(settings.db_path, registry=service.registry, clock=lambda: BEFORE_THE_DAY).run_once(
+            CAPTURE_LANE
+        )
+    finally:
+        service.close()
+
+    row = get(conn, job_id)
+    assert fake.calls == []
+    assert row["state"] == QUEUED, row["last_error"]
+    assert "yt-dlp" in row["last_error"] and "not installed" in row["last_error"]
+    waited = datetime.fromisoformat(row["run_after"]) - BEFORE_THE_DAY
+    assert waited.total_seconds() <= 120
+
+
+def test_recheck_and_transcription_also_wait_for_the_yt_dlp_runtime(settings: Settings) -> None:
+    """Every job that runs yt-dlp waits for its runtime, not only the watch and capture."""
+    from townrecord.service import WaitsForRuntime
+
+    service = build_service(settings, clock=lambda: BEFORE_THE_DAY)
+    try:
+        for kind in (CAPTURE_JOB_KIND, RECHECK_JOB_KIND, TRANSCRIBE_JOB_KIND):
+            assert isinstance(service.handlers[kind].current(), WaitsForRuntime), kind
+    finally:
+        service.close()

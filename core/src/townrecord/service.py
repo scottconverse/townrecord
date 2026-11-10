@@ -34,7 +34,14 @@ import httpx
 
 from . import pacing, records
 from .capture import JOB_KIND as CAPTURE_JOB_KIND
-from .capture import RECHECK_JOB_KIND, TRANSCRIBE_JOB_KIND, register_recheck, register_transcribe
+from .capture import LANE as CAPTURE_LANE
+from .capture import (
+    RECHECK_JOB_KIND,
+    TRANSCRIBE_JOB_KIND,
+    TRANSCRIBE_LANE,
+    register_recheck,
+    register_transcribe,
+)
 from .capture import register as register_capture
 from .capture.command import Runner as CaptureRunner
 from .capture.probe import capture_probe
@@ -296,11 +303,13 @@ RUNTIME_WAIT_S = 60.0
 class WaitsForRuntime:
     """The handler for a job whose program is not installed yet (spec 8.9).
 
-    A watch's last listing step is yt-dlp, and before the first
-    ``runtime_update`` finishes there is no yt-dlp to run: this process's
-    interpreter cannot import it. The job goes back in the queue with a plain
-    reason, and :class:`FollowsRuntime` builds the real handler once the
-    pointer names an install.
+    A watch's last listing step, a capture, a recheck and an audio download
+    all run yt-dlp, and before the first ``runtime_update`` finishes there is
+    no yt-dlp to run: this process's interpreter cannot import it. A capture
+    that ran anyway read its status ask's failure as ``unknown`` and waited the
+    readiness hour of spec 8.2 (live-m1h, 2026-11-10). The job goes back in the
+    queue with a plain reason, and :class:`FollowsRuntime` builds the real
+    handler once the pointer names an install.
     """
 
     tool: str
@@ -353,12 +362,23 @@ def _register_handlers(
             _textflowkit_or_none(settings, runtime_settings, quiet=True),
         )
 
+    def waiting(reg: Registry, kind: str) -> Callable[[Any], None]:
+        """The handler while no yt-dlp is installed, in the lane the real one uses."""
+        handler = WaitsForRuntime(tool=TOOL_NAME)
+        lane = TRANSCRIBE_LANE if kind == TRANSCRIBE_JOB_KIND else CAPTURE_LANE
+        reg.register(kind, handler, lane=lane)
+        return handler
+
     def capture(reg: Registry, py: str | None, _tfk: str | None) -> Callable[[Any], None]:
+        if py is None:
+            return waiting(reg, CAPTURE_JOB_KIND)
         return register_capture(
             storage_root=storage, registry=reg, runner=capture_runner, interpreter=py
         )
 
     def transcribe(reg: Registry, py: str | None, tfk: str | None) -> Callable[[Any], None]:
+        if py is None:
+            return waiting(reg, TRANSCRIBE_JOB_KIND)
         return register_transcribe(
             storage_root=storage,
             registry=reg,
@@ -368,6 +388,8 @@ def _register_handlers(
         )
 
     def recheck(reg: Registry, py: str | None, _tfk: str | None) -> Callable[[Any], None]:
+        if py is None:
+            return waiting(reg, RECHECK_JOB_KIND)
         return register_recheck(
             storage_root=storage, registry=reg, runner=capture_runner, interpreter=py
         )
