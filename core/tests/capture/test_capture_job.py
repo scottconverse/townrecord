@@ -6,6 +6,7 @@ fakes`, which writes the files yt-dlp would write. No test reaches YouTube.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 from datetime import timedelta
@@ -23,6 +24,7 @@ from townrecord.jobs.queue import stamp
 from townrecord.runtime.javascript import FALLBACK_RUNTIME
 
 from .fakes import (
+    FIXTURE_SRV3,
     INFO_AUTO_CAPTIONS,
     INFO_PUBLISHER_CAPTIONS,
     PLATFORM_VIDEO_ID,
@@ -149,10 +151,12 @@ def test_a_publisher_track_is_fetched_by_a_second_request_and_stored(
     """Spec 8.3: the first request asks for en-orig; an uploaded track is a second one.
 
     The stored file is the publisher's ``.en.`` file, not YouTube's ``.en-orig.``
-    one, which sorts first by name.
+    one, which sorts first by name. The two files differ by one byte here, so
+    the stored hash says which one was kept.
     """
     clock = FakeClock()
-    fake = FakeYtDlp(info=dict(INFO_PUBLISHER_CAPTIONS))
+    publisher = FIXTURE_SRV3.read_bytes() + b"\n"
+    fake = FakeYtDlp(info=dict(INFO_PUBLISHER_CAPTIONS), track_captions={"en": publisher})
     capture(storage_root, fake)(claimed_job(conn, video, clock))
 
     first, second = (call["argv"] for call in fake.capture_calls)
@@ -161,10 +165,10 @@ def test_a_publisher_track_is_fetched_by_a_second_request_and_stored(
     assert "--write-auto-subs" not in second
     assert "--download-archive" not in second
     stored = conn.execute(
-        "SELECT rel_path FROM artifacts WHERE id = ?",
+        "SELECT sha256 FROM artifacts WHERE id = ?",
         (transcripts(conn, video)[0]["artifact_id"],),
-    ).fetchone()["rel_path"]
-    assert stored.endswith(f"{PLATFORM_VIDEO_ID}.en.srv3")
+    ).fetchone()["sha256"]
+    assert stored == hashlib.sha256(publisher).hexdigest()
 
 
 def test_a_video_with_only_youtube_captions_makes_one_request(
