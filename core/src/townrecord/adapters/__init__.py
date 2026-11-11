@@ -14,7 +14,7 @@ from .base import (
     RecordsAdapter,
     RedirectLimitExceeded,
 )
-from .primegov import PrimeGovAdapter, decode_html, detect_encoding, user_agent
+from .primegov import PrimeGovAdapter, decode_html, detect_encoding
 
 __all__ = [
     "PDF_LIMIT_BYTES",
@@ -32,5 +32,4 @@ __all__ = [
     "RedirectLimitExceeded",
     "decode_html",
     "detect_encoding",
-    "user_agent",
 ]
