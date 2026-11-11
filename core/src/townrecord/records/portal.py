@@ -801,6 +801,16 @@ def meeting_type(title: str) -> str:
     return "regular"
 
 
+def names_meeting_type(title: str) -> bool:
+    """True when a title names its kind of sitting, as "Regular Session" or "Study Session" do.
+
+    :func:`meeting_type` reads a title that names none as a regular session;
+    this tells that title apart from one that says "regular" itself.
+    """
+    lowered = (title or "").lower().translate(_DASHES)
+    return any(needle in lowered for needle, _ in _MEETING_TYPES)
+
+
 def cancellation_signal(title: str, documents: Iterable[Document]) -> str | None:
     """Return which signal says a meeting is cancelled, or None (spec 9.5).
 
