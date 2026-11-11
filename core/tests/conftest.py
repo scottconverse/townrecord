@@ -149,3 +149,17 @@ def client(db_path: Path, api_storage_root: Path) -> Iterator[TestClient]:
     app = create_app(Settings(db_path=db_path, version=TEST_VERSION, storage_root=api_storage_root))
     with TestClient(app) as test_client:
         yield test_client
+
+
+@pytest.fixture(autouse=True)
+def no_real_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No test reads the machine's real YouTube key (spec 17).
+
+    A developer's machine can hold a real key in Credential Manager or the
+    environment. Every test starts with neither; a test that wants a key sets
+    a fake one itself.
+    """
+    from townrecord import credentials
+
+    monkeypatch.delenv(credentials.YOUTUBE_API_KEY_ENV, raising=False)
+    monkeypatch.setattr(credentials, "read_credential", lambda target: None)

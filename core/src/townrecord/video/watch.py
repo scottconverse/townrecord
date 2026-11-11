@@ -318,21 +318,31 @@ def classifier_for(source: Source) -> tuple[MeetingClassifier, str | None]:
 
 
 def service_ladder(
-    *, client: Any = None, interpreter: str | None = None, ytdlp: Any = None
+    *,
+    client: Any = None,
+    interpreter: str | None = None,
+    ytdlp: Any = None,
 ) -> ListingLadder:
-    """The ladder a real service watches with: the feed, then yt-dlp.
+    """The ladder a real service watches with: the official API, the feed, then yt-dlp.
 
-    The official API of spec 8.1 step 1 is not wired here and the ladder says
-    why: it needs an API key, and no setting holds one yet, so the step reports
-    "the official API is not configured: no API key was given" and the ladder
-    moves on. The channel tab HTML of step 3 is a later unit's step
-    (``TODO(unit D)`` in the ladder). Both missing steps are named in the
-    checkpoint's ``methods_tried`` rather than passed over in silence.
+    Spec 8.1 step 1, the official API, is on when a key loads
+    (:func:`townrecord.credentials.youtube_api_key`: the environment variable
+    ``TOWNRECORD_YOUTUBE_API_KEY``, then the credential store) and the
+    service's http client is given. The key travels in a header, never in a
+    URL. With no key the step reports "the official API is not configured: no
+    API key was given" and the ladder moves on to the feed. The channel tab
+    HTML of step 3 is a later unit's step (``TODO(unit D)`` in the ladder).
+    Each missing step is named in the checkpoint's ``methods_tried`` rather
+    than passed over in silence.
     """
+    from ..credentials import youtube_api_key
+    from .youtube.data_api import DataApiClient
     from .youtube.rss import RssLister
     from .youtube.ytdlp import YtdlpFlatLister
 
+    key = youtube_api_key() if client is not None else None
     return ListingLadder(
+        data_api=DataApiClient(key, client) if key else None,
         rss=None if client is None else RssLister(client),
         ytdlp=ytdlp if ytdlp is not None else YtdlpFlatLister(interpreter=interpreter),
     )
