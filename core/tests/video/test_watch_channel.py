@@ -1188,3 +1188,104 @@ def test_a_title_naming_no_body_of_the_area_is_still_not_a_meeting(
 
     assert watch.row("zzzzzzzzzzz").meeting_id is None
     assert checkpoint["captures_queued"] == 0
+
+
+def _tab_world(world: World, *more: tuple[str, str, str]) -> dict[str, int]:
+    """The Transportation Advisory Board and its Oct 12 study session (live-m1i)."""
+    tab = world.body("Transportation Advisory Board")
+    meetings = {
+        "study": world.meeting(
+            tab,
+            "2026-10-12T18:00:00",
+            "Study Session - Transportation Advisory Board",
+            type="study",
+        )
+    }
+    for key, starts_at, title in more:
+        meetings[key] = world.meeting(tab, starts_at, title, type=portal.meeting_type(title))
+    return meetings
+
+
+def test_a_title_naming_no_sitting_links_to_the_bodys_only_meeting_whatever_its_type(
+    db_path: Path, conn: sqlite3.Connection, world: World
+) -> None:
+    """live-m1i meeting 1: PrimeGov calls it a study session; both channels' titles name no type.
+
+    The strict type match read the titles as regular sessions and linked
+    neither, so the meeting was never aligned and both copies were captured.
+    """
+    meetings = _tab_world(world)
+    channel = world.channel(body_id=world.body_id)
+    watch = _live_watch(
+        db_path,
+        conn,
+        [
+            listed(
+                "PkhwZD4JFrM",
+                "Transportation Advisory Board Meeting Oct. 12, 2026",
+                "2026-10-15T06:45:27+00:00",
+            ),
+            listed(
+                "wZr-tL8oXK0",
+                "Transportation Advisory Board - October 12, 2026",
+                "2026-10-13T16:04:13+00:00",
+            ),
+        ],
+    )
+
+    _, checkpoint = watch.watch(channel)
+
+    assert watch.row("PkhwZD4JFrM").meeting_id == meetings["study"], checkpoint["skipped"]
+    assert watch.row("wZr-tL8oXK0").meeting_id == meetings["study"], checkpoint["skipped"]
+    assert checkpoint["captures_queued"] == 1, "one recording of the meeting, not two"
+
+
+def test_a_title_naming_no_sitting_is_not_linked_when_the_body_has_two_meetings_that_day(
+    db_path: Path, conn: sqlite3.Connection, world: World
+) -> None:
+    """Two meetings of the body and a title that names neither: the watch will not guess."""
+    _tab_world(world, ("executive", "2026-10-12T17:00:00", "Executive Session - TAB"))
+    channel = world.channel(body_id=world.body_id)
+    watch = _live_watch(
+        db_path,
+        conn,
+        [
+            listed(
+                "PkhwZD4JFrM",
+                "Transportation Advisory Board Meeting Oct. 12, 2026",
+                "2026-10-15T06:45:27+00:00",
+            )
+        ],
+    )
+
+    _, checkpoint = watch.watch(channel)
+
+    assert watch.row("PkhwZD4JFrM").meeting_id is None
+    assert any("will not guess" in line for line in checkpoint["skipped"]), checkpoint["skipped"]
+
+
+def test_a_title_that_names_a_sitting_still_needs_a_meeting_of_that_kind(
+    db_path: Path, conn: sqlite3.Connection, world: World
+) -> None:
+    """A guard on today's strict rule: "Regular Meeting" does not record the study session.
+
+    This passes on the code before the change too; it fails if the new rule
+    ever reaches titles that name their sitting.
+    """
+    _tab_world(world)
+    channel = world.channel(body_id=world.body_id)
+    watch = _live_watch(
+        db_path,
+        conn,
+        [
+            listed(
+                "PkhwZD4JFrM",
+                "Transportation Advisory Board - Regular Meeting - October 12, 2026",
+                "2026-10-15T06:45:27+00:00",
+            )
+        ],
+    )
+
+    _, checkpoint = watch.watch(channel)
+
+    assert watch.row("PkhwZD4JFrM").meeting_id is None, checkpoint["skipped"]

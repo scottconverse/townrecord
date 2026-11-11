@@ -695,8 +695,8 @@ def _meeting_for(conn: sqlite3.Connection, source: Source, listing: Any) -> tupl
     if len(on_the_day) > 1:
         return None, (
             f"Video {listing.video_id} ({listing.title!r}) is not linked to a meeting: "
-            f"{len(on_the_day)} meetings of {where} on {day.isoformat()} read as the same kind "
-            "as its title, and this watch will not guess which one it recorded."
+            f"{len(on_the_day)} meetings of {where} on {day.isoformat()} could be the sitting "
+            "its title names, and this watch will not guess which one it recorded."
         )
 
     nearby = _nearby_window(day)
@@ -713,8 +713,8 @@ def _meeting_for(conn: sqlite3.Connection, source: Source, listing: Any) -> tupl
         )
     return None, (
         f"Video {listing.video_id} ({listing.title!r}) is not linked to a meeting: "
-        f"{len(around)} meetings of {where} between {nearby[0]} and {nearby[1]} read as the "
-        "same kind as its title, and this watch will not guess which one it recorded."
+        f"{len(around)} meetings of {where} between {nearby[0]} and {nearby[1]} could be "
+        "the sitting its title names, and this watch will not guess which one it recorded."
     )
 
 
@@ -734,15 +734,19 @@ def _title_matches(meetings: Sequence[Any], title: str) -> list[Any]:
     of sitting both titles name. "City Council Regular Session" and "City
     Council - Regular Session 9/22/26" are that one meeting, while the study
     session of the same body on the next day is not.
+
+    A title that names no kind of sitting ("Transportation Advisory Board
+    Meeting Oct. 12, 2026") is first read as a regular session. When no meeting
+    is one, every meeting of the body in the window could be the one it
+    recorded, so all of them are returned: the caller links a single one and
+    refuses to guess between two or more. A title that names its kind keeps the
+    strict match.
     """
     wanted_type = portal.meeting_type(title)
-    matches: list[Any] = []
-    for meeting in meetings:
-        meeting_title = meeting.title or ""
-        if portal.meeting_type(meeting_title) != wanted_type:
-            continue
-        matches.append(meeting)
-    return matches
+    matches = [m for m in meetings if portal.meeting_type(m.title or "") == wanted_type]
+    if matches or portal.names_meeting_type(title):
+        return matches
+    return list(meetings)
 
 
 def published_day(published: str | None) -> date | None:
