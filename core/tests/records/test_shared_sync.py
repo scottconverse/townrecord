@@ -1,0 +1,327 @@
+"""Saved calendar sync through the real jobs and isolated SQLite database."""
+
+import base64
+import json
+
+from civic_data_connectors import create_engine
+from civic_data_connectors.interchange import read_bundle
+from civic_data_connectors.providers import Response
+from civic_data_connectors.storage import SQLiteStorage
+
+from townrecord.connector_storage import AppStorage
+from townrecord.jobs import read_checkpoint
+from townrecord.repo import insert_source
+
+
+def test_read_tokens_forward_only_for_the_configured_provider(monkeypatch):
+    from types import SimpleNamespace
+
+    from townrecord.connectors import source_context
+
+    monkeypatch.setenv(
+        "TOWNRECORD_CONNECTOR_CREDENTIALS",
+        json.dumps(
+            {
+                "wistia_token": "read-token",
+                "legistar_token": "different-account",
+                "wistia": {"token": "write-token"},
+                "telvue": {"access_key": "unrelated"},
+            }
+        ),
+    )
+    local = SimpleNamespace(
+        jurisdiction_id=7,
+        settings=json.dumps({"connector": {"provider": "wistia", "namespace": "account-a"}}),
+    )
+    caller = source_context(local)
+    assert caller.credentials == {"wistia_token": "read-token", "wistia": {"token": "write-token"}}
+    assert caller.allowed_namespaces == frozenset({"account-a"})
+    assert caller.tenant == "7"
+
+
+def test_account_fetch_job_preserves_partial_and_scopes_credentials(
+    area, sync, wired, monkeypatch, client, read_write_token
+):
+    from townrecord import connectors
+
+    origin = "https://connect.telvue.com"
+    secret = "synthetic-access-secret"
+    monkeypatch.setenv(
+        "TOWNRECORD_CONNECTOR_CREDENTIALS",
+        json.dumps(
+            {
+                "telvue": {
+                    "origin": origin,
+                    "namespace": "fixture-account",
+                    "tenant": str(area.jurisdiction_id),
+                    "access_key": secret,
+                    "secret_passphrase": "synthetic-passphrase",
+                }
+            }
+        ),
+    )
+    calls = []
+
+    class Network:
+        def request(self, url, **options):
+            calls.append((url, options))
+            return Response(
+                url,
+                json.dumps({"videos": [{"id": 32261, "title": "Council"}]}).encode(),
+                "application/json",
+            )
+
+    monkeypatch.setattr(
+        connectors,
+        "engine_for",
+        lambda conn, **kw: create_engine(
+            storage=AppStorage(conn), provider_transport=Network(), **kw
+        ),
+    )
+    source = insert_source(
+        sync.conn,
+        jurisdiction_id=area.jurisdiction_id,
+        type="meeting_portal",
+        origin=origin,
+        suggested_by="test",
+        reason="account fixture",
+        status="accepted",
+        body_id=area.body_id,
+    )
+    headers = {"Authorization": f"Bearer {read_write_token}"}
+    path = f"/v1/connectors/sources/{source}"
+    configured = client.put(
+        path, json={"provider": "telvue", "namespace": "fixture-account"}, headers=headers
+    )
+    assert configured.status_code == 200, configured.text
+    assert (
+        client.post(
+            path + "/sync", json={"fetch_fields": {"credentials": {}}}, headers=headers
+        ).status_code
+        == 422
+    )
+    queued = client.post(
+        path + "/sync", json={"fetch_fields": {"api_resource": "videos"}}, headers=headers
+    )
+    assert queued.status_code == 202, queued.text
+    job = queued.json()["job_id"]
+    sync.lane("normal")
+    assert sync.job(job)["state"] == "done", sync.job(job)["last_error"]
+    checkpoint = read_checkpoint(sync.conn, job)
+    assert checkpoint["status"] == "partial" and checkpoint["coverage"]["api_resource"] == "videos"
+    assert checkpoint["data"]["bundles"] and checkpoint["data"]["meetings"] == []
+    assert calls[0][0] == origin + "/api/v2/videos.json"
+    assert secret not in json.dumps(checkpoint) and secret not in sync.job(job)["payload"]
+
+    essential = "https://meetingsgov.devmunicode.com"
+    monkeypatch.setenv(
+        "TOWNRECORD_CONNECTOR_CREDENTIALS",
+        json.dumps(
+            {
+                "municode-meetings": {
+                    "origin": essential,
+                    "namespace": "fixture-account",
+                    "tenant": str(area.jurisdiction_id),
+                    "token": "synthetic-bearer-secret",
+                }
+            }
+        ),
+    )
+    raw_source = insert_source(
+        sync.conn,
+        jurisdiction_id=area.jurisdiction_id,
+        type="meeting_portal",
+        origin=essential,
+        suggested_by="test",
+        reason="unmapped account fixture",
+        status="accepted",
+        body_id=area.body_id,
+    )
+    raw_path = f"/v1/connectors/sources/{raw_source}"
+    assert (
+        client.put(
+            raw_path,
+            json={"provider": "municode-meetings", "namespace": "fixture-account"},
+            headers=headers,
+        ).status_code
+        == 200
+    )
+    queued = client.post(
+        raw_path + "/sync",
+        json={"fetch_fields": {"api_resource": "meeting", "external_id": "42"}},
+        headers=headers,
+    )
+    assert queued.status_code == 202, queued.text
+    raw_job = queued.json()["job_id"]
+    sync.lane("normal")
+    assert sync.job(raw_job)["state"] == "done", sync.job(raw_job)["last_error"]
+    raw = read_checkpoint(sync.conn, raw_job)
+    assert raw["status"] == "partial" and "raw response only" in raw["coverage"]["schema_mapping"]
+    assert raw["data"]["bundles"] and raw["data"]["meetings"] == []
+    monkeypatch.setenv(
+        "TOWNRECORD_CONNECTOR_CREDENTIALS",
+        json.dumps(
+            {
+                "municode-meetings": {
+                    "origin": essential,
+                    "namespace": "other-account",
+                    "tenant": str(area.jurisdiction_id),
+                    "token": "synthetic-bearer-secret",
+                }
+            }
+        ),
+    )
+    before = len(calls)
+    denied = client.post(
+        raw_path + "/sync",
+        json={"fetch_fields": {"api_resource": "meeting", "external_id": "42"}},
+        headers=headers,
+    )
+    sync.lane("normal")
+    assert sync.job(denied.json()["job_id"])["state"] == "failed"
+    assert len(calls) == before
+
+
+def test_calendar_sync_is_idempotent_and_conflict_marks_source_incomplete(area, sync):
+    content = (
+        b"BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:abc\r\n"
+        b"DTSTART:20260908T190000\r\nSUMMARY:Council meeting\r\n"
+        b"END:VEVENT\r\nEND:VCALENDAR\r\n"
+    )
+    settings = json.dumps(
+        {"connector": {"provider": "first-party", "input_format": "public-meeting-ics"}}
+    )
+
+    def source(origin):
+        return insert_source(
+            sync.conn,
+            jurisdiction_id=area.jurisdiction_id,
+            type="meeting_portal",
+            origin=origin,
+            suggested_by="test",
+            reason="calendar",
+            status="accepted",
+            body_id=area.body_id,
+            settings=settings,
+        )
+
+    def run(source_id):
+        job = sync.queue(
+            "sync_connector",
+            {
+                "source_id": source_id,
+                "from_date": "2026-09-01",
+                "to_date": "2026-09-30",
+                "content_base64": base64.b64encode(content).decode(),
+            },
+        )
+        sync.lane("normal")
+        assert sync.job(job)["state"] == "done", sync.job(job)["last_error"]
+        return read_checkpoint(sync.conn, job)
+
+    first = source("https://calendar.test.invalid/meetings.ics")
+    assert run(first)["status"] == "completed"
+    assert run(first)["status"] == "completed"
+    assert sync.conn.execute("SELECT COUNT(*) FROM meetings").fetchone()[0] == 1
+
+    second = source("https://other.test.invalid/meetings.ics")
+    result = run(second)
+    assert result["status"] == "partial"
+    assert any(error["code"] == "destination_conflict" for error in result["errors"])
+    assert (
+        sync.conn.execute(
+            "SELECT consecutive_failures FROM sources WHERE id=?", (second,)
+        ).fetchone()[0]
+        == 1
+    )
+
+
+def test_escribe_document_reaches_existing_search_and_export(
+    area, sync, wired, monkeypatch, tmp_path, client, read_token, read_write_token
+):
+    from townrecord import connectors
+
+    origin = "https://synthetic.escribemeetings.com"
+
+    class Network:
+        def request(self, url, **options):
+            if options.get("method") == "POST":
+                meeting = {
+                    "ID": "42",
+                    "MeetingName": "City Council",
+                    "StartDate": "2026/09/08 19:00:00",
+                    "Url": "/Meeting.aspx?Id=42",
+                    "MeetingDocumentLink": [
+                        {"Type": "Agenda", "Title": "Agenda", "Url": "/agenda.txt"}
+                    ],
+                }
+                return Response(url, json.dumps({"d": [meeting]}).encode(), "application/json")
+            assert url == origin + "/agenda.txt"
+            return Response(url, b"Harbor sidewalk allocation.", "text/plain")
+
+    monkeypatch.setattr(
+        connectors,
+        "engine_for",
+        lambda conn, **kw: create_engine(
+            storage=AppStorage(conn), provider_transport=Network(), **kw
+        ),
+    )
+    source = insert_source(
+        sync.conn,
+        jurisdiction_id=area.jurisdiction_id,
+        type="meeting_portal",
+        origin=origin,
+        suggested_by="test",
+        reason="meeting source",
+        status="accepted",
+        body_id=area.body_id,
+    )
+    writer = {"Authorization": f"Bearer {read_write_token}"}
+    reader = {"Authorization": f"Bearer {read_token}"}
+    path = f"/v1/connectors/sources/{source}"
+    assert client.put(path, json={"provider": "escribe"}, headers=reader).status_code == 403
+    configured = client.put(path, json={"provider": "escribe"}, headers=writer)
+    assert configured.status_code == 200, configured.text
+    queued = client.post(
+        path + "/sync", json={"from_date": "2026-09-01", "to_date": "2026-09-30"}, headers=writer
+    )
+    assert queued.status_code == 202, queued.text
+    job = queued.json()["job_id"]
+    sync.lane("normal")
+    sync.lane("heavy")
+    assert sync.job(job)["state"] == "done", sync.job(job)["last_error"]
+    downloads = sync.jobs_of_kind("download_connector")
+    assert len(downloads) == 1 and downloads[0]["state"] == "done"
+    assert (
+        sync.conn.execute(
+            "SELECT COUNT(*) FROM record_page_search WHERE record_page_search MATCH ?",
+            ("sidewalk",),
+        ).fetchone()[0]
+        == 1
+    )
+    assert (
+        sync.conn.execute("SELECT COUNT(*) FROM citations WHERE source_id=?", (source,)).fetchone()[
+            0
+        ]
+        == 1
+    )
+    assert client.get("/v1/search", params={"q": "sidewalk"}).status_code == 401
+    headers = {"Authorization": f"Bearer {read_token}"}
+    search = client.get("/v1/search", params={"q": "sidewalk"}, headers=headers)
+    assert search.status_code == 200 and "sidewalk" in search.text.lower()
+    response = client.get(f"/v1/connectors/sources/{source}/export", headers=headers)
+    assert response.status_code == 200, response.text
+    bundle = read_bundle(response.content, capture_storage=SQLiteStorage(tmp_path / "import.db"))
+    assert len(bundle["records"]) == 1
+    for format in ("json", "jsonl"):
+        portable = client.get(
+            f"/v1/connectors/sources/{source}/export", params={"format": format}, headers=headers
+        )
+        assert portable.status_code == 200, portable.text
+        assert len(read_bundle(portable.content, format=format)["records"]) == 1
+    for format in ("csv", "ics"):
+        projection = client.get(
+            f"/v1/connectors/sources/{source}/export", params={"format": format}, headers=headers
+        )
+        assert projection.status_code == 200, projection.text
+        assert projection.content

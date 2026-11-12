@@ -51,6 +51,14 @@ from .requests import (
     request_minutes_of_packet,
     request_speakers,
 )
+from .shared import (
+    CONNECTOR_OPERATION,
+    DOWNLOAD_CONNECTOR,
+    SYNC_CONNECTOR,
+    connector_operation,
+    download_connector,
+    sync_connector,
+)
 from .speakers import read_speakers
 from .sync import sync_primegov
 
@@ -91,11 +99,14 @@ jobs: tuple[tuple[str, object, str], ...] = (
     (ALIGN_MEETING, align_meeting, NORMAL),
     (READ_MINUTES, read_minutes, NORMAL),
     (READ_SPEAKERS, read_speakers, NORMAL),
+    (SYNC_CONNECTOR, sync_connector, NORMAL),
+    (DOWNLOAD_CONNECTOR, download_connector, HEAVY),
+    (CONNECTOR_OPERATION, connector_operation, NORMAL),
 )
 
 
 def register_jobs(registry: Registry | None = None) -> tuple[str, ...]:
-    """Register these six kinds and return the kinds that were added.
+    """Register record job kinds and return the kinds that were added.
 
     A kind that is already registered is left as it is: the caller may have
     registered its own handler for it, and a second registration is refused by

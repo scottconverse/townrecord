@@ -146,8 +146,8 @@ def upsert_meeting(
             type,
             int(found.is_cancelled or is_cancelled),
             int(found.is_continued or is_continued),
-            portal_source_id,
-            portal_meeting_id,
+            found.portal_source_id if portal_source_id is None else portal_source_id,
+            found.portal_meeting_id if portal_meeting_id is None else portal_meeting_id,
             found.portal_html_template_id
             if portal_html_template_id is None
             else portal_html_template_id,

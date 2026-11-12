@@ -443,9 +443,15 @@ def test_every_route_read_from_the_app_is_401_without_a_token(
     client: TestClient,
 ) -> None:
     """The same check over the whole list, so a new route cannot be missed."""
-    for path in route_paths(client):
-        response = client.get(path)
-        assert response.status_code == 401, f"{path} answered {response.status_code}"
+    for route in _routes_of(client.app):
+        path = route.path
+        while "{" in path:
+            before, _, after = path.partition("{")
+            _, _, after = after.partition("}")
+            path = f"{before}1{after}"
+        for method in route.methods:
+            response = client.request(method, path)
+            assert response.status_code == 401, f"{method} {path} answered {response.status_code}"
 
 
 def test_the_area_holds_the_tree_the_bodies_and_the_sources(
