@@ -418,3 +418,126 @@ def test_shared_packet_limit_retry_and_reopened_worker_keep_record_identity(
         tuple(row) for row in sync.conn.execute("SELECT id,record_id FROM citations")
     ] == citations
     assert download_limits == [1024, 1024]
+
+
+def test_configured_native_write_jobs_revalidate_grants_and_readback(
+    area, sync, wired, monkeypatch, client, read_write_token
+):
+    from urllib.parse import parse_qs, urlsplit
+
+    from civic_data_connectors.write_adapters import default_adapters
+    from civic_data_connectors.write_transport import WriteResponse
+
+    from townrecord import connectors
+
+    class Network:
+        mock = True
+
+        def __init__(self):
+            self.rows = {}
+            self.calls = []
+
+        def send(self, url, *, method, body, headers, byte_limit, deadline_seconds):
+            parsed = urlsplit(url)
+            assert parsed.hostname == "webapi.legistar.com"
+            assert parsed.path.startswith("/v1/fixture-city/Events")
+            assert parse_qs(parsed.query)["token"] == ["synthetic-only"]
+            self.calls.append(method)
+            if method == "POST":
+                row = json.loads(body)
+                row.update(EventId=101, EventRowVersion="AQ==")
+                self.rows["101"] = row
+            else:
+                assert method == "GET"
+                row = self.rows[parsed.path.rsplit("/", 1)[-1]]
+            return WriteResponse(200, json.dumps(row).encode())
+
+    network = Network()
+    monkeypatch.setattr(
+        connectors,
+        "engine_for",
+        lambda conn: create_engine(
+            storage=AppStorage(conn), write_adapters=default_adapters(network)
+        ),
+    )
+    namespace = "//webapi.legistar.com/v1/fixture-city"
+    monkeypatch.setenv(
+        "TOWNRECORD_CONNECTOR_CREDENTIALS",
+        json.dumps(
+            {
+                "legistar": {
+                    "namespace": namespace,
+                    "token": "synthetic-only",
+                    "permissions": ["event:create"],
+                }
+            }
+        ),
+    )
+    token_id = sync.conn.execute("SELECT id FROM api_tokens WHERE scope='read_write'").fetchone()[0]
+    grants = {str(token_id): ["write:plan", "write:commit"]}
+    monkeypatch.setenv("TOWNRECORD_CONNECTOR_WRITE_GRANTS", json.dumps(grants))
+    source = insert_source(
+        sync.conn,
+        jurisdiction_id=area.jurisdiction_id,
+        type="meeting_portal",
+        origin="https://webapi.legistar.com/v1/fixture-city/events",
+        suggested_by="test",
+        reason="synthetic authorized write",
+        status="accepted",
+        body_id=area.body_id,
+    )
+    headers = {"Authorization": f"Bearer {read_write_token}"}
+    path = f"/v1/connectors/sources/{source}"
+    configured = client.put(
+        path, json={"provider": "legistar", "namespace": namespace}, headers=headers
+    )
+    assert configured.status_code == 200, configured.text
+    queued = client.post(
+        path + "/plan",
+        json={
+            "changes": [
+                {
+                    "key": "event-1",
+                    "entity": "event",
+                    "operation": "create",
+                    "fields": {"EventDate": "2026-11-11T00:00:00", "EventBodyId": 4},
+                }
+            ]
+        },
+        headers=headers,
+    )
+    assert queued.status_code == 202, queued.text
+    job = queued.json()["job_id"]
+    sync.lane("normal")
+    assert sync.job(job)["state"] == "done", sync.job(job)["last_error"]
+    planned = read_checkpoint(sync.conn, job)
+    assert planned["status"] == "completed", planned
+    approval = {key: planned["data"][key] for key in ("plan_id", "plan_hash")}
+    assert not network.calls
+    queued = client.post(path + "/commit", json=approval, headers=headers)
+    assert queued.status_code == 202, queued.text
+    job = queued.json()["job_id"]
+    # Grants are checked again inside the durable worker before any native request.
+    monkeypatch.setenv("TOWNRECORD_CONNECTOR_WRITE_GRANTS", "{}")
+    sync.lane("normal")
+    assert sync.job(job)["state"] == "failed"
+    assert not network.calls
+    monkeypatch.setenv("TOWNRECORD_CONNECTOR_WRITE_GRANTS", json.dumps(grants))
+    queued = client.post(path + "/commit", json=approval, headers=headers)
+    assert queued.status_code == 202, queued.text
+    job = queued.json()["job_id"]
+    sync.lane("normal")
+    assert sync.job(job)["state"] == "done", sync.job(job)["last_error"]
+    committed = read_checkpoint(sync.conn, job)
+    assert committed["status"] == "completed", committed
+    assert committed["data"]["mock"] is True
+    assert committed["data"]["live_acceptance"] == "NOT_RUN"
+    assert committed["data"]["items"][0]["readback"]["EventBodyId"] == 4
+    receipt = client.get(path + "/receipts/" + approval["plan_id"], headers=headers)
+    assert receipt.status_code == 200, receipt.text
+    assert receipt.json()["data"] == committed["data"]
+    assert "synthetic-only" not in receipt.text
+    duplicate = client.post(path + "/commit", json=approval, headers=headers)
+    sync.lane("normal")
+    assert sync.job(duplicate.json()["job_id"])["state"] == "done"
+    assert network.calls.count("POST") == 1
