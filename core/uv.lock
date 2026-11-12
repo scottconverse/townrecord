@@ -708,13 +708,13 @@ wheels = [
 
 [[package]]
 name = "quorumrelay"
-version = "0.1.0.dev7"
-source = { path = "vendor/quorumrelay-0.1.0.dev7-py3-none-any.whl" }
+version = "0.1.0.dev8"
+source = { path = "vendor/quorumrelay-0.1.0.dev8-py3-none-any.whl" }
 dependencies = [
     { name = "pdfplumber" },
 ]
 wheels = [
-    { filename = "quorumrelay-0.1.0.dev7-py3-none-any.whl", hash = "sha256:6b39f51174b2988a4240e1b7beb9d5c41dc731cc0826dbbaf0042827e410a44c" },
+    { filename = "quorumrelay-0.1.0.dev8-py3-none-any.whl", hash = "sha256:bcfe691b4d1eb0de162f5f94985d0242a97b5d3d89bd5eeb9306d1ef28caf692" },
 ]
 
 [package.metadata]
@@ -797,7 +797,7 @@ requires-dist = [
     { name = "fastapi-offline", specifier = "==1.7.7" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "pypdf", specifier = ">=6.19.0" },
-    { name = "quorumrelay", path = "vendor/quorumrelay-0.1.0.dev7-py3-none-any.whl" },
+    { name = "quorumrelay", path = "vendor/quorumrelay-0.1.0.dev8-py3-none-any.whl" },
     { name = "tzdata", specifier = ">=2025.1" },
     { name = "uvicorn", specifier = ">=0.30" },
 ]
