@@ -1,6 +1,6 @@
 # QuorumRelay in TownRecord
 
-The candidate pins `quorumrelay==0.1.0.dev4` to the included wheel, SHA-256 `f0f9bc97d549785458d8ac1d879258dc7750d5d420b1c9043d97026b41187ee1`, built from core commit `58d609c960212b62504d4d320e11c238e5bb221e`. The lockfile records that exact hash. The package retains 31 provider families and 34 baseline source/input pairs; those counts are parsing coverage, not a claim that every provider has complete live discovery, native search, export or writes.
+The candidate pins `quorumrelay==0.1.0.dev6` to the included wheel, SHA-256 `ec1e6c55dc29338dcf3033a1f8bba92bec1975f0108cbb92e2e2e18a4ec19ee1`, built from core commit `4b1c27ca571d1b781233fcd03389ce99ddf58932`. The lockfile records that exact hash. The package retains 31 provider families and 34 baseline source/input pairs; those counts are parsing coverage, not a claim that every provider has complete live discovery, native search, export or writes.
 
 ## Account read fields and limits
 
@@ -20,7 +20,7 @@ Synthetic fixtures verify shared parsing, identity/state handling and consumer i
 
 ## Configure and run TownRecord
 
-From `core`, run `uv sync --locked`. The app uses its existing authenticated local API/job lanes and SQLite service; it does not start a separate connector server. `/v1/connectors/ui` is a bearer-protected local panel. `/v1/connectors/capabilities` reports the complete provider roster and operation evidence. The legacy PrimeGov path remains the default for sources without a connector configuration.
+From `core`, run `uv sync --locked`. The app uses its existing authenticated local API/job lanes and SQLite service; it does not start a separate connector server. `/v1/connectors/ui` is a bearer-protected local panel. `/v1/connectors/capabilities` reports the complete provider roster and operation evidence. The legacy PrimeGov path remains the default for sources without a connector configuration. Shared downloads respect the configured `TOWNRECORD_PACKET_LIMIT_BYTES` ceiling and any tighter source transfer bound. A refused attachment remains a failed job with incomplete coverage; repeating sync after correcting availability or limits retries it. Successfully stored unchanged attachments keep their record and citation identities on repeat sync.
 
 An existing accepted `meeting_portal` source can be configured with `PUT /v1/connectors/sources/{source_id}` using `provider`, optional `namespace`, `body`, `input_format`, validated `options`, and `bounds`. Its existing source origin supplies the URL. Other source settings are retained. The namespace is SDK-derived for public tenant sources; Essential/TelVue account APIs require the explicit application account namespace above. Bounds include explicit date/page/record/parser/transfer/deadline limits; configured transfer bytes cannot exceed the application's existing packet limit.
 

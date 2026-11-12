@@ -325,3 +325,96 @@ def test_escribe_document_reaches_existing_search_and_export(
         )
         assert projection.status_code == 200, projection.text
         assert projection.content
+
+
+def test_shared_packet_limit_retry_and_reopened_worker_keep_record_identity(
+    area, sync, wired, monkeypatch, client, read_write_token, db_path
+):
+    from townrecord import connectors
+    from townrecord.db import connect
+
+    origin = "https://synthetic.escribemeetings.com"
+    document = b"x" * 4096
+    download_limits = []
+    monkeypatch.setenv("TOWNRECORD_PACKET_LIMIT_BYTES", "1024")
+
+    class Network:
+        def request(self, url, **options):
+            if options.get("method") == "POST":
+                meeting = {
+                    "ID": "42",
+                    "MeetingName": "City Council",
+                    "StartDate": "2026/09/08 19:00:00",
+                    "Url": "/Meeting.aspx?Id=42",
+                    "MeetingDocumentLink": [{"Type": "Agenda", "Url": "/packet.txt"}],
+                }
+                return Response(url, json.dumps({"d": [meeting]}).encode(), "application/json")
+            assert url == origin + "/packet.txt"
+            download_limits.append(options["byte_limit"])
+            return Response(url, document, "text/plain")
+
+    monkeypatch.setattr(
+        connectors,
+        "engine_for",
+        lambda conn, **kw: create_engine(
+            storage=AppStorage(conn), provider_transport=Network(), **kw
+        ),
+    )
+    source = insert_source(
+        sync.conn,
+        jurisdiction_id=area.jurisdiction_id,
+        type="meeting_portal",
+        origin=origin,
+        suggested_by="test",
+        reason="bounded shared packet",
+        status="accepted",
+        body_id=area.body_id,
+    )
+    headers = {"Authorization": f"Bearer {read_write_token}"}
+    path = f"/v1/connectors/sources/{source}"
+    assert client.put(path, json={"provider": "escribe"}, headers=headers).status_code == 200
+
+    def run():
+        response = client.post(
+            path + "/sync",
+            json={"from_date": "2026-09-01", "to_date": "2026-09-30"},
+            headers=headers,
+        )
+        assert response.status_code == 202, response.text
+        sync.lane("normal")
+        sync.lane("heavy")  # Each lane creates a new Runner using the file database.
+        return sync.jobs_of_kind("download_connector")[-1]
+
+    rejected = run()
+    assert rejected["state"] == "failed"
+    checkpoint = read_checkpoint(sync.conn, rejected["id"])
+    assert checkpoint["status"] == "partial" and checkpoint["errors"]
+    assert sync.conn.execute("SELECT COUNT(*) FROM records").fetchone()[0] == 0
+    assert download_limits == [1024]
+    document = b"Harbor sidewalk allocation after retry."
+    assert run()["state"] == "done"
+    fresh = connect(db_path)
+    try:
+        before = [tuple(row) for row in fresh.execute("SELECT id,artifact_id FROM records")]
+        citations = [tuple(row) for row in fresh.execute("SELECT id,record_id FROM citations")]
+        assert len(before) == len(citations) == 1
+        assert (
+            fresh.execute(
+                "SELECT COUNT(*) FROM record_page_search WHERE record_page_search MATCH 'sidewalk'"
+            ).fetchone()[0]
+            == 1
+        )
+    finally:
+        fresh.close()
+    assert run()["state"] == "done"
+    assert (
+        read_checkpoint(sync.conn, sync.jobs_of_kind("download_connector")[-1]["id"])[
+            "already_stored"
+        ]
+        is True
+    )
+    assert [tuple(row) for row in sync.conn.execute("SELECT id,artifact_id FROM records")] == before
+    assert [
+        tuple(row) for row in sync.conn.execute("SELECT id,record_id FROM citations")
+    ] == citations
+    assert download_limits == [1024, 1024]
