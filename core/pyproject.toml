@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = "Apache-2.0"
 dependencies = [
-    "quorumrelay==0.1.0.dev6",
+    "quorumrelay==0.1.0.dev7",
     "fastapi>=0.115",
     # The API browser has to work on a machine with no network (spec 17), so
     # the Swagger UI and ReDoc assets are served from this package's own files
@@ -38,7 +38,7 @@ build-backend = "hatchling.build"
 packages = ["src/townrecord"]
 
 [tool.uv.sources]
-quorumrelay = { path = "vendor/quorumrelay-0.1.0.dev6-py3-none-any.whl" }
+quorumrelay = { path = "vendor/quorumrelay-0.1.0.dev7-py3-none-any.whl" }
 
 [tool.ruff]
 line-length = 100

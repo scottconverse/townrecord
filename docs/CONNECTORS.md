@@ -1,6 +1,6 @@
 # QuorumRelay in TownRecord
 
-The candidate pins `quorumrelay==0.1.0.dev6` to the included wheel, SHA-256 `ec1e6c55dc29338dcf3033a1f8bba92bec1975f0108cbb92e2e2e18a4ec19ee1`, built from core commit `4b1c27ca571d1b781233fcd03389ce99ddf58932`. The lockfile records that exact hash. The package retains 31 provider families and 34 baseline source/input pairs; those counts are parsing coverage, not a claim that every provider has complete live discovery, native search, export or writes.
+The candidate pins `quorumrelay==0.1.0.dev7` to the included wheel, SHA-256 `6b39f51174b2988a4240e1b7beb9d5c41dc731cc0826dbbaf0042827e410a44c`, built from core commit `de6204e1861e27af366cdc9973cf52ce53276add`. The lockfile records that exact hash. The package retains 31 provider families and 34 baseline source/input pairs; those counts are parsing coverage, not a claim that every provider has complete live discovery, native search, export or writes.
 
 ## Account read fields and limits
 
@@ -31,3 +31,5 @@ Process-owner `TOWNRECORD_CONNECTOR_CREDENTIALS` contains the trusted credential
 Search uses `/v1/connectors/sources/{source_id}/search?q=TERM&phrase=PHRASE` over captured local records. Export uses its `/export?format=zip` route, streams a scoped artifact and reports the SHA-256 header. Existing record capture, download, transcript/caption and document processing remain their own jobs; missing content does not become successful extraction.
 
 Provider plans and commits are separate queued routes. The process owner grants exact `write:plan`/`write:commit` permissions to a TownRecord token ID using `TOWNRECORD_CONNECTOR_WRITE_GRANTS`; usable provider credentials and meeting/resource policy are also required. Commit requires the exact reviewed plan ID/hash. The `TOWNRECORD_CONNECTOR_WRITES_ENABLED` setting can disable adapters. Ordinary source sync never commits a provider write. A configured synthetic native-adapter check exercises queued planning, current-grant revocation before commit, authorized commit/readback/receipt and duplicate suppression; this does not establish live test-tenant acceptance. Migration/rollback acceptance must preserve the existing database and source/destination identity; do not use the integration to replace production data.
+
+The dev7 package retains the original formats and adds bounded current public layouts/search forms, with 28 additive parser hooks. These apply to evidenced source routes and preserve partial coverage, unknown fields and mixed record kinds; they do not establish complete upstream catalogs or live vendor write acceptance. The unchanged application review, durable record, restart and export workflows retain their earlier acceptance evidence; the exact dev7 installed checks are recorded separately.
