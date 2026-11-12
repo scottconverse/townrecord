@@ -21,7 +21,6 @@ from typing import Any
 
 import httpx
 
-from .. import __version__
 from .base import (
     HTML_LIMIT_BYTES,
     PACKET_LIMIT_BYTES,
@@ -45,9 +44,6 @@ ARCHIVED_MEETINGS_PATH = "/api/v2/PublicPortal/ListArchivedMeetings"
 UPCOMING_MEETINGS_PATH = "/api/v2/PublicPortal/ListUpcomingMeetings"
 COMPILED_DOCUMENT_PATH = "/Public/CompiledDocument"
 PORTAL_MEETING_PATH = "/Portal/Meeting"
-
-#: The adapter names itself honestly, with its own name first (spec 9.2).
-USER_AGENT_FORMAT = "TownRecord/{version} (+https://github.com/scottconverse/townrecord)"
 
 #: The outbound fetch guard allows at most four redirects (spec 17).
 MAX_REDIRECTS = 4
@@ -83,11 +79,6 @@ _VOID_TAGS = frozenset(
         "wbr",
     }
 )
-
-
-def user_agent(version: str | None = None) -> str:
-    """Return the User-Agent every request of this adapter carries (spec 9.2)."""
-    return USER_AGENT_FORMAT.format(version=version or __version__)
 
 
 def _codec_name(text: str) -> str:
@@ -265,7 +256,6 @@ class PrimeGovAdapter:
         *,
         pdf_limit_bytes: int = PDF_LIMIT_BYTES,
         packet_limit_bytes: int = PACKET_LIMIT_BYTES,
-        version: str | None = None,
     ) -> None:
         if not str(base_url or "").strip():
             raise ValueError(
@@ -275,7 +265,6 @@ class PrimeGovAdapter:
         self.http = http_client
         self.pdf_limit_bytes = pdf_limit_bytes
         self.packet_limit_bytes = packet_limit_bytes
-        self._headers = {"User-Agent": user_agent(version)}
 
     # -- URLs -----------------------------------------------------------------
 
@@ -338,7 +327,7 @@ class PrimeGovAdapter:
 
     def _get(self, url: str, params: dict[str, Any] | None) -> httpx.Response:
         try:
-            response = self.http.get(url, params=params, headers=self._headers)
+            response = self.http.get(url, params=params)
         except httpx.HTTPError as exc:
             raise AdapterHttpError(f"{url} could not be reached: {exc}") from exc
         if response.status_code != 200:
@@ -391,9 +380,7 @@ class PrimeGovAdapter:
         """Follow the redirects by hand and read the body within the limit."""
         url = source_url
         for _hop in range(MAX_REDIRECTS + 1):
-            with self.http.stream(
-                "GET", url, headers=self._headers, follow_redirects=False
-            ) as response:
+            with self.http.stream("GET", url, follow_redirects=False) as response:
                 if response.status_code in _REDIRECT_STATUSES:
                     location = response.headers.get("location")
                     if not location:

@@ -252,7 +252,7 @@ Every records system gets an adapter with one interface:
 - Meeting lists: GET https://{city}.primegov.com/api/v2/PublicPortal/ListArchivedMeetings?year={yyyy} and .../ListUpcomingMeetings. Each meeting has id, dateTime, title, videoUrl and documentList. Each document has templateId, compileOutputType and templateName ("Agenda", "Packet", "HTML Agenda").
 - Download: https://{city}.primegov.com/Public/CompiledDocument?meetingTemplateId={templateId}&compileOutputType=1. The server answers with a redirect to a signed storage link on pgwest.blob.core.windows.net that expires after approximately two days. Follow it, store the file, and cite the portal and meeting, never the signed link.
 - HTML agenda: https://{city}.primegov.com/Portal/Meeting?meetingTemplateId={templateId} for documents with compileOutputType 3. It contains a data-videolocation value, in seconds, for agenda items (Section 10.2).
-- AI web-fetch tools are blocked by PrimeGov's robots rule on the whole site. TownRecord is a user agent that acts for one person. It identifies itself honestly in its User-Agent string, paces its requests and caches everything. (TownReporter sends a full Chrome User-Agent string with "TownReporter/1.0" added. TownRecord uses its own name first.)
+- AI web-fetch tools are blocked by PrimeGov's robots rule on the whole site. TownRecord is a user agent that acts for one person. It sends no User-Agent of its own, paces its requests and caches everything.
 - TownReporter's PrimeGov code does not read the videoUrl field. The TownRecord adapter must.
 
 ### 9.3 Other adapters

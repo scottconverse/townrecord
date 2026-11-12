@@ -130,15 +130,12 @@ def test_a_server_error_is_not_a_silent_success(portal: FakePortal) -> None:
     assert "500" in str(caught.value)
 
 
-def test_every_request_names_the_adapter(portal: FakePortal) -> None:
-    portal.adapter(version="9.9.9").list_meetings(date(2026, 9, 1), date(2026, 9, 30))
+def test_no_request_carries_a_program_name(portal: FakePortal) -> None:
+    portal.adapter().list_meetings(date(2026, 9, 1), date(2026, 9, 30))
 
     assert portal.requests
     for request in portal.requests:
-        assert (
-            request.headers["user-agent"]
-            == "TownRecord/9.9.9 (+https://github.com/scottconverse/townrecord)"
-        )
+        assert "townrecord" not in request.headers.get("user-agent", "").casefold()
 
 
 def test_a_base_url_is_required_and_no_city_is_named(portal: FakePortal) -> None:
