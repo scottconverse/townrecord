@@ -120,6 +120,94 @@ def test_two_bodies_and_invalid_configuration_leave_no_partial_source(
     assert conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0] == 0
 
 
+def test_staged_recording_minutes_and_cancellation_require_republication(
+    client, conn, read_write_token, api_storage_root
+):
+    """Synthetic lifecycle; approval wording belongs to the source document."""
+    from townrecord.repo import insert_segment, insert_source, insert_transcript, insert_video
+
+    writer = {"Authorization": f"Bearer {read_write_token}"}
+    city = insert_jurisdiction(conn, type="city", name="Lifecycle fixture")
+    body = insert_body(conn, jurisdiction_id=city, name="Council")
+    meeting = insert_meeting(conn, body_id=body, starts_at="2026-10-01T19:00:00")
+    private = f"/v1/operator/meetings/{meeting}"
+    public = f"/public/v1/meetings/{meeting}"
+
+    def document(kind, text):
+        artifact = artifacts.store(
+            conn,
+            api_storage_root,
+            "record",
+            text.encode(),
+            "txt",
+            meta={"citation_url": f"https://example.org/{kind}.txt"},
+        )
+        record = insert_record(conn, meeting_id=meeting, kind=kind, artifact_id=artifact.id)
+        insert_record_page(conn, record_id=record, page_number=1, text=text)
+        return record
+
+    def publish(reason):
+        response = client.post(private + "/publish", json={"reason": reason}, headers=writer)
+        assert response.status_code == 200, response.text
+        return client.get(public).json()
+
+    agenda = document("agenda", "Agenda: harbor works")
+    first = publish("Reviewed agenda; recording and minutes not available yet")
+    assert first["transcript"] is None
+    assert len(first["detail"]["meeting"]["documents"]) == 1
+    source = insert_source(
+        conn,
+        jurisdiction_id=city,
+        type="video_channel",
+        origin="https://youtube.com/@example",
+        suggested_by="operator",
+        reason="Synthetic acceptance source",
+    )
+    video = insert_video(
+        conn,
+        source_id=source,
+        platform_video_id="fixture",
+        meeting_id=meeting,
+        is_primary=True,
+        url="https://www.youtube.com/watch?v=fixture",
+    )
+    artifact = artifacts.store(conn, api_storage_root, "transcript", b"Harbor discussion", "txt")
+    transcript = insert_transcript(
+        conn, video_id=video, artifact_id=artifact.id, origin="local_speech_to_text"
+    )
+    insert_segment(
+        conn, transcript_id=transcript, start_ms=1000, end_ms=3000, text="Harbor discussion"
+    )
+    assert client.get(public).json()["transcript"] is None
+    recorded = publish("Reviewed later recording; machine transcript is not official minutes")
+    assert recorded["transcript"]["segments"][0]["text"] == "Harbor discussion"
+    minutes = document(
+        "minutes", "Source states: minutes approved October 15. Harbor works passed."
+    )
+    assert len(client.get(public).json()["detail"]["meeting"]["documents"]) == 1
+    complete = publish("Reviewed source-approved minutes received later")
+    assert {d["id"] for d in complete["detail"]["meeting"]["documents"]} == {agenda, minutes}
+    assert client.get(public + f"/documents/{minutes}").content.startswith(b"Source states")
+    response = client.patch(
+        private,
+        headers=writer,
+        json={
+            "title": "Continued Council",
+            "starts_at": "2026-10-02T19:00:00",
+            "body_id": body,
+            "is_cancelled": True,
+            "is_continued": True,
+            "reason": "Synthetic source cancellation and continuation notice",
+        },
+    )
+    assert response.status_code == 200
+    assert not client.get(public).json()["detail"]["meeting"]["is_cancelled"]
+    changed = publish("Reviewed cancellation notice")
+    assert changed["detail"]["meeting"]["is_cancelled"]
+    assert changed["detail"]["meeting"]["is_continued"]
+    assert changed["revision"] == 4
+
+
 def test_request_connection_can_finish_on_another_pool_thread(db_path):
     from concurrent.futures import ThreadPoolExecutor
     from types import SimpleNamespace

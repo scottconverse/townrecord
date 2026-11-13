@@ -12,11 +12,29 @@ Python wheel. Current architecture docs updated. Typecheck/build and 28 affected
 community/serving/scheduler/recovery tests pass. UI busy buttons and back focus
 corrected within the design. No new framework or runtime Node dependency.
 
-Branch implement/typescript-community; candidate not yet committed/installed.
-Next: commit/build/install one candidate, run full local transcription from UI,
-remaining UI/handoff cases, isolated documented service/schedule/recovery, required
-CI, final handoff/project updates and merge. Reuse previous passed evidence below.
-No local worker/service currently owned. No VM/Sandbox launched by this increment.
+Branch implement/typescript-community; PR43 draft. Installed source758abf6 includes
+strict TypeScript and the observed refreshed-list keyboard-focus correction.
+Passed browser checks: date/body filters, keyboard open, correction/history,
+document and recording reassociation with original associations restored, and
+HTML agenda download with correct extension. No public snapshot changed.
+Next: verify installed focus fix, finish full local transcription and remaining
+UI/full-file TownReporter handoff, documented service/schedule/recovery, required
+CI, final handoff/project updates and merge. Reuse prior evidence below.
+Owned API: loopback18290, exec43262, typescript_browser.py; cancel Ctrl+C.
+Owned transcription: exec52730, full_transcription.py, job70/video4, started
+2026-11-13T22:14:10Z. Expected saved full local transcript or explicit job error;
+next read full-transcription-result.json. Other heavy jobs parked temporarily,
+restored by script finally. Interrupt only owned process and verify children.
+TownReporter full-browser handoff passed: Council lead1, duplicate same lead,
+invalid file rejected, valid Planning retry lead2, both New and no model/scan.
+Preview exec31245 stopped and tab closed; receipt full-browser-handoff.json.
+Owned fresh installed CLI service: exec36507, loopback18292, deployment-profile,
+started22:32UTC; initial bounded Sept23 source sync queued. Ctrl+C stops; next
+verify acquisition, stop/restart, backup/restore and continued retrieval.
+Design verified as eighth actual Big Picture source; screenshot preserved.
+Installed keyboard focus regression passed after refresh on meeting9.
+No VM/Sandbox launched by this increment. Older ownership statements below are
+historical checkpoints, superseded by this current record.
 Any human trial below is a suggestion until Scott defines it as required.
 
 ---
