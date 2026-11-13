@@ -29,10 +29,13 @@ from townrecord.config import Settings
 from townrecord.jobs import QUEUED, RUNNING, JobContext, JobsSettings, claim, enqueue, get
 from townrecord.records import (
     ALIGN_MEETING,
+    CONNECTOR_OPERATION,
+    DOWNLOAD_CONNECTOR,
     DOWNLOAD_RECORD,
     EXTRACT_PAGES,
     READ_MINUTES,
     READ_SPEAKERS,
+    SYNC_CONNECTOR,
     SYNC_PRIMEGOV,
 )
 from townrecord.runtime import JOB_KIND as RUNTIME_UPDATE_KIND
@@ -54,6 +57,9 @@ EXPECTED_KINDS = (
     TRANSCRIBE_JOB_KIND,
     WATCH_CHANNEL_JOB_KIND,
     RUNTIME_UPDATE_KIND,
+    SYNC_CONNECTOR,
+    DOWNLOAD_CONNECTOR,
+    CONNECTOR_OPERATION,
 )
 
 #: 06:00 local, and the clock below is 04:00 in Denver, so the schedule has
@@ -92,7 +98,7 @@ def test_every_job_kind_that_exists_is_registered(settings: Settings) -> None:
 
     assert service.registry.kinds() == tuple(sorted(EXPECTED_KINDS))
     assert set(service.registry.kinds()) == set(kinds())
-    assert len(kinds()) == len(EXPECTED_KINDS) == 11
+    assert len(kinds()) == len(EXPECTED_KINDS) == 14
 
     # Each kind is a name the module the service says registers it really
     # declares, so KIND_MODULES is a fact and not a comment.

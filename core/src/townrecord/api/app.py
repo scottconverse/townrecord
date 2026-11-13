@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from ..config import Settings
 from ..db import connect, migrate
-from . import docs_assets, missing, read
+from . import connectors, docs_assets, missing, read
 from .auth import require_token
 
 DESCRIPTION = "Local API for TownRecord. Every request needs a bearer token."
@@ -60,6 +60,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(read.router)
     app.include_router(missing.router)
+    app.include_router(connectors.router)
 
     @app.get("/v1/health")
     def health() -> dict[str, str]:

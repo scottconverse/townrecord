@@ -283,8 +283,11 @@ class Scheduler:
             if source.status not in SYNCABLE_STATUSES:
                 continue
             if source.type == MEETING_PORTAL:
+                from .connectors import configuration
+                from .records.shared import SYNC_CONNECTOR
+
                 yield (
-                    TASK_SYNC,
+                    SYNC_CONNECTOR if configuration(source) is not None else TASK_SYNC,
                     source_subject(source.id),
                     self._sync_refusal(conn, source),
                     {"source_id": source.id},

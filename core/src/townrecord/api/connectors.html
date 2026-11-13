@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TownRecord connectors</title>
+<style>
+body{font:16px system-ui;max-width:68rem;margin:2rem auto;padding:0 1rem;color:#16212b}
+label{display:block;margin:.7rem 0}input,textarea,button,select{font:inherit;padding:.45rem}
+input,textarea{max-width:100%;box-sizing:border-box}textarea{width:100%;height:9rem}
+button{margin:.3rem .3rem .3rem 0}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#eef3f7;padding:1rem}
+fieldset{margin:1rem 0;border:1px solid #bac7d2}small{display:block;color:#435463}
+</style>
+<h1>TownRecord connectors</h1>
+<p>Local source configuration, cited search, capture exports and durable jobs.
+Every request needs a bearer token. Writes are denied unless the server owner grants them.</p>
+<label>Bearer token <input id="token" type="password" autocomplete="off" size="50"></label>
+<small>The token stays in this page's memory. It is not stored in your browser.</small>
+<button data-action="capabilities">Capabilities</button><button data-action="sources">Sources</button>
+<fieldset><legend>Configured source</legend>
+<label>Source ID <input id="source" type="number" min="1"></label>
+<label>Connector JSON (provider, optional namespace, input_format, options, bounds)
+<textarea id="configuration" spellcheck="false">{"provider":"legistar"}</textarea></label>
+<button data-action="configure">Save configuration</button>
+<label>From date <input id="from" type="date"></label>
+<label>Through date (inclusive) <input id="to" type="date"></label>
+<button data-action="sync">Queue sync</button>
+<details><summary>Authorized account fetch</summary>
+<p>Requires separately configured, namespace-bound server credentials. Enter documented fetch fields only, never credentials. Ordinary date and body filters do not apply.</p>
+<label>Provider fetch fields JSON<textarea id="fetch-fields" spellcheck="false">{}</textarea></label>
+<button data-action="fetch">Queue account fetch</button></details>
+<label>Exact search term <input id="query"></label>
+<button data-action="search">Search connector evidence</button>
+<button data-action="native">Search document pages and transcripts</button>
+<label>Export <select id="format"><option>zip</option><option>jsonl</option><option>json</option><option>csv</option><option>ics</option></select></label>
+<button data-action="export">Download capture bundle</button>
+</fieldset>
+<fieldset><legend>Durable job</legend>
+<label>Job ID <input id="job" type="number" min="1"></label>
+<button data-action="status">Status</button><button data-action="cancel">Request cancellation</button>
+<button data-action="retry">Queue explicit retry</button>
+</fieldset>
+<fieldset><legend>Explicit write plan</legend>
+<p>Planning and committing need separate trusted server grants. Review the entire returned plan
+before entering its exact ID and hash. Nothing commits automatically.</p>
+<label>Plan request JSON <textarea id="changes" spellcheck="false">{"changes":[]}</textarea></label>
+<button data-action="plan">Queue write plan</button>
+<label>Reviewed plan ID <input id="planid" size="45"></label>
+<label>Reviewed plan hash <input id="planhash" size="65"></label>
+<button data-action="commit">Commit exact reviewed plan</button><button data-action="receipt">Read receipt</button>
+</fieldset>
+<h2>Result</h2><pre id="result" role="status">Ready. Enter a bearer token and a configured source ID.</pre>
+<script>
+"use strict";
+const el=id=>document.getElementById(id);
+const source=()=>"/v1/connectors/sources/"+encodeURIComponent(el("source").value);
+async function send(path,method="GET",body){
+ const response=await fetch(path,{method,headers:{Authorization:"Bearer "+el("token").value,
+  ...(body===undefined?{}:{"Content-Type":"application/json"})},
+  ...(body===undefined?{}:{body:JSON.stringify(body)})});
+ if(!response.ok)throw new Error(response.status+" "+await response.text());
+ return response;
+}
+document.addEventListener("click",async event=>{
+ const action=event.target.dataset.action;if(!action)return;
+ try{
+  let response;
+  if(action==="capabilities")response=await send("/v1/connectors/capabilities");
+  if(action==="sources")response=await send("/v1/connectors/sources");
+  if(action==="configure")response=await send(source(),"PUT",JSON.parse(el("configuration").value));
+  if(action==="sync"){
+   const body={};if(el("from").value)body.from_date=el("from").value;
+   if(el("to").value)body.to_date=el("to").value;
+   response=await send(source()+"/sync","POST",body);
+  }
+  if(action==="fetch")response=await send(source()+"/sync","POST",{fetch_fields:JSON.parse(el("fetch-fields").value)});
+  if(action==="search")response=await send(source()+"/search?q="+encodeURIComponent(el("query").value));
+  if(action==="native")response=await send("/v1/search?q="+encodeURIComponent(el("query").value));
+  const job="/v1/connectors/jobs/"+encodeURIComponent(el("job").value);
+  if(action==="status")response=await send(job);
+  if(action==="cancel"||action==="retry")response=await send(job+"/"+action,"POST",{});
+  if(action==="plan")response=await send(source()+"/plan","POST",JSON.parse(el("changes").value));
+  if(action==="commit"){
+   if(!el("planid").value||!el("planhash").value)throw new Error("Enter the reviewed plan ID and hash.");
+   if(!confirm("Commit exactly this reviewed plan?"))return;
+   response=await send(source()+"/commit","POST",{plan_id:el("planid").value,plan_hash:el("planhash").value});
+  }
+  if(action==="receipt")response=await send(source()+"/receipts/"+encodeURIComponent(el("planid").value));
+  if(action==="export"){
+   response=await send(source()+"/export?format="+encodeURIComponent(el("format").value));
+   const url=URL.createObjectURL(await response.blob()),a=document.createElement("a");
+   a.href=url;a.download="townrecord-export."+el("format").value;a.click();
+   URL.revokeObjectURL(url);el("result").textContent="Export downloaded.";return;
+  }
+  const value=await response.json();el("result").textContent=JSON.stringify(value,null,2);
+  if(value.job_id)el("job").value=value.job_id;
+ }catch(error){el("result").textContent=String(error);}
+});
+</script>
+</html>
