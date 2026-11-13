@@ -43,11 +43,15 @@ Private acquisitions and operator history are never resident search results.
 
 ## Current acceptance boundary
 
-This document describes the workflow under implementation. It is not a release
-announcement or a claim that the whole bounded plan has passed. Initial API
-publication/privacy tests and the synthetic browser lifecycle passed; real
-Longmont discovery mapped ten September meetings across the two selected bodies.
-Live HTML and PDF agenda retrieval passed after correcting the HTML endpoint;
-the HTML agenda produced 20 items. Full transcript runtime,
-TownReporter transfer, deployment and restore remain outstanding. Tagging and
-publishing are held for Scott's approval.
+The exact Windows candidate has passed real two-body acquisition and repeat
+discovery, document extraction, full source-caption readback, timestamp navigation,
+an isolated TownReporter browser handoff, and backup/restore. Full Council and
+Planning evidence packages also passed the TownReporter receive function without
+truncation. Local Whistle and Whisper ran identical real meeting clips; Whisper
+small was retained for the better observed wording. These are bounded observations,
+not a claim that all providers or the wider specification are complete.
+
+See [Community acceptance](COMMUNITY-ACCEPTANCE.md) for exact identities, evidence
+tiers and remaining acceptance. A second human operator and resident/reporter
+have not yet completed the planned community trial. Tagging and publishing remain
+held for Scott's approval.
