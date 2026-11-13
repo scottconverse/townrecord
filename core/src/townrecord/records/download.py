@@ -25,8 +25,8 @@ from . import portal
 def download_record(ctx: JobContext) -> None:
     """Fetch the document one download job names and store it.
 
-    A document that is already stored is not fetched again: the portal ids are
-    the key, so a re-run of the same job writes the same one row. A document
+    A refresh revalidates the source bytes. Unchanged content keeps its row;
+    changed content creates a new record while preserving old citations. A document
     over the limit raises ``DocumentTooLarge``, which fails this job with the
     limit and the size in its reason and does not touch the source's health
     (spec 9.6): one oversized packet is not a broken portal.
@@ -55,18 +55,6 @@ def download_record(ctx: JobContext) -> None:
         )
         return
 
-    stored = record_for_portal_document(ctx.conn, meeting.id, job.document_id)
-    if stored is not None:
-        ctx.save_checkpoint(
-            {
-                "record_id": stored.id,
-                "artifact_id": stored.artifact_id,
-                "kind": stored.kind,
-                "already_stored": True,
-            }
-        )
-        return
-
     kind = portal.record_kind(job.template_name)
     if kind is None:
         ctx.pause(
@@ -91,16 +79,42 @@ def download_record(ctx: JobContext) -> None:
         portal.content_extension(content.content_type),
         meta=_citation(source, meeting, job, content.citation_url, content.content_type),
     )
-    record_id = insert_record(
-        ctx.conn,
-        meeting_id=meeting.id,
-        kind=kind,
-        artifact_id=artifact.id,
-        source_id=source.id,
-        title=job.template_name or None,
-        portal_document_id=job.document_id,
-        portal_template_id=job.template_id,
-    )
+    # Fetching is revalidation. Serialize the identity/hash decision after IO so
+    # overlapping refreshes cannot create duplicate versions or lose citations.
+    ctx.conn.execute("SAVEPOINT document_revision")
+    try:
+        stored = record_for_portal_document(ctx.conn, meeting.id, job.document_id)
+        if stored is not None and stored.artifact_id == artifact.id:
+            ctx.save_checkpoint(
+                {
+                    "record_id": stored.id,
+                    "artifact_id": artifact.id,
+                    "kind": stored.kind,
+                    "already_stored": True,
+                }
+            )
+            ctx.conn.execute("RELEASE document_revision")
+            return
+        record_id = insert_record(
+            ctx.conn,
+            meeting_id=meeting.id,
+            kind=kind,
+            artifact_id=artifact.id,
+            source_id=source.id,
+            title=job.template_name or None,
+            portal_document_id=job.document_id,
+            portal_template_id=job.template_id,
+        )
+        if stored is not None:
+            ctx.conn.execute(
+                "INSERT INTO record_revisions(previous_record_id,current_record_id) VALUES (?,?)",
+                (stored.id, record_id),
+            )
+        ctx.conn.execute("RELEASE document_revision")
+    except BaseException:
+        ctx.conn.execute("ROLLBACK TO document_revision")
+        ctx.conn.execute("RELEASE document_revision")
+        raise
     read = _ask_for_reading(ctx, record_id, artifact.rel_path)
     ctx.save_checkpoint(
         {
