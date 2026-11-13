@@ -43,7 +43,7 @@ trials are suggestions unless Scott makes them requirements.
 | Daily schedule | Installed scheduler due tick enqueued source sync; second tick enqueued nothing; real scheduled source job23 completed. Existing DST/thread/restart tests reused | Focused cycle, not a months-long observation. Tool checks queued/paused as configured and were not rerun |
 | TypeScript UI | Strict compilation; body/date filters, keyboard opening and restored focus after refresh; cancellation/postponement/history; document and recording reassignment restored afterward; HTML agenda downloaded as .html; narrow resident layout had no horizontal overflow or operator controls | Existing publication/privacy evidence reused; no formal accessibility certification |
 | Staged record lifecycle | Synthetic agenda-only publication, later recording/local-origin transcript, later source-approved minutes, cancellation/continuation and explicit republication passed | Fixture minutes approval wording is attributed to the fixture source; not an assertion about live Longmont minutes |
-| Candidate CI | Packaged source758abf6 passed existing CI43518744977, including Windows. Current PR43 also includes the staged lifecycle regression; final head checks are tracked in state | Existing repository matrix retained; no new OS packaging work |
+| Candidate CI | Packaged source758abf6 passed existing CI43518744977, including Windows. PR43 final head8286b30 (including staged lifecycle regression) passed CI43520915463 and merged at0f2ae546 | Existing repository matrix retained; no new OS packaging work |
 
 Two full-record handoff defects were found and fixed before merge: the complete
 Council JSON exceeded the old 2 MB limit (now 8 MiB, byte-counted), and PDF-derived
