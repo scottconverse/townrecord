@@ -249,7 +249,7 @@ function task(fn: (event?: Event) => Promise<unknown>) {
     const control = target instanceof HTMLButtonElement ? target : null;
     if (control?.disabled) return;
     if (control) control.disabled = true;
-    message("Workingâ€¦");
+    message("Working…");
     try {
       await fn(event);
       message("");
@@ -313,7 +313,7 @@ function showList(rows: Summary[]) {
   for (const m of rows) {
     const a = tile(
       m.title || "Untitled meeting",
-      `${m.body_name} Â· ${m.starts_at}${m.is_cancelled ? " Â· Cancelled" : ""}`,
+      `${m.body_name} · ${m.starts_at}${m.is_cancelled ? " · Cancelled" : ""}`,
     );
     const openButton = button("Open meeting", async () => { listFocus=openButton; await openMeeting(m.id); });
     a.append(openButton);
@@ -359,7 +359,7 @@ async function refresh() {
   for (const s of overview.sources) {
     const a = tile(
       s.origin,
-      `${s.status} Â· ${s.last_error || (s.last_checked_at ? "Last checked " + s.last_checked_at : "Not retrieved yet")}`,
+      `${s.status} · ${s.last_error || (s.last_checked_at ? "Last checked " + s.last_checked_at : "Not retrieved yet")}`,
     );
     a.append(
       node(
@@ -377,7 +377,7 @@ async function refresh() {
   }
   $("jobs").replaceChildren();
   for (const j of overview.jobs) {
-    const a = tile(`${j.kind} Â· ${j.state}`, j.last_error || `Job ${j.id}`);
+    const a = tile(`${j.kind} · ${j.state}`, j.last_error || `Job ${j.id}`);
     if (["failed", "paused"].includes(j.state))
       a.append(
         button("Retry", async () => {
@@ -419,7 +419,7 @@ async function openMeeting(id: Id) {
   box.replaceChildren(
     node(
       "p",
-      `${d.body.name} Â· ${m.starts_at}${m.is_cancelled ? " Â· Cancelled" : ""}`,
+      `${d.body.name} · ${m.starts_at}${m.is_cancelled ? " · Cancelled" : ""}`,
     ),
   );
   if (data.publication_note) box.append(node("p", data.publication_note));
@@ -447,7 +447,7 @@ async function openMeeting(id: Id) {
       );
     }
     if (doc.citation_url)
-      row.append(" Â· ", link("Original source", doc.citation_url));
+      row.append(" · ", link("Original source", doc.citation_url));
     docs.append(row);
     const extracted = (data.document_text || []).find(
       (t) => t.record_id === doc.id,
@@ -500,7 +500,7 @@ async function openMeeting(id: Id) {
     const video = (m.videos || []).find((v) => v.is_primary) || m.videos?.[0];
     if (i.start_ms != null && video?.url)
       p.append(
-        " Â· ",
+        " · ",
         link("Open at this item", timestampURL(video.url, i.start_ms)),
       );
     agenda.append(p);
@@ -519,7 +519,7 @@ async function openMeeting(id: Id) {
     ts.append(
       node(
         "p",
-        `Origin: ${(<Record<string, string>>{ publisher_captions: "Publisher-supplied captions (not certified minutes)", auto_captions: "Machine-generated platform captions", local_speech_to_text: "Machine-generated TextFlowKit transcript", sister_channel: "Captions from another recording source" })[t.origin] || t.origin}${t.is_provisional ? " Â· Provisional" : ""}. Check the source recording before relying on this text.`,
+        `Origin: ${(<Record<string, string>>{ publisher_captions: "Publisher-supplied captions (not certified minutes)", auto_captions: "Machine-generated platform captions", local_speech_to_text: "Machine-generated TextFlowKit transcript", sister_channel: "Captions from another recording source" })[t.origin] || t.origin}${t.is_provisional ? " · Provisional" : ""}. Check the source recording before relying on this text.`,
       ),
     );
     const video = (m.videos || []).find((v) => v.id === t.video_id);
@@ -570,7 +570,7 @@ async function openMeeting(id: Id) {
       ...(data.history || []).map((h) =>
         node(
           "p",
-          `${h.created_at || h.observed_at} Â· ${h.action || "Source change"} Â· ${h.reason || h.current_state || ""}`,
+          `${h.created_at || h.observed_at} · ${h.action || "Source change"} · ${h.reason || h.current_state || ""}`,
         ),
       ),
     );

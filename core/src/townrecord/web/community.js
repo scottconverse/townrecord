@@ -128,7 +128,7 @@ function task(fn) {
             return;
         if (control)
             control.disabled = true;
-        message("Workingâ€¦");
+        message("Working…");
         try {
             await fn(event);
             message("");
@@ -175,7 +175,7 @@ function showList(rows) {
     if (!rows.length)
         $("meetings").append(node("p", "No meetings match these filters. Try a different date or topic."));
     for (const m of rows) {
-        const a = tile(m.title || "Untitled meeting", `${m.body_name} Â· ${m.starts_at}${m.is_cancelled ? " Â· Cancelled" : ""}`);
+        const a = tile(m.title || "Untitled meeting", `${m.body_name} · ${m.starts_at}${m.is_cancelled ? " · Cancelled" : ""}`);
         const openButton = button("Open meeting", async () => { listFocus = openButton; await openMeeting(m.id); });
         a.append(openButton);
         if (operator)
@@ -209,7 +209,7 @@ async function refresh() {
     $("bodies").replaceChildren(...overview.bodies.map((b) => node("p", b.name)));
     $("sources").replaceChildren();
     for (const s of overview.sources) {
-        const a = tile(s.origin, `${s.status} Â· ${s.last_error || (s.last_checked_at ? "Last checked " + s.last_checked_at : "Not retrieved yet")}`);
+        const a = tile(s.origin, `${s.status} · ${s.last_error || (s.last_checked_at ? "Last checked " + s.last_checked_at : "Not retrieved yet")}`);
         a.append(node("p", `Coverage: ${s.coverage?.date_from || "not configured"} through ${s.coverage?.date_to || "not configured"}`));
         a.append(button("Retrieve configured coverage", async () => {
             await api(`/v1/operator/sources/${s.id}/sync`, {});
@@ -219,7 +219,7 @@ async function refresh() {
     }
     $("jobs").replaceChildren();
     for (const j of overview.jobs) {
-        const a = tile(`${j.kind} Â· ${j.state}`, j.last_error || `Job ${j.id}`);
+        const a = tile(`${j.kind} · ${j.state}`, j.last_error || `Job ${j.id}`);
         if (["failed", "paused"].includes(j.state))
             a.append(button("Retry", async () => {
                 await api(`/v1/operator/jobs/${j.id}/retry`, {});
@@ -248,7 +248,7 @@ async function openMeeting(id) {
     $("browse").hidden = true;
     $("meeting-title").textContent = m.title || "Meeting";
     const box = $("meeting-content");
-    box.replaceChildren(node("p", `${d.body.name} Â· ${m.starts_at}${m.is_cancelled ? " Â· Cancelled" : ""}`));
+    box.replaceChildren(node("p", `${d.body.name} · ${m.starts_at}${m.is_cancelled ? " · Cancelled" : ""}`));
     if (data.publication_note)
         box.append(node("p", data.publication_note));
     for (const n of d.notes || [])
@@ -263,7 +263,7 @@ async function openMeeting(id) {
             row.replaceChildren(button(doc.title || doc.kind, () => downloadPrivate(`/v1/records/${doc.id}/file`, `${doc.kind}-${doc.id}`)));
         }
         if (doc.citation_url)
-            row.append(" Â· ", link("Original source", doc.citation_url));
+            row.append(" · ", link("Original source", doc.citation_url));
         docs.append(row);
         const extracted = (data.document_text || []).find((t) => t.record_id === doc.id);
         if (extracted?.pages.length) {
@@ -302,7 +302,7 @@ async function openMeeting(id) {
         const p = node("p", `${i.number} ${i.title}`);
         const video = (m.videos || []).find((v) => v.is_primary) || m.videos?.[0];
         if (i.start_ms != null && video?.url)
-            p.append(" Â· ", link("Open at this item", timestampURL(video.url, i.start_ms)));
+            p.append(" · ", link("Open at this item", timestampURL(video.url, i.start_ms)));
         agenda.append(p);
         for (const vote of i.votes || []) {
             agenda.append(node("p", `${vote.result} \u00b7 ${vote.source_label}: ${vote.evidence}`));
@@ -311,7 +311,7 @@ async function openMeeting(id) {
     const ts = addSection(box, "Transcript");
     const t = data.transcript;
     if (t) {
-        ts.append(node("p", `Origin: ${{ publisher_captions: "Publisher-supplied captions (not certified minutes)", auto_captions: "Machine-generated platform captions", local_speech_to_text: "Machine-generated TextFlowKit transcript", sister_channel: "Captions from another recording source" }[t.origin] || t.origin}${t.is_provisional ? " Â· Provisional" : ""}. Check the source recording before relying on this text.`));
+        ts.append(node("p", `Origin: ${{ publisher_captions: "Publisher-supplied captions (not certified minutes)", auto_captions: "Machine-generated platform captions", local_speech_to_text: "Machine-generated TextFlowKit transcript", sister_channel: "Captions from another recording source" }[t.origin] || t.origin}${t.is_provisional ? " · Provisional" : ""}. Check the source recording before relying on this text.`));
         const video = (m.videos || []).find((v) => v.id === t.video_id);
         for (const seg of t.segments || []) {
             const p = node("p", null, "segment");
@@ -349,7 +349,7 @@ async function openMeeting(id) {
         checkbox(f, "is_cancelled").checked = m.is_cancelled;
         checkbox(f, "is_continued").checked = m.is_continued;
         field(f, "reason").value = "";
-        $("history").replaceChildren(...(data.history || []).map((h) => node("p", `${h.created_at || h.observed_at} Â· ${h.action || "Source change"} Â· ${h.reason || h.current_state || ""}`)));
+        $("history").replaceChildren(...(data.history || []).map((h) => node("p", `${h.created_at || h.observed_at} · ${h.action || "Source change"} · ${h.reason || h.current_state || ""}`)));
     }
     $("meeting-title").tabIndex = -1;
     $("meeting-title").focus();

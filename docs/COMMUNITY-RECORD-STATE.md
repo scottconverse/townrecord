@@ -42,7 +42,7 @@ browser handoff/idempotency; full Council/Planning receive-function handoff.
 See COMMUNITY-ACCEPTANCE.md for evidence tiers and limits.
 
 Scott requested both transcription engines tested. Same two real120-second clips:
-Whistle7.2â€“7.3s /83â€“85MiB; Whisper small28.9â€“30.4s /1884â€“1896MiB.
+Whistle7.2–7.3s /83–85MiB; Whisper small28.9–30.4s /1884–1896MiB.
 Whisper retained for better observed terminology, not a gold-reference accuracy
 claim. TRANSCRIPTION-COMPARISON.md is added to the actual Big Picture Project.
 
