@@ -304,6 +304,8 @@ def insert_record(
     page_count: int | None = None,
     portal_document_id: int | None = None,
     portal_template_id: int | None = None,
+    identity_key: str | None = None,
+    origin_meeting_id: int | None = None,
 ) -> int:
     """Store one document of a meeting and return its id.
 
@@ -323,6 +325,8 @@ def insert_record(
             "page_count": page_count,
             "portal_document_id": portal_document_id,
             "portal_template_id": portal_template_id,
+            **({"identity_key": identity_key} if identity_key is not None else {}),
+            **({"origin_meeting_id": origin_meeting_id} if origin_meeting_id is not None else {}),
         },
     )
 
@@ -342,8 +346,9 @@ def record_for_portal_document(
     no-op rather than a second row (spec 9.2).
     """
     row = conn.execute(
-        "SELECT * FROM records WHERE meeting_id = ? AND portal_document_id = ? ORDER BY id DESC",
-        (meeting_id, portal_document_id),
+        "SELECT * FROM records WHERE (meeting_id = ? OR origin_meeting_id = ?) "
+        "AND portal_document_id = ? ORDER BY id DESC",
+        (meeting_id, meeting_id, portal_document_id),
     ).fetchone()
     return None if row is None else Record.from_row(row)
 

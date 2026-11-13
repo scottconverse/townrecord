@@ -83,14 +83,6 @@ def _meeting(conn, local, record, scope):
     datetime.fromisoformat(start.replace("Z", "+00:00"))
     meeting_id = None if previous is None else previous["meeting_id"]
     if meeting_id is None or get_meeting(conn, meeting_id) is None:
-        collision = conn.execute(
-            "SELECT id FROM meetings WHERE body_id=? AND starts_at=?", (body.id, start)
-        ).fetchone()
-        if collision is not None:
-            raise ValueError(
-                f"Meeting identity collision with local meeting {collision['id']}; "
-                "explicit review is required, and existing portal IDs were not changed."
-            )
         meeting_id = insert_meeting(
             conn,
             body_id=body.id,
@@ -322,6 +314,7 @@ def _supplied_text(ctx, local, meeting_id, record, scope):
         artifact_id=artifact.id,
         source_id=local.id,
         title="Source-supplied text evidence",
+        identity_key=key,
     )
     for index, segment in enumerate(segments, start=1):
         text = segment.get("text") or ""
@@ -358,15 +351,12 @@ def download_connector(ctx: JobContext) -> None:
     ).fetchone()
     if link is None or link["meeting_id"] != payload["meeting_id"]:
         raise ValueError("The attachment destination is not linked to this captured record.")
-    attachment_key = payload["record_key"] + ":document:" + str(payload["index"])
-    known = ctx.conn.execute(
-        "SELECT record_id FROM connector_links WHERE scope=? AND identity_key=?",
-        (context.scope, attachment_key),
-    ).fetchone()
-    revision = store.get("attachment_versions", attachment_key, scope=context.scope)
-    if known and revision and revision.value.get("revision") == payload["revision"]:
-        ctx.save_checkpoint({"record_id": known["record_id"], "already_stored": True})
-        return
+    document = item.value["normalized"]["documents"][payload["index"]]
+    # A document URL is stable when the provider reorders its attachment list.
+    document_identity = document.get("external_id") or document.get("url")
+    if not document_identity:
+        raise ValueError("The attachment has no stable provider identity or URL.")
+    attachment_key = payload["record_key"] + ":document:" + canonical_hash(document_identity)
     bounds = connectors.bounds_for(local)
     result = engine.fetch_attachment(
         source, item.value, index=payload["index"], bounds=bounds, context=context
@@ -403,29 +393,65 @@ def download_connector(ctx: JobContext) -> None:
                 "connector_identity": item.value["identity"],
             },
         )
-        record_id = (
-            known["record_id"]
-            if known
-            else insert_record(
-                ctx.conn,
-                meeting_id=payload["meeting_id"],
-                source_id=local.id,
-                kind=kind,
-                artifact_id=artifact.id,
-                title=document.get("title") or kind,
-            )
+        # Upgrade old index-based attachment links only when the saved source
+        # citation proves which URL they represented; reordered lists are safe.
+        old_links = ctx.conn.execute(
+            "SELECT l.identity_key,a.meta FROM connector_links l "
+            "JOIN records r ON r.id=l.record_id JOIN artifacts a ON a.id=r.artifact_id "
+            "WHERE l.scope=? AND l.source_id=?",
+            (context.scope, local.id),
+        ).fetchall()
+        old_prefix = payload["record_key"] + ":document:"
+        for old in old_links:
+            old_key = old["identity_key"]
+            if (
+                old_key.startswith(old_prefix)
+                and old_key[len(old_prefix) :].isdigit()
+                and json.loads(old["meta"]).get("citation_url") == document.get("url")
+                and not ctx.conn.execute(
+                    "SELECT 1 FROM connector_links WHERE scope=? AND identity_key=?",
+                    (context.scope, attachment_key),
+                ).fetchone()
+            ):
+                ctx.conn.execute(
+                    "UPDATE connector_links SET identity_key=? WHERE scope=? AND identity_key=?",
+                    (attachment_key, context.scope, old_key),
+                )
+                ctx.conn.execute(
+                    "UPDATE records SET identity_key=? WHERE id=(SELECT record_id "
+                    "FROM connector_links WHERE scope=? AND identity_key=?)",
+                    (attachment_key, context.scope, attachment_key),
+                )
+        known = ctx.conn.execute(
+            "SELECT r.id,r.artifact_id,r.meeting_id FROM connector_links l "
+            "JOIN records r ON r.id=l.record_id "
+            "WHERE l.scope=? AND l.identity_key=?",
+            (context.scope, attachment_key),
+        ).fetchone()
+        revision = store.get("attachment_versions", attachment_key, scope=context.scope)
+        if known and known["artifact_id"] == artifact.id:
+            ctx.save_checkpoint({"record_id": known["id"], "already_stored": True})
+            return
+        record_id = insert_record(
+            ctx.conn,
+            meeting_id=known["meeting_id"] if known else payload["meeting_id"],
+            source_id=local.id,
+            kind=kind,
+            artifact_id=artifact.id,
+            title=document.get("title") or kind,
+            identity_key=attachment_key,
         )
         if known:
-            # Existing citations retain their original artifact IDs and bytes.
             ctx.conn.execute(
-                "UPDATE records SET artifact_id=? WHERE id=?", (artifact.id, record_id)
+                "INSERT INTO record_revisions(previous_record_id,current_record_id) VALUES(?,?)",
+                (known["id"], record_id),
             )
-        else:
-            ctx.conn.execute(
-                "INSERT INTO connector_links(scope,identity_key,source_id,meeting_id,record_id) "
-                "VALUES (?,?,?,?,?)",
-                (context.scope, attachment_key, local.id, payload["meeting_id"], record_id),
-            )
+        ctx.conn.execute(
+            "INSERT INTO connector_links(scope,identity_key,source_id,meeting_id,record_id) "
+            "VALUES (?,?,?,?,?) ON CONFLICT(scope,identity_key) DO UPDATE "
+            "SET record_id=excluded.record_id",
+            (context.scope, attachment_key, local.id, payload["meeting_id"], record_id),
+        )
         store.put(
             "attachment_versions",
             attachment_key,
@@ -446,12 +472,8 @@ def download_connector(ctx: JobContext) -> None:
             excerpt=document.get("title") or kind,
         )
         if portal.content_extension(content_type) == "pdf":
-            if known:
-                ctx.conn.execute("DELETE FROM record_pages WHERE record_id=?", (record_id,))
             portal.enqueue_once(ctx, portal.EXTRACT_PAGES, {"record_id": record_id})
         elif content_type and content_type.split(";")[0] == "text/plain":
-            if known:
-                ctx.conn.execute("DELETE FROM record_pages WHERE record_id=?", (record_id,))
             insert_record_page(
                 ctx.conn, record_id=record_id, page_number=1, text=content.decode("utf-8")
             )

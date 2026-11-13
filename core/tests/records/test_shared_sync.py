@@ -182,7 +182,7 @@ def test_account_fetch_job_preserves_partial_and_scopes_credentials(
     assert len(calls) == before
 
 
-def test_calendar_sync_is_idempotent_and_conflict_marks_source_incomplete(area, sync):
+def test_calendar_sync_is_idempotent_and_distinct_sources_remain_separate(area, sync):
     content = (
         b"BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:abc\r\n"
         b"DTSTART:20260908T190000\r\nSUMMARY:Council meeting\r\n"
@@ -226,14 +226,10 @@ def test_calendar_sync_is_idempotent_and_conflict_marks_source_incomplete(area, 
 
     second = source("https://other.test.invalid/meetings.ics")
     result = run(second)
-    assert result["status"] == "partial"
-    assert any(error["code"] == "destination_conflict" for error in result["errors"])
-    assert (
-        sync.conn.execute(
-            "SELECT consecutive_failures FROM sources WHERE id=?", (second,)
-        ).fetchone()[0]
-        == 1
-    )
+    assert result["status"] == "completed"
+    assert sync.conn.execute("SELECT COUNT(*) FROM meetings").fetchone()[0] == 2
+    assert run(second)["status"] == "completed"
+    assert sync.conn.execute("SELECT COUNT(*) FROM meetings").fetchone()[0] == 2
 
 
 def test_escribe_document_reaches_existing_search_and_export(
@@ -417,7 +413,20 @@ def test_shared_packet_limit_retry_and_reopened_worker_keep_record_identity(
     assert [
         tuple(row) for row in sync.conn.execute("SELECT id,record_id FROM citations")
     ] == citations
-    assert download_limits == [1024, 1024]
+    assert download_limits == [1024, 1024, 1024]
+    document = b"Revised allocation."
+    assert run()["state"] == "done"
+    assert [
+        tuple(row)
+        for row in sync.conn.execute(
+            "SELECT id,artifact_id FROM records WHERE id=?", (before[0][0],)
+        )
+    ] == before
+    assert sync.conn.execute("SELECT COUNT(*) FROM record_revisions").fetchone()[0] == 1
+    document = b"Harbor sidewalk allocation after retry."
+    assert run()["state"] == "done"
+    assert sync.conn.execute("SELECT COUNT(*) FROM records").fetchone()[0] == 3
+    assert sync.conn.execute("SELECT COUNT(*) FROM record_revisions").fetchone()[0] == 2
 
 
 def test_configured_native_write_jobs_revalidate_grants_and_readback(

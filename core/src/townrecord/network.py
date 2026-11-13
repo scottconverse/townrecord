@@ -80,7 +80,8 @@ def lan_warning(host: str, port: int, *, allow_lan: bool) -> str | None:
     return (
         f"Warning: the API answers on http://{host}:{port}, which is not this machine "
         f"alone, so any computer that can reach this one on the local network can reach "
-        f"it. Every request still needs a token."
+        f"it. Private API requests still need a token; reviewed public records are public. "
+        f"Use HTTPS for operator access beyond this machine."
     )
 
 

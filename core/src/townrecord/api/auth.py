@@ -1,7 +1,7 @@
 """Bearer token checking.
 
-Every route needs a token, including `/docs`, `/redoc` and `/openapi.json`
-(spec 13.1 and decision 10 rule 2). No route is public.
+Private routes, including API documentation, require a token. Only the
+explicit community presentation and reviewed-publication namespace are public.
 """
 
 from __future__ import annotations
@@ -49,8 +49,14 @@ def bearer_token(header: str | None) -> str | None:
 def require_token(
     request: Request,
     conn: sqlite3.Connection = Depends(get_connection),
-) -> sqlite3.Row:
+) -> sqlite3.Row | None:
     """Reject the request unless it carries a valid token of a usable scope."""
+    path = request.url.path
+    if request.method == "GET" and (
+        path in {"/", "/operator", "/assets/community.css", "/assets/community.js"}
+        or path.startswith("/public/v1/")
+    ):
+        return None
     token = bearer_token(request.headers.get("authorization"))
     if token is None:
         raise _unauthorized("A bearer token is required.")

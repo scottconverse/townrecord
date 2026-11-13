@@ -5,8 +5,8 @@ import shutil
 from townrecord.db import connect, discover, migrate
 from townrecord.repo import get_meeting, get_record, insert_record_page, record_pages
 
-from .records.conftest import Area, FakePortal, Sync
-from .records.test_download_record import a_stored_meeting
+from .conftest import Area, FakePortal, Sync
+from .test_download_record import a_stored_meeting
 
 
 def test_upgrade_retains_record_pages_and_meeting_identity(tmp_path, monkeypatch):
@@ -40,7 +40,7 @@ def test_upgrade_retains_record_pages_and_meeting_identity(tmp_path, monkeypatch
         )
         insert_record_page(conn, record_id=rid, page_number=1, text="Original cited page")
         before = get_record(conn, rid)
-        assert migrate(conn) == [20]
+        assert migrate(conn) == [20, 21]
         assert get_record(conn, rid) == before
         assert get_meeting(conn, mid).portal_meeting_id == 4100
         assert record_pages(conn, rid)[0].text == "Original cited page"

@@ -97,7 +97,8 @@ def download_record(ctx: JobContext) -> None:
             return
         record_id = insert_record(
             ctx.conn,
-            meeting_id=meeting.id,
+            meeting_id=stored.meeting_id if stored is not None else meeting.id,
+            origin_meeting_id=meeting.id if stored and stored.meeting_id != meeting.id else None,
             kind=kind,
             artifact_id=artifact.id,
             source_id=source.id,

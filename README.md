@@ -39,3 +39,11 @@ TownReporter, or anyone else, can use it.
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE).
+
+## Community record workflow
+
+The [community workflow](docs/COMMUNITY-WORKFLOW.md) adds operator review and
+explicit publication to the existing acquisition service. Resident pages expose
+reviewed snapshots; private acquisition data still requires authorization.
+See [implementation state](docs/COMMUNITY-RECORD-STATE.md) for passed evidence
+and remaining acceptance work. This branch is not a published release.

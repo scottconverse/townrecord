@@ -17,10 +17,10 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from ..config import Settings
 from ..db import connect, migrate
-from . import connectors, docs_assets, missing, read
+from . import community, connectors, docs_assets, missing, read
 from .auth import require_token
 
-DESCRIPTION = "Local API for TownRecord. Every request needs a bearer token."
+DESCRIPTION = "TownRecord private operator API and explicitly reviewed public meeting records."
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -58,6 +58,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # root is runtime state and the read routes take it from here (spec 8.6).
     app.state.storage_root = settings.storage_root
 
+    @app.middleware("http")
+    async def private_cache(request, call_next):
+        response = await call_next(request)
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        if request.url.path in {"/", "/operator"}:
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; script-src 'self'; style-src 'self'; "
+                "object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+            )
+        return response
+
+    app.include_router(community.router)
     app.include_router(read.router)
     app.include_router(missing.router)
     app.include_router(connectors.router)
