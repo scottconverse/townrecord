@@ -550,3 +550,121 @@ def test_configured_native_write_jobs_revalidate_grants_and_readback(
     sync.lane("normal")
     assert sync.job(duplicate.json()["job_id"])["state"] == "done"
     assert network.calls.count("POST") == 1
+
+
+def test_primegov_title_body_mapping_reuses_native_identity(area, sync):
+    import pytest
+
+    from townrecord.records.shared import BodyOutsideCoverage, _meeting
+    from townrecord.repo import get_source, upsert_meeting
+
+    existing, _ = upsert_meeting(
+        sync.conn,
+        body_id=area.body_id,
+        starts_at="2026-09-08T19:00:00",
+        title="City Council Regular Session",
+        portal_source_id=area.portal_id,
+        portal_meeting_id=3709,
+    )
+    record = {
+        "identity": {
+            "provider": "primegov",
+            "namespace": "//portal.test.invalid",
+            "record_type": "meeting",
+            "external_id": "3709",
+        },
+        "normalized": {
+            "title": "City Council Regular Session",
+            "source_start": "2026-09-09T19:00:00",
+            "documents": [{"source_metadata": {"template_id": 16805, "compile_output_type": 3}}],
+        },
+    }
+    local = get_source(sync.conn, area.portal_id)
+    mid = _meeting(sync.conn, local, record, "fixture")
+    assert mid == existing
+    row = sync.conn.execute("SELECT * FROM meetings WHERE id=?", (mid,)).fetchone()
+    assert row["starts_at"] == "2026-09-09T19:00:00" and row["portal_html_template_id"] == 16805
+    record["identity"]["external_id"] = "3710"
+    assert _meeting(sync.conn, local, record, "fixture") != mid
+    record["normalized"]["body"] = "Unconfigured parks board"
+    with pytest.raises(BodyOutsideCoverage):
+        _meeting(sync.conn, local, record, "fixture")
+
+
+def test_primegov_html_uses_guarded_portal_and_rejects_error_page(
+    area, sync, wired, monkeypatch, client, read_write_token
+):
+    from civic_data_connectors.providers.contracts import PublicTransport
+
+    from townrecord import connectors
+
+    origin = "https://synthetic.primegov.com"
+    html = b"<html><title>Document Not Found</title></html>"
+    calls = []
+
+    class Network:
+        def request(self, url, **options):
+            if "/Portal/Meeting?" in url:
+                assert options["allowed_origins"] == (origin,)
+                assert options["allow_redirects"] is False
+                assert url.endswith("meetingTemplateId=75")
+                calls.append(url)
+                return Response(url, html, "text/html")
+            meeting = {
+                "id": 42,
+                "title": "City Council",
+                "dateTime": "2026-09-08T19:00:00",
+                "documentList": [
+                    {
+                        "id": 77,
+                        "templateId": 75,
+                        "meetingId": 42,
+                        "compileOutputType": 3,
+                        "publishStatus": 1,
+                        "templateName": "HTML Agenda",
+                    }
+                ],
+            }
+            return Response(url, json.dumps([meeting]).encode(), "application/json")
+
+    monkeypatch.setattr(
+        PublicTransport, "request", lambda self, url, **kw: Network().request(url, **kw)
+    )
+    monkeypatch.setattr(
+        connectors,
+        "engine_for",
+        lambda conn, **kw: create_engine(
+            storage=AppStorage(conn), provider_transport=Network(), **kw
+        ),
+    )
+    source = insert_source(
+        sync.conn,
+        jurisdiction_id=area.jurisdiction_id,
+        type="meeting_portal",
+        origin=origin,
+        suggested_by="test",
+        reason="HTML test",
+        status="accepted",
+        body_id=area.body_id,
+    )
+    headers = {"Authorization": f"Bearer {read_write_token}"}
+    path = f"/v1/connectors/sources/{source}"
+    assert client.put(path, json={"provider": "primegov"}, headers=headers).status_code == 200
+
+    def run():
+        response = client.post(
+            path + "/sync",
+            json={"from_date": "2026-09-01", "to_date": "2026-09-30"},
+            headers=headers,
+        )
+        assert response.status_code == 202, response.text
+        sync.lane("normal")
+        sync.lane("heavy")
+        return sync.jobs_of_kind("download_connector")[-1]
+
+    assert run()["state"] == "failed"
+    assert sync.conn.execute("SELECT COUNT(*) FROM records").fetchone()[0] == 0
+    html = b"<html><title>Agenda</title><body>Public meeting agenda</body></html>"
+    assert run()["state"] == "done"
+    assert len(calls) == 2
+    assert sync.conn.execute("SELECT portal_document_id FROM records").fetchone()[0] == 77

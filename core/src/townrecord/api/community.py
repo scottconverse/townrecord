@@ -44,6 +44,7 @@ class SourceInput(Input):
     jurisdiction_id: int = Field(gt=0)
     url: HttpUrl
     provider: str = Field(min_length=1, max_length=100)
+    download_origins: list[HttpUrl] = Field(default_factory=list, max_length=16)
     date_from: date
     date_to: date
 
@@ -213,6 +214,11 @@ def add_source(data: SourceInput, token=Depends(operator_token), conn=Depends(ge
             sid,
             {
                 "provider": data.provider,
+                "options": {
+                    "download_origins": [
+                        str(origin).rstrip("/") for origin in data.download_origins
+                    ]
+                },
                 "bounds": {
                     "date_from": data.date_from.isoformat(),
                     "date_to": data.date_to.isoformat(),

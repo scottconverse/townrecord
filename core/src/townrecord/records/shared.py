@@ -35,6 +35,10 @@ DOWNLOAD_CONNECTOR = "download_connector"
 CONNECTOR_OPERATION = "connector_operation"
 
 
+class BodyOutsideCoverage(ValueError):
+    """The source names a body the operator has not selected for this instance."""
+
+
 def operation_id(job_id: int) -> str:
     return f"townrecord-job:{job_id}"
 
@@ -67,10 +71,13 @@ def _meeting(conn, local, record, scope):
     normalized = record["normalized"]
     if record["identity"]["record_type"] not in {"meeting", "event"}:
         return None
-    body = portal.resolve_body(conn, local, normalized.get("body") or "")
+    body = portal.resolve_body(conn, local, normalized.get("body") or normalized.get("title") or "")
     if body is None and not normalized.get("body") and local.body_id is not None:
         body = get_body(conn, local.body_id)
     if body is None:
+        named = normalized.get("body") or normalized.get("title")
+        if named:
+            raise BodyOutsideCoverage(str(named))
         raise ValueError("The shared meeting names no configured body of this jurisdiction.")
     start = normalized.get("scheduled_start") or normalized.get("source_start")
     if not start:
@@ -82,6 +89,15 @@ def _meeting(conn, local, record, scope):
     # A supplied date without a time stays a date, not a fabricated midnight.
     datetime.fromisoformat(start.replace("Z", "+00:00"))
     meeting_id = None if previous is None else previous["meeting_id"]
+    primegov_id = None
+    if record["identity"]["provider"] == "primegov":
+        primegov_id = int(record["identity"]["external_id"])
+        native = conn.execute(
+            "SELECT id FROM meetings WHERE portal_source_id=? AND portal_meeting_id=?",
+            (local.id, primegov_id),
+        ).fetchone()
+        if meeting_id is None and native:
+            meeting_id = native["id"]
     if meeting_id is None or get_meeting(conn, meeting_id) is None:
         meeting_id = insert_meeting(
             conn,
@@ -89,12 +105,27 @@ def _meeting(conn, local, record, scope):
             starts_at=start,
             title=normalized.get("title"),
         )
+    if primegov_id is not None:
+        template = next(
+            (
+                d.get("source_metadata", {}).get("template_id")
+                for d in normalized.get("documents", [])
+                if d.get("source_metadata", {}).get("compile_output_type") == 3
+            ),
+            None,
+        )
+        conn.execute(
+            "UPDATE meetings SET portal_source_id=?,portal_meeting_id=?,"
+            "portal_html_template_id=COALESCE(?,portal_html_template_id) WHERE id=?",
+            (local.id, primegov_id, template, meeting_id),
+        )
     status = normalized.get("source_status")
     cancelled = (
         str(status).casefold() in {"cancelled", "canceled"}
         or isinstance(status, dict)
         and bool(status.get("canceled") or status.get("cancelled"))
         or portal.cancellation_signal(normalized.get("title") or "", ()) is not None
+        or any(d.get("kind") in {"cancel", "cancellation"} for d in normalized.get("documents", []))
     )
     continued = portal.continuation_signal(normalized.get("title") or "") is not None
     conn.execute(
@@ -223,6 +254,10 @@ def sync_connector(ctx: JobContext) -> None:
                         checkpoint["data"]["meetings"].append(meeting_id)
                         portal.enqueue_once(ctx, portal.ALIGN_MEETING, {"meeting_id": meeting_id})
                     ctx.save_checkpoint(checkpoint)
+            except BodyOutsideCoverage as exc:
+                checkpoint["coverage"].setdefault("outside_configured_bodies", []).append(
+                    {"record_key": key, "source_title": str(exc)}
+                )
             except ValueError as exc:
                 failures.append({"record_key": key, "reason": str(exc)})
         ctx.heartbeat()
@@ -358,9 +393,46 @@ def download_connector(ctx: JobContext) -> None:
         raise ValueError("The attachment has no stable provider identity or URL.")
     attachment_key = payload["record_key"] + ":document:" + canonical_hash(document_identity)
     bounds = connectors.bounds_for(local)
-    result = engine.fetch_attachment(
-        source, item.value, index=payload["index"], bounds=bounds, context=context
-    )
+    if (
+        item.value["identity"]["provider"] == "primegov"
+        and document.get("source_metadata", {}).get("compile_output_type") == 3
+    ):
+        # Reuse the existing PrimeGov HTML endpoint; the shared saved-format
+        # mapping uses the PDF compile endpoint for this HTML-only template.
+        # Keep QuorumRelay's public-network and exact-origin guards in force.
+        from urllib.parse import urlsplit
+
+        from civic_data_connectors.providers.contracts import PublicTransport
+
+        template_id = int(document["source_metadata"]["template_id"])
+        url = portal.adapter_for(local).html_agenda_url(template_id)
+        parsed = urlsplit(local.origin)
+        origin = f"{parsed.scheme}://{parsed.netloc}"
+        response = PublicTransport().request(
+            url,
+            byte_limit=bounds.transfer_bytes,
+            deadline_seconds=bounds.deadline_seconds,
+            allowed_origins=(origin,),
+            allow_redirects=False,
+        )
+        if response.status != 200:
+            raise ValueError(
+                "The provider HTML agenda is unavailable; retry after checking the source."
+            )
+        result = OperationResult(
+            "completed",
+            {
+                "attachment": {
+                    "content_base64": base64.b64encode(response.content).decode("ascii"),
+                    "content_type": response.content_type,
+                    "citation_url": document.get("citation_url") or url,
+                }
+            },
+        )
+    else:
+        result = engine.fetch_attachment(
+            source, item.value, index=payload["index"], bounds=bounds, context=context
+        )
     attachment = (result.data or {}).get("attachment")
     if result.status == "cancelled" or operation_cancelled(store, context):
         ctx.save_checkpoint({"status": "cancelled"})
@@ -376,6 +448,13 @@ def download_connector(ctx: JobContext) -> None:
     if len(content) > bounds.transfer_bytes:
         raise ValueError("The attachment exceeds the transfer byte limit.")
     content_type = attachment.get("content_type")
+    if item.value["identity"]["provider"] == "primegov" and (
+        b"<title>document not found</title>" in content.lower()
+        or b"the requested meeting document is no longer available" in content.lower()
+    ):
+        raise ValueError(
+            "The provider returned a document-unavailable page, not a meeting document."
+        )
     document = item.value["normalized"]["documents"][payload["index"]]
     kind = portal.record_kind(document.get("kind") or document.get("title") or "") or "report"
     with atomic(ctx.conn):
@@ -407,7 +486,8 @@ def download_connector(ctx: JobContext) -> None:
             if (
                 old_key.startswith(old_prefix)
                 and old_key[len(old_prefix) :].isdigit()
-                and json.loads(old["meta"]).get("citation_url") == document.get("url")
+                and json.loads(old["meta"]).get("citation_url")
+                in {document.get("url"), document.get("citation_url")}
                 and not ctx.conn.execute(
                     "SELECT 1 FROM connector_links WHERE scope=? AND identity_key=?",
                     (context.scope, attachment_key),
@@ -428,8 +508,22 @@ def download_connector(ctx: JobContext) -> None:
             "WHERE l.scope=? AND l.identity_key=?",
             (context.scope, attachment_key),
         ).fetchone()
+        native_document = None
+        if item.value["identity"]["provider"] == "primegov":
+            native_document = int(document["external_id"])
+            if known is None:
+                known = ctx.conn.execute(
+                    "SELECT id,artifact_id,meeting_id FROM records WHERE source_id=? "
+                    "AND portal_document_id=? ORDER BY id DESC LIMIT 1",
+                    (local.id, native_document),
+                ).fetchone()
         revision = store.get("attachment_versions", attachment_key, scope=context.scope)
         if known and known["artifact_id"] == artifact.id:
+            ctx.conn.execute(
+                "INSERT INTO connector_links(scope,identity_key,source_id,meeting_id,record_id) "
+                "VALUES(?,?,?,?,?) ON CONFLICT(scope,identity_key) DO NOTHING",
+                (context.scope, attachment_key, local.id, known["meeting_id"], known["id"]),
+            )
             ctx.save_checkpoint({"record_id": known["id"], "already_stored": True})
             return
         record_id = insert_record(
@@ -440,6 +534,10 @@ def download_connector(ctx: JobContext) -> None:
             artifact_id=artifact.id,
             title=document.get("title") or kind,
             identity_key=attachment_key,
+            portal_document_id=native_document,
+            portal_template_id=document.get("source_metadata", {}).get("template_id")
+            if native_document is not None
+            else None,
         )
         if known:
             ctx.conn.execute(
@@ -449,8 +547,14 @@ def download_connector(ctx: JobContext) -> None:
         ctx.conn.execute(
             "INSERT INTO connector_links(scope,identity_key,source_id,meeting_id,record_id) "
             "VALUES (?,?,?,?,?) ON CONFLICT(scope,identity_key) DO UPDATE "
-            "SET record_id=excluded.record_id",
-            (context.scope, attachment_key, local.id, payload["meeting_id"], record_id),
+            "SET record_id=excluded.record_id,meeting_id=excluded.meeting_id",
+            (
+                context.scope,
+                attachment_key,
+                local.id,
+                known["meeting_id"] if known else payload["meeting_id"],
+                record_id,
+            ),
         )
         store.put(
             "attachment_versions",
@@ -471,6 +575,20 @@ def download_connector(ctx: JobContext) -> None:
             artifact_id=artifact.id,
             excerpt=document.get("title") or kind,
         )
+        if (
+            item.value["identity"]["provider"] == "primegov"
+            and portal.content_extension(content_type) == "html"
+        ):
+            destination = known["meeting_id"] if known else payload["meeting_id"]
+            for agenda in portal.adapter_for(local).parse_html_agenda(content, None):
+                upsert_agenda_item(
+                    ctx.conn,
+                    meeting_id=destination,
+                    number=agenda.number,
+                    title=agenda.title,
+                    identifiers=portal.identifiers_of(agenda.title),
+                )
+            portal.enqueue_once(ctx, portal.ALIGN_MEETING, {"meeting_id": destination})
         if portal.content_extension(content_type) == "pdf":
             portal.enqueue_once(ctx, portal.EXTRACT_PAGES, {"record_id": record_id})
         elif content_type and content_type.split(";")[0] == "text/plain":

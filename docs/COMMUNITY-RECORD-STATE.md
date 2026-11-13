@@ -39,3 +39,16 @@ CI40 first run: 1558 passed, 52 skipped, 2 stale-expectation failures on Ubuntu:
 public UI auth boundary and isolated connector migration19. Both corrected while
 retaining private-route and original connector schema-preservation checks.
 Next: push fixes, rerun loopback/browser check and await CI; plan still incomplete.
+
+Latest checkpoint: PR #40 at 9ae01f8 passed all existing CI jobs (43469010371).
+Uncommitted follow-up fixes were found by live Longmont September discovery:
+body names inferred from titles, native PrimeGov identity adoption, guarded
+HTML agenda endpoint, unavailable-page rejection and explicit document storage
+origins in operator setup. Eight shared-worker regressions passed. Live PDF
+retrieval and HTML agenda parsing passed (20 agenda items); original failures
+and corrected receipts retained in outputs/townrecord-community-acceptance.
+Synthetic browser correction/withdrawal, mobile width and sign-out checks passed.
+Twenty concurrent request cleanup checks passed. All test browsers/servers closed.
+No owned background processes running. Isolated lab database has queued jobs;
+these are not running workers. Next: push this tested increment, then finish
+TownReporter transfer, transcription, recovery/deployment and final acceptance.

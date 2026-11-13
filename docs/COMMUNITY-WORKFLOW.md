@@ -13,7 +13,13 @@ Open `/operator` and sign in with an administrator-issued write token. The token
 is held in browser memory only. Sign out before leaving a shared workstation.
 Create the community and its two public bodies using their source names. Add
 the supported provider URL and explicit coverage dates. Validate and save,
-then retrieve that coverage. The service workers process the queued work.
+then retrieve that coverage. If documents redirect to provider storage, enter
+the exact verified storage origin in Document download origins. For the
+Longmont pilot the observed PDF origin is `https://pgwest.blob.core.windows.net`.
+Do not enter a wildcard or unrelated host. The shared connector still validates
+public addresses and redirect destinations; a rejected download is retryable.
+Only selected bodies are imported; other named bodies are reported as outside
+configured coverage, not as a source outage. The service workers process the queued work.
 
 Review the acquired meeting, document text, original source links, recording
 status and transcript origin. Unavailable material remains an explicit gap.
@@ -39,6 +45,9 @@ Private acquisitions and operator history are never resident search results.
 
 This document describes the workflow under implementation. It is not a release
 announcement or a claim that the whole bounded plan has passed. Initial API
-publication/privacy tests passed; browser acceptance, transcript runtime,
+publication/privacy tests and the synthetic browser lifecycle passed; real
+Longmont discovery mapped ten September meetings across the two selected bodies.
+Live HTML and PDF agenda retrieval passed after correcting the HTML endpoint;
+the HTML agenda produced 20 items. Full transcript runtime,
 TownReporter transfer, deployment and restore remain outstanding. Tagging and
 publishing are held for Scott's approval.
