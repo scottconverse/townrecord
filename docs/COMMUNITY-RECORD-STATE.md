@@ -23,24 +23,21 @@ Whistle7.2–7.3s /83–85MiB; Whisper small28.9–30.4s /1884–1896MiB.
 Whisper retained for better observed terminology, not a gold-reference accuracy
 claim. TRANSCRIPTION-COMPARISON.md is added to the actual Big Picture Project.
 
-## Current authorized work
+## Delivery and ownership
 
-TownReporter PR388 head a66b331c254d34227a064f2f1648b1421efd3dbb pushed.
-Complete exports exposed two defects: old2MB limit and JSONB rejection of PDF null
-characters. Fixed with8MiB byte bound and exact JSON-text snapshot storage.
-Focused tests, typecheck/lint and actual full-record receive/retry passed.
-Required CI43479944986 is running; prior head CI passed. Merge only after current
-required checks pass. Next: verify CI, merge expected head, update this status and
-add final acceptance/handoff to the actual Big Picture Project (folder alone is
-insufficient). Maintained documentation correction is on docs/community-acceptance.
+TownReporter PR388 merged at 755827c0f251bd8b3507da8295e11830e62a733d.
+Accepted head a66b331c254d34227a064f2f1648b1421efd3dbb passed required CI43479944986.
+Complete exports exposed two defects: the old 2 MB limit and JSONB rejection of
+PDF null characters. Both are fixed; complete packet and duplicate tests passed.
+The documentation follow-up is TownRecord PR42. The exact tested wheel is unchanged.
 
-## Owned work / remaining acceptance
+The acceptance record and transcription comparison are verified sources in the
+actual Big Picture Project, not only its supporting folder. No local service,
+benchmark, worker or owned VM/Sandbox remains running. Lab evidence and candidate
+wheel are preserved. No owned asynchronous job remains required for this handoff;
+GitHub may run its normal post-merge CI automatically. No release was published.
 
-No local service, benchmark, VM/Sandbox or worker remains running. Lab evidence,
-original source artifacts, comparison outputs and candidate wheel are preserved.
-Only owned asynchronous work is the hosted PR388 CI above; completion means required
-checks passing/failing, next action inspect/merge or diagnose, cancellation via gh
-run cancel43479944986 if Scott stops work. Do not cancel unrelated GitHub runs.
+## Remaining acceptance
 
 Second-human operator deployment/recovery and resident/reporter acceptance have not
 occurred; no new post-setup meeting has been observed. Full-meeting local Whisper
