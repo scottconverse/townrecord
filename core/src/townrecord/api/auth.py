@@ -20,7 +20,9 @@ WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 def get_connection(request: Request) -> Iterator[sqlite3.Connection]:
     """Open one database connection for one request."""
-    conn = connect(request.app.state.db_path)
+    # FastAPI can enter, use and close one request dependency on different
+    # pool threads. The connection is still isolated to this one request.
+    conn = connect(request.app.state.db_path, check_same_thread=False)
     try:
         yield conn
     finally:

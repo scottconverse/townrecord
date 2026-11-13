@@ -27,3 +27,15 @@ and full operator/resident documentation. Do not call the plan complete yet.
 No owned local jobs, services, VMs or sandboxes running. No candidate installer,
 tag, release or public deployment created. Next: push current increment for CI,
 then test browser workflow in an isolated loopback instance.
+
+Browser pass on isolated synthetic fixtures: sign-in, review, explicit publication,
+anonymous topic search, extracted document text, private correction not leaking
+to the public snapshot, withdrawal, sign-out. Both Chrome test tabs closed and
+loopback server session 5389 stopped; port 18290 listener gone.
+Browser found malformed selector punctuation (fixed UTF-8) and request connection
+thread-affinity cleanup errors (fixed per-request connection thread option).
+Focused follow-up: 7 tests passed, including cross-thread dependency cleanup.
+CI40 first run: 1558 passed, 52 skipped, 2 stale-expectation failures on Ubuntu:
+public UI auth boundary and isolated connector migration19. Both corrected while
+retaining private-route and original connector schema-preservation checks.
+Next: push fixes, rerun loopback/browser check and await CI; plan still incomplete.

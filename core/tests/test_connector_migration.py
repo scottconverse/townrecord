@@ -177,7 +177,12 @@ def test_connector_migration_preserves_old_records_jobs_citations_and_fts(tmp_pa
             for row in conn.execute("SELECT name, sql FROM sqlite_master WHERE type='table'")
             if row["name"] in LEGACY_TABLES
         }
-        assert migrate(conn) == [19], "TR04 requires an additive upgrade from the old database"
+        connector_only = tmp_path / "connector-migration"
+        connector_only.mkdir()
+        for version, _, path in discover():
+            if version == 19:
+                shutil.copyfile(path, connector_only / path.name)
+        assert migrate(conn, connector_only) == [19], "Connector migration itself is additive"
         assert _snapshot(conn) == before
         assert all(
             conn.execute("SELECT sql FROM sqlite_master WHERE name=?", (name,)).fetchone()[0]
@@ -196,7 +201,7 @@ def test_connector_migration_preserves_old_records_jobs_citations_and_fts(tmp_pa
             == 1
         )
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
-        assert migrate(conn) == []
+        assert migrate(conn, connector_only) == []
         assert _snapshot(conn) == before
         assert applied_versions(conn) == LEGACY_VERSIONS | {19}
     finally:

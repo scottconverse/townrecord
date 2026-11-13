@@ -118,3 +118,17 @@ def test_two_bodies_and_invalid_configuration_leave_no_partial_source(
     )
     assert response.status_code == 422, response.text
     assert conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0] == 0
+
+
+def test_request_connection_can_finish_on_another_pool_thread(db_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from types import SimpleNamespace
+
+    from townrecord.api.auth import get_connection
+
+    request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(db_path=db_path)))
+    dependency = get_connection(request)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        connection = pool.submit(next, dependency).result()
+        assert connection.execute("SELECT 1").fetchone()[0] == 1
+        dependency.close()

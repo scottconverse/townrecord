@@ -450,6 +450,9 @@ def test_every_route_read_from_the_app_is_401_without_a_token(
             _, _, after = after.partition("}")
             path = f"{before}1{after}"
         for method in route.methods:
+            # Only the explicitly reviewed public namespace and UI shell are public.
+            if method == "GET" and (path in {"/", "/operator"} or path.startswith("/public/v1/")):
+                continue
             response = client.request(method, path)
             assert response.status_code == 401, f"{method} {path} answered {response.status_code}"
 
