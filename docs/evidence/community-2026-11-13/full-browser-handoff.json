@@ -1,0 +1,13 @@
+{
+  "sourceCommit": "a66b331c254d34227a064f2f1648b1421efd3dbb",
+  "councilBytes": 2020167,
+  "councilLead": 1,
+  "planningLead": 2,
+  "duplicate": "same lead; editorial work preserved",
+  "invalidFile": "rejected",
+  "validRetry": "Planning imported after invalid file",
+  "queue": "2 of 2 leads, both New",
+  "scan": "Off; no runs",
+  "published": false,
+  "observedAt": "2026-11-13T22:28:27.625Z"
+}

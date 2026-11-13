@@ -1,0 +1,19 @@
+{
+  "id": 70,
+  "kind": "transcribe",
+  "state": "done",
+  "started_at": "2026-11-13T22:14:10.418350Z",
+  "finished_at": "2026-11-13T22:35:34.058277Z",
+  "last_error": null,
+  "checkpoint": {
+    "audio_trigger_reason": "local_transcription_only",
+    "reason": "Operator explicitly requested a local machine-generated transcript.",
+    "audio_sha256": "025af699f88ffab59322bba97687aa6a0663a54b9356844a8669da3f9ddfa8a6",
+    "audio_path": "work/skwd58zm6jk/audio/skwd58zm6jk.opus",
+    "model": "small",
+    "tool_version": "0.1.19",
+    "device": "cpu",
+    "transcript_id": 3,
+    "segments": 1542
+  }
+}

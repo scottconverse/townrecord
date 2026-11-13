@@ -1,0 +1,15 @@
+{
+  "scheduler_due_jobs": [
+    23,
+    24
+  ],
+  "duplicate_tick_jobs": [],
+  "scheduled_source_job": {
+    "id": 23,
+    "kind": "sync_connector",
+    "state": "done",
+    "last_error": null
+  },
+  "runtime_checks": "enqueued or paused as configured; not rerun in this focused scheduler check",
+  "queued_followups": "preserved; service stopped"
+}

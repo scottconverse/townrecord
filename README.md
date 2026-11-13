@@ -13,7 +13,8 @@ completion contract for this bounded service and browser product.
 The current Windows candidate has been exercised with Longmont Council and
 Planning records. It is not a published release. A question-answering assistant is not part of this bounded delivery. See the
 [candidate acceptance record](docs/COMMUNITY-ACCEPTANCE.md) for observations,
-the exact package identity and remaining human acceptance.
+the exact package identity and observed limits. Scott determines which human
+trials are required; they are not additional engineering release gates.
 
 - [QuorumRelay connector configuration and limits](docs/CONNECTORS.md)
 - [Product specification](docs/SPEC.md)
