@@ -40,7 +40,7 @@ def test_upgrade_retains_record_pages_and_meeting_identity(tmp_path, monkeypatch
         )
         insert_record_page(conn, record_id=rid, page_number=1, text="Original cited page")
         before = get_record(conn, rid)
-        assert migrate(conn) == [20, 21]
+        assert migrate(conn) == [20, 21, 22]
         assert get_record(conn, rid) == before
         assert get_meeting(conn, mid).portal_meeting_id == 4100
         assert record_pages(conn, rid)[0].text == "Original cited page"

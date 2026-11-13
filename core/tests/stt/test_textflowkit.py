@@ -28,6 +28,8 @@ def test_the_transcription_command_is_the_spec_command() -> None:
         "json",
         "--output-dir",
         "capture/v-0001/transcript",
+        "--engine",
+        "whisper",
         "--model",
         "small",
         "--language",

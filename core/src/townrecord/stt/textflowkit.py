@@ -124,6 +124,8 @@ def textflowkit_argv(
         "json",
         "--output-dir",
         out_dir,
+        "--engine",
+        "whisper",
         "--model",
         model,
         "--language",

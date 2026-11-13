@@ -144,12 +144,25 @@ def asset(name: str):
 
 
 @router.get("/v1/operator/overview")
-def overview(token=Depends(operator_token), conn=Depends(get_connection)):
+def overview(request: Request, token=Depends(operator_token), conn=Depends(get_connection)):
+    from ..runtime import RuntimeManager
+
+    settings = request.app.state.settings
+    tools = {}
+    for name in ("yt-dlp", "textflowkit"):
+        manager = RuntimeManager(root=settings.runtime_root.resolve(), tool=name)
+        active = manager.read_pointer().active
+        tools[name] = active.version if active else None
     sources = []
     for s in all_sources(conn):
         config = json.loads(s.settings).get("connector", {})
         sources.append({**asdict(s), "coverage": config.get("bounds", {})})
     return {
+        "tools": tools,
+        "schedule": {
+            "time_zone": settings.time_zone,
+            "daily_time": settings.daily_time.strftime("%H:%M"),
+        },
         "jurisdictions": [asdict(j) for j in jurisdictions(conn)],
         "bodies": [asdict(b) for b in bodies(conn)],
         "sources": sources,
@@ -161,6 +174,67 @@ def overview(token=Depends(operator_token), conn=Depends(get_connection)):
             )
         ],
     }
+
+
+@router.post("/v1/operator/tools/{tool}/setup", status_code=202)
+def setup_tool(
+    tool: str, request: Request, token=Depends(operator_token), conn=Depends(get_connection)
+):
+    if tool not in {"yt-dlp", "textflowkit"}:
+        raise HTTPException(404, "Unknown managed tool.")
+    if tool == "yt-dlp" and not request.app.state.settings.test_video_url:
+        raise HTTPException(
+            422, "Set TOWNRECORD_TEST_VIDEO to a known source recording before setup."
+        )
+    with atomic(conn):
+        payload = {"tool": tool}
+        for row in conn.execute(
+            "SELECT id,payload FROM jobs WHERE kind='runtime_update' "
+            "AND state IN ('queued','running')"
+        ):
+            if json.loads(row["payload"]) == payload:
+                return {"job_id": row["id"]}
+        job = enqueue(conn, "runtime_update", payload)
+        event(
+            conn,
+            token,
+            "setup_tool",
+            "Operator requested managed tool setup",
+            detail={"tool": tool},
+        )
+    return {"job_id": job}
+
+
+@router.post("/v1/operator/videos/{video_id}/transcribe", status_code=202)
+def transcribe_video(
+    video_id: int, data: Reason, token=Depends(operator_token), conn=Depends(get_connection)
+):
+    from ..capture.transcribe import payload_for
+    from ..stt.audio import AudioTrigger
+
+    video = conn.execute("SELECT id FROM videos WHERE id=?", (video_id,)).fetchone()
+    if video is None:
+        raise HTTPException(404, "Recording not found.")
+    with atomic(conn):
+        for row in conn.execute(
+            "SELECT id,payload FROM jobs WHERE kind='transcribe' AND state IN ('queued','running')"
+        ):
+            if json.loads(row["payload"]).get("video_id") == video_id:
+                return {"job_id": row["id"]}
+        job = enqueue(
+            conn,
+            "transcribe",
+            payload_for(video_id, AudioTrigger.LOCAL_TRANSCRIPTION_ONLY, data.reason),
+            lane="heavy",
+        )
+        event(
+            conn,
+            token,
+            "transcribe_recording",
+            data.reason,
+            detail={"video_id": video_id, "job_id": job},
+        )
+    return {"job_id": job}
 
 
 @router.post("/v1/operator/bodies", status_code=201)
@@ -488,6 +562,8 @@ def export_handoff(
     value = published(conn, meeting_id)
     package = {
         "schema": "townrecord-evidence-v1",
+        "instance_id": conn.execute("SELECT value FROM instance_identity WHERE id=1").fetchone()[0],
+        "public_url": str(request.base_url) + f"?meeting={meeting_id}",
         "meeting_id": meeting_id,
         "revision": value["revision"],
         "evidence": value,

@@ -28,7 +28,7 @@ def version_key(text: str) -> tuple[int, ...] | None:
     ``2026.8.19``. Leading zeros are dropped, so ``2026.8.19`` and
     ``2026.08.19`` give the same key.
     """
-    match = _NUMERIC.match(str(text).strip())
+    match = _NUMERIC.match(str(text).strip().removeprefix("textflowkit "))
     if match is None:
         return None
     return tuple(int(part) for part in match.group(1).split("."))

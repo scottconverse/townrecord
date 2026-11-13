@@ -326,7 +326,14 @@ class RuntimeManager:
                 f"uv reported success but {target} holds no Python interpreter."
             )
         installed = self._run(
-            [uv, "pip", "install", "--python", str(python), f"{self.tool}=={requested}"],
+            [
+                uv,
+                "pip",
+                "install",
+                "--python",
+                str(python),
+                f"{self.tool}{'[whisper]' if self.tool == 'textflowkit' else ''}=={requested}",
+            ],
             self.settings.install_timeout_s,
         )
         if not installed.ok:
@@ -397,7 +404,7 @@ class RuntimeManager:
             raise RuntimeInstallFailed(
                 f"The new {self.tool} runtime answered no version, so nothing can be pinned."
             )
-        return lines[0]
+        return lines[0].removeprefix(self.tool + " ")
 
     def _discard_venv(self, target: Path) -> None:
         """Remove a venv folder for a version about to be built again."""
@@ -423,6 +430,34 @@ class RuntimeManager:
             pointer = self.read_pointer()
             current = pointer.active if self._installed_python(pointer.active) else None
             if current is not None and not versions.is_newer(latest, current.version):
+                # Older TownRecord installs requested the base TextFlowKit
+                # distribution. Its current default engine no longer supplies
+                # the Whisper dependency needed by our selected small model.
+                if self.tool == "textflowkit":
+                    python = self._installed_python(current)
+                    ready = self._run(
+                        [str(python), "-c", "import whisper"], self.settings.version_timeout_s
+                    )
+                    if not ready.ok:
+                        installed_version = current.version.removeprefix("textflowkit ")
+                        repaired = self._run(
+                            [
+                                self.uv_executable(),
+                                "pip",
+                                "install",
+                                "--python",
+                                str(python),
+                                f"textflowkit[whisper]=={installed_version}",
+                            ],
+                            self.settings.install_timeout_s,
+                        )
+                        verified = self._run(
+                            [str(python), "-c", "import whisper"], self.settings.version_timeout_s
+                        )
+                        if not repaired.ok or not verified.ok:
+                            raise RuntimeInstallFailed(
+                                "TextFlowKit's Whisper dependency could not be repaired."
+                            )
                 return UpdateOutcome(
                     checked=latest,
                     requested=None,

@@ -19,6 +19,7 @@ from .fakes import PYPI_SPELLING, VENV_SPELLING
     ("left", "right"),
     [
         (PYPI_SPELLING, VENV_SPELLING),
+        ("0.1.19", "textflowkit 0.1.19"),
         (VENV_SPELLING, PYPI_SPELLING),
         ("2026.8.19", "2026.8.19"),
     ],
