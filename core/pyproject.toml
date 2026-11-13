@@ -25,9 +25,7 @@ dev = [
 ]
 
 [project.scripts]
-# The one command that runs TownRecord (spec 14.2): the desktop shell starts and
-# stops this, and `townrecord serve` starts the API, the job workers and the
-# daily schedule together.
+# `townrecord serve` starts the API, browser interface, job workers and daily schedule.
 townrecord = "townrecord.cli:main"
 
 [build-system]

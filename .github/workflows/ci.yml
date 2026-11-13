@@ -23,6 +23,18 @@ jobs:
         working-directory: core
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        if: runner.os == 'Windows'
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Compile strict TypeScript and verify packaged browser asset
+        if: runner.os == 'Windows'
+        working-directory: .
+        run: |
+          npm ci
+          npm run build:ui
+          git diff --exit-code -- core/src/townrecord/web/community.js
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true

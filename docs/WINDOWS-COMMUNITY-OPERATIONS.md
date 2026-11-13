@@ -1,7 +1,7 @@
 # Windows community-record operation
 
-This is the bounded community-record service and browser interface. The planned
-Tauri desktop shell is not delivered by these instructions. Tagging, downloadable
+This is the bounded Python community-record service and TypeScript browser interface.
+Tagging, downloadable
 release publication and public deployment require Scott's approval.
 
 ## Install the reviewed revision

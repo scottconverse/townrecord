@@ -8,13 +8,13 @@ published records, read documents and transcripts, and follow original sources.
 ## Status
 
 Pre-alpha. The Python core implements a local SQLite-backed service, source and
-job management, record capture and an authenticated local API. The desktop
-shell and the full product described in the specification remain in progress.
+job management, record capture and an authenticated local API. The wider product described in the specification is reference/backlog, not the
+completion contract for this bounded service and browser product.
 The current Windows candidate has been exercised with Longmont Council and
-Planning records. It is not a published release. The planned desktop shell and
-question-answering assistant are not delivered features. See the
+Planning records. It is not a published release. A question-answering assistant is not part of this bounded delivery. See the
 [candidate acceptance record](docs/COMMUNITY-ACCEPTANCE.md) for observations,
-the exact package identity and remaining human acceptance.
+the exact package identity and observed limits. Scott determines which human
+trials are required; they are not additional engineering release gates.
 
 - [QuorumRelay connector configuration and limits](docs/CONNECTORS.md)
 - [Product specification](docs/SPEC.md)
@@ -28,7 +28,7 @@ A home connection works, so TownRecord runs on your own computer.
 ## Stack
 
 - A Python core.
-- A planned thin Tauri desktop shell.
+- A TypeScript browser interface served by the Python core.
 - SQLite for the database.
 - Windows first. macOS later.
 
@@ -54,3 +54,7 @@ Windows operator installation, scheduling and verified backup/restore instructio
 are in [Windows community operations](docs/WINDOWS-COMMUNITY-OPERATIONS.md).
 The [transcription comparison](docs/TRANSCRIPTION-COMPARISON.md) records the
 Whistle/Whisper results and why this candidate explicitly selects Whisper small.
+
+Interface design and stack: [Community interface design](docs/COMMUNITY-INTERFACE-DESIGN.md).
+Developers run `npm ci` and `npm run build:ui` before building the Python wheel.
+Operators use the packaged browser asset and do not need Node.

@@ -1,0 +1,6 @@
+{
+  "candidate_commit": "758abf6fa4a0f629bc2c54a4dd937ade423f364a",
+  "wheel_sha256": "9cab2e58d36b3024caa095815854ae5d2d367708e3dba2ac6b539e0f17d2b5ce",
+  "matched_package_files": 147,
+  "later_changes": "tests and documentation only; no rebuild required"
+}

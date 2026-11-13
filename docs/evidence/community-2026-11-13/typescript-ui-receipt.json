@@ -1,0 +1,16 @@
+{
+  "candidate": "758abf6fa4a0f629bc2c54a4dd937ade423f364a",
+  "body_date_filters": "passed",
+  "keyboard_open": "passed",
+  "back_focus_after_refresh": "Open meeting button data-meeting-id=9",
+  "cancel_continue_date_history": "passed; original restored",
+  "document_move": "record7 moved5->8->5",
+  "recording_move": "video6 moved8->9->8",
+  "html_download": "agenda-7.html, 176627 bytes",
+  "resident_narrow_layout": {
+    "viewport_inner_width": 355,
+    "document_width": 341,
+    "visible_operator_controls": 0
+  },
+  "full_transcribe_button": "queued job70; result tracked separately"
+}

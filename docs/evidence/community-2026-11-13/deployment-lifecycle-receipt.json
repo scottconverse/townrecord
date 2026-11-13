@@ -1,0 +1,22 @@
+{
+  "fresh_locked_environment": true,
+  "installed_wheel_sha256": "9cab2e58d36b3024caa095815854ae5d2d367708e3dba2ac6b539e0f17d2b5ce",
+  "cli_serve": true,
+  "backup_restore_files": 5,
+  "instance_identity_preserved": true,
+  "restored_token_and_schedule": true,
+  "continued_acquisition_job": 12,
+  "continued_acquisition_state": "done",
+  "meetings": [
+    [
+      1,
+      "2026-09-23T19:00:00"
+    ],
+    [
+      2,
+      "2026-09-16T19:00:00"
+    ]
+  ],
+  "documents": 8,
+  "runtime_limit": "Fresh profile correctly waits for managed-tool setup; full installed tool acceptance uses live-longmont profile."
+}
