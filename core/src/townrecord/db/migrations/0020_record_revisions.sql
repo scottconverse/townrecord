@@ -40,6 +40,9 @@ DROP TABLE records;
 ALTER TABLE records_rebuilt RENAME TO records;
 CREATE INDEX records_meeting_idx ON records(meeting_id);
 CREATE INDEX records_kind_idx ON records(kind);
+-- Unversioned/manual records retain their original duplicate guard.
+CREATE UNIQUE INDEX records_unversioned_content_idx ON records(meeting_id,kind,artifact_id)
+    WHERE portal_document_id IS NULL;
 CREATE INDEX records_portal_document_idx ON records (meeting_id, portal_document_id);
 CREATE TABLE record_revisions (
     previous_record_id INTEGER PRIMARY KEY REFERENCES records(id) ON DELETE RESTRICT,
