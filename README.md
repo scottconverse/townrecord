@@ -47,3 +47,8 @@ explicit publication to the existing acquisition service. Resident pages expose
 reviewed snapshots; private acquisition data still requires authorization.
 See [implementation state](docs/COMMUNITY-RECORD-STATE.md) for passed evidence
 and remaining acceptance work. This branch is not a published release.
+
+Windows operator installation, scheduling and verified backup/restore instructions
+are in [Windows community operations](docs/WINDOWS-COMMUNITY-OPERATIONS.md).
+The [transcription comparison](docs/TRANSCRIPTION-COMPARISON.md) records the
+Whistle/Whisper results and why this candidate explicitly selects Whisper small.

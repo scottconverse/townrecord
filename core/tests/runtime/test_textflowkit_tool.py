@@ -36,6 +36,46 @@ from .fakes import (
     pypi_url,
     write_installed,
 )
+from .fakes import (
+    result as process_result,
+)
+
+
+@pytest.mark.parametrize("repair_ok", [True, False])
+def test_existing_base_install_repairs_whisper_without_changing_version(
+    app_root: Path, repair_ok: bool
+) -> None:
+    from townrecord.runtime.manager import RuntimeInstallFailed
+
+    make_venv(app_root, "0.1.19", tool=TEXTFLOWKIT_TOOL, program=TEXTFLOWKIT_PROGRAM)
+    write_installed(
+        app_root,
+        installed("0.1.19", "textflowkit 0.1.19", tool=TEXTFLOWKIT_TOOL),
+        None,
+        tool=TEXTFLOWKIT_TOOL,
+    )
+    uv = FakeUV(reported="textflowkit 0.1.19", program=TEXTFLOWKIT_PROGRAM)
+    probes = []
+
+    def runner(argv, **kwargs):
+        if list(argv)[-2:] == ["-c", "import whisper"]:
+            probes.append(list(argv))
+            return process_result(argv, 0 if len(probes) > 1 and repair_ok else 1)
+        return uv(argv, **kwargs)
+
+    manager = manager_for(app_root, runner, tool=TEXTFLOWKIT_TOOL)
+    # An older registry result must not downgrade the installed version.
+    if repair_ok:
+        outcome = manager.check_and_update(
+            TEST_VIDEO_URL, FakeProbe(), client=pypi_client("0.1.18")
+        )
+        assert not outcome.switched
+    else:
+        with pytest.raises(RuntimeInstallFailed, match="could not be repaired"):
+            manager.check_and_update(TEST_VIDEO_URL, FakeProbe(), client=pypi_client("0.1.18"))
+    assert uv.pins_requested == ["textflowkit[whisper]==0.1.19"]
+    assert len(probes) == 2
+    assert read_pointer(tool_root(app_root)).active.version == "textflowkit 0.1.19"
 
 
 def tool_root(app_root: Path) -> Path:
@@ -54,7 +94,7 @@ def test_textflowkit_is_installed_into_its_own_venv_and_pinned(app_root: Path) -
 
     venv = app_root / "runtimes" / TEXTFLOWKIT_TOOL / "0.1.6"
     assert uv.calls[0]["argv"] == ["uv", "venv", str(venv)]
-    assert uv.pins_requested == ["textflowkit==0.1.6"]
+    assert uv.pins_requested == ["textflowkit[whisper]==0.1.6"]
     assert result.venv == f"runtimes/{TEXTFLOWKIT_TOOL}/0.1.6"
     assert result.version == "0.1.6"
     assert (venv).is_dir()
@@ -126,7 +166,7 @@ def test_the_two_tools_keep_their_own_folders_and_pointers(app_root: Path) -> No
     # The tool that was already there did not move.
     ytdlp = read_pointer(app_root / "runtimes" / TOOL_NAME)
     assert ytdlp.active == installed("2026.08.19", "2026.08.19")
-    assert uv.pins_requested == ["textflowkit==0.1.6"]
+    assert uv.pins_requested == ["textflowkit[whisper]==0.1.6"]
 
 
 # -- the daily check and the rollback --------------------------------------

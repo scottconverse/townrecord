@@ -1,54 +1,57 @@
 # Community record implementation state
 
-Authorized November 13, 2026: complete the nine-item Big Picture bounded plan,
-reuse connector work, test/push/merge incrementally. Hold tagging and publishing
-for Scott's approval. Windows operation; one community, two bodies; one
-TownReporter unpublished evidence handoff. No unrelated products or platforms.
+Authorized November 13, 2026: finish the nine-item Big Picture bounded plan,
+reuse connectors, test/push/merge incrementally. Hold tagging and publishing.
+Windows operation; Longmont Council and Planning; one unpublished TownReporter
+handoff. Production and unrelated products remain outside this work.
 
-Baseline: main `851b7bd`, audit document in The Big Picture Project.
-First repair PR #39 merged as `99cb5efcbd8332c57c473a45ad020c2ec78c5dc7`.
-Repository CI run 43465538628 passed all existing jobs, including Windows.
+## Delivered
+- TownRecord PR39 merged 99cb5ef: three original identity/revision defects.
+- TownRecord PR40 merged b12aefebfeedeca2deff71593f682c961f8bce27:
+  connector reuse, operator/resident workflow and guarded PrimeGov repairs.
+  Required CI run 43471427931 passed all existing jobs.
+- Actual September discovery mapped ten meetings across two configured bodies.
+  Guarded agenda HTML and PDF retrieval passed; 20 agenda items parsed.
+  Original unavailable-page and missing-download-origin failures retained.
+- Synthetic browser lifecycle passed review/publish/search/correction isolation/
+  withdrawal/sign-out/mobile width. Twenty concurrent requests cleaned up correctly.
 
-Current worktree: `work/townrecord-community`, branch `implement/community-workflows`.
-Existing connector candidate `c5fe052` reused via merge `37322c9`.
-Added immutable connector revisions, operator/publication API, resident pages,
-authorized metadata/association correction, and public snapshot isolation.
-Focused regression run: 15 passed (publication/privacy, corrected association
-through refresh, native and shared revision/identity, populated upgrade).
-Ruff passed before final overview status-field addition. JavaScript syntax passed.
-Earlier test runs 57661 and 61478 were cancelled; no full local-suite pass claimed.
-A fixture collection error was fixed by moving the upgrade test beside its fixtures.
+## Current candidate and evidence
+TownRecord worktree work/townrecord-community, implement/community-delivery.
+Uncommitted delivery increment: runtime setup/transcription controls, explicit
+Whisper engine/dependencies and version normalization, portable backup/restore,
+instance identity for handoff, resident deep links, Windows operator guide.
+Scott requested testing Whistle and Whisper and choosing the better result.
+Both completed identical two-minute Council and Planning clips on CPU.
+Whistle 7.2–7.3 seconds / 83–85 MiB; Whisper small 28.9–30.4 seconds / 1884–1896 MiB.
+Whisper retained for better observed terminology; not a gold-reference accuracy
+benchmark. Details and limits: TRANSCRIPTION-COMPARISON.md. Forty-eight focused
+runtime/STT tests passed, four operator API tests passed, source/test lint passed.
+Full local suite: 1565 passed, 48 skipped, three stale migration-list assertions failed. Those assertions now include migration22; affected migration/recovery rerun: 23 passed. New operator test passed separately. JavaScript syntax and Ruff format/check passed.
 
-Remaining: browser workflow and real two-body source acceptance; transcription
-runtime/retry; TownReporter transfer with duplicate/editorial protection;
-documented Windows deployment/scheduling/backup-restore; exact candidate acceptance
-and full operator/resident documentation. Do not call the plan complete yet.
+TownReporter worktree work/townreporter-handoff, implement/townrecord-handoff.
+PR388 open, latest e04ef3f2. First hosted run failed the daily-scan DOM fixture's
+unstubbed importer dependency; reproduced and fixed. Targeted test passed and fix
+pushed. Await required hosted results; do not merge failed CI.
+Actual Windows Chrome handoff passed: real reviewed meeting export -> Lead 1 New,
+repeat -> same Lead 1; Sources panel shows meeting, PrimeGov, YouTube citations.
+No draft/article published. Screenshot/export retained in acceptance output.
+Browser tab closed and loopback preview stopped; port18310 has no listener.
 
-No owned local jobs, services, VMs or sandboxes running. No candidate installer,
-tag, release or public deployment created. Next: push current increment for CI,
-then test browser workflow in an isolated loopback instance.
+Actual CLI backup and clean-directory restore of the live lab passed hash and
+integrity checks (four files). Restored public meeting and both documents returned 200; instance identity preserved; private operator route still requires authentication.
 
-Browser pass on isolated synthetic fixtures: sign-in, review, explicit publication,
-anonymous topic search, extracted document text, private correction not leaking
-to the public snapshot, withdrawal, sign-out. Both Chrome test tabs closed and
-loopback server session 5389 stopped; port 18290 listener gone.
-Browser found malformed selector punctuation (fixed UTF-8) and request connection
-thread-affinity cleanup errors (fixed per-request connection thread option).
-Focused follow-up: 7 tests passed, including cross-thread dependency cleanup.
-CI40 first run: 1558 passed, 52 skipped, 2 stale-expectation failures on Ubuntu:
-public UI auth boundary and isolated connector migration19. Both corrected while
-retaining private-route and original connector schema-preservation checks.
-Next: push fixes, rerun loopback/browser check and await CI; plan still incomplete.
+## Owned jobs and next actions
+- Local pytest and selected caption worker finished. Real video2 capture produced 5787 provisional automatic-caption segments; no errors. Other queued jobs restored to their original run_after values.
+- Hosted TownReporter PR388 CI latest push; inspect checks before merging.
+No VM/Sandbox, TownReporter preview or TownRecord HTTP service running.
 
-Latest checkpoint: PR #40 at 9ae01f8 passed all existing CI jobs (43469010371).
-Uncommitted follow-up fixes were found by live Longmont September discovery:
-body names inferred from titles, native PrimeGov identity adoption, guarded
-HTML agenda endpoint, unavailable-page rejection and explicit document storage
-origins in operator setup. Eight shared-worker regressions passed. Live PDF
-retrieval and HTML agenda parsing passed (20 agenda items); original failures
-and corrected receipts retained in outputs/townrecord-community-acceptance.
-Synthetic browser correction/withdrawal, mobile width and sign-out checks passed.
-Twenty concurrent request cleanup checks passed. All test browsers/servers closed.
-No owned background processes running. Isolated lab database has queued jobs;
-these are not running workers. Next: push this tested increment, then finish
-TownReporter transfer, transcription, recovery/deployment and final acceptance.
+## Still required
+Finish real transcription/caption readback and timestamp navigation; rerun source
+coverage classification and repeat acquisition; validate new runtime UI controls;
+restore readback; exact packaged candidate and Windows deployment acceptance;
+correct affected maintained docs, commit/push delivery increment and required CI;
+merge eligible PRs; finalize acceptance/handoff and add documents to actual Big
+Picture project (folder membership alone is insufficient). An actual second human
+operator/resident trial has not occurred. Never represent agent tests as that trial.
+No tag, release or public deployment authorized or performed.

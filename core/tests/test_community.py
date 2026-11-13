@@ -132,3 +132,44 @@ def test_request_connection_can_finish_on_another_pool_thread(db_path):
         connection = pool.submit(next, dependency).result()
         assert connection.execute("SELECT 1").fetchone()[0] == 1
         dependency.close()
+
+
+def test_operator_tool_setup_and_transcription_are_authorized_and_idempotent(
+    client, conn, read_write_token, read_token
+):
+    from townrecord.repo import insert_source, insert_video
+
+    writer = {"Authorization": f"Bearer {read_write_token}"}
+    reader = {"Authorization": f"Bearer {read_token}"}
+    setup = "/v1/operator/tools/textflowkit/setup"
+    assert client.post(setup).status_code == 401
+    assert client.post(setup, headers=reader).status_code == 403
+    first = client.post(setup, headers=writer)
+    assert first.status_code == 202
+    assert client.post(setup, headers=writer).json() == first.json()
+    assert client.post("/v1/operator/tools/arbitrary/setup", headers=writer).status_code == 404
+    city = insert_jurisdiction(conn, type="city", name="Example")
+    source = insert_source(
+        conn,
+        jurisdiction_id=city,
+        type="video_channel",
+        origin="https://youtube.com/@example",
+        suggested_by="operator",
+        reason="Test source",
+    )
+    video = insert_video(conn, source_id=source, platform_video_id="example")
+    endpoint = f"/v1/operator/videos/{video}/transcribe"
+    data = {"reason": "Source captions unavailable"}
+    assert client.post(endpoint, json=data).status_code == 401
+    assert client.post(endpoint, json=data, headers=reader).status_code == 403
+    first = client.post(endpoint, json=data, headers=writer)
+    assert first.status_code == 202, first.text
+    assert client.post(endpoint, json=data, headers=writer).json() == first.json()
+    job = conn.execute(
+        "SELECT kind,lane FROM jobs WHERE id=?", (first.json()["job_id"],)
+    ).fetchone()
+    assert tuple(job) == ("transcribe", "heavy")
+    assert (
+        client.post("/v1/operator/videos/999999/transcribe", json=data, headers=writer).status_code
+        == 404
+    )

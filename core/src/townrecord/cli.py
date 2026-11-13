@@ -113,6 +113,17 @@ def _parser() -> argparse.ArgumentParser:
     status = commands.add_parser("status", help="report what the service is doing")
     status.add_argument("--json", action="store_true", help="print the report as JSON")
     status.set_defaults(run=_status)
+    backup = commands.add_parser(
+        "backup", help="copy a stopped profile into a new verified backup folder"
+    )
+    backup.add_argument("destination", type=Path)
+    backup.set_defaults(run=_backup)
+    restore = commands.add_parser(
+        "restore", help="verify a backup and restore into a new profile folder"
+    )
+    restore.add_argument("source", type=Path)
+    restore.add_argument("destination", type=Path)
+    restore.set_defaults(run=_restore)
     return parser
 
 
@@ -278,3 +289,37 @@ __all__ = [
     "bound_socket",
     "main",
 ]
+
+
+def _backup(args: argparse.Namespace) -> int:
+    from .recovery import backup
+
+    try:
+        result = backup(Settings.from_env(), args.destination)
+        print(
+            f"Verified private backup: {args.destination.resolve()} ({len(result['files'])} files)"
+        )
+        return 0
+    except (OSError, ValueError, sqlite3.Error) as exc:
+        print(str(exc), file=sys.stderr)
+        return EXIT_REFUSED
+
+
+def _restore(args: argparse.Namespace) -> int:
+    from .recovery import restore
+
+    try:
+        result = restore(args.source, args.destination)
+        root = args.destination.resolve()
+        print(f"Verified restore: {root} ({len(result['files'])} files)")
+        print(f"Set TOWNRECORD_DB to {root / 'townrecord.db'}")
+        print(f"Set TOWNRECORD_STORAGE to {root / 'storage'}")
+        print(f"Set TOWNRECORD_RUNTIME_ROOT to {root}")
+        print(
+            "Restore schedule settings from restored-settings.json; "
+            "reinstall managed tools through setup."
+        )
+        return 0
+    except (OSError, ValueError, sqlite3.Error) as exc:
+        print(str(exc), file=sys.stderr)
+        return EXIT_REFUSED
