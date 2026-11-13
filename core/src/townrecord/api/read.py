@@ -221,7 +221,8 @@ def _documents_of(conn: sqlite3.Connection, meeting_id: int) -> list[DocumentOut
         "(SELECT COUNT(*) FROM record_pages WHERE record_pages.record_id = records.id) "
         "AS pages_read "
         "FROM records JOIN artifacts ON artifacts.id = records.artifact_id "
-        "WHERE records.meeting_id = ? ORDER BY records.kind, records.id",
+        "WHERE records.meeting_id = ? AND records.id NOT IN "
+        "(SELECT previous_record_id FROM record_revisions) ORDER BY records.kind, records.id",
         (meeting_id,),
     ).fetchall()
     return [_document_out(row) for row in rows]

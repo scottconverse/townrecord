@@ -140,7 +140,7 @@ def test_the_citation_names_the_portal_and_never_the_signed_link(
     assert SIGNED_MARKER not in artifact.rel_path
 
 
-def test_a_document_already_stored_is_not_fetched_twice(
+def test_unchanged_document_is_revalidated_without_duplicate_rows(
     area: Area, wired: FakePortal, sync: Sync
 ) -> None:
     """Spec 9.2: the portal ids are the key, so a re-run writes the same one row."""
@@ -156,7 +156,7 @@ def test_a_document_already_stored_is_not_fetched_twice(
 
     assert sync.job(second_job)["state"] == DONE
     assert records_of_meeting(sync.conn, meeting_id) == [first], "no second row"
-    assert wired.paths().count(COMPILED_DOCUMENT_PATH) == hops, "and nothing was fetched"
+    assert wired.paths().count(COMPILED_DOCUMENT_PATH) == hops + 1, "source bytes were revalidated"
     assert sync.conn.execute("SELECT COUNT(*) FROM artifacts").fetchone()[0] == 1
     checkpoint = read_checkpoint(sync.conn, second_job)
     assert checkpoint == {

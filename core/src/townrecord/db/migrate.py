@@ -92,10 +92,20 @@ def migrate(conn: sqlite3.Connection, directory: Path | None = None) -> list[int
 def _apply_one(conn: sqlite3.Connection, version: int, name: str, path: Path) -> None:
     sql = path.read_text(encoding="utf-8")
     statements = split_statements(sql)
+    # SQLite's documented table-rebuild procedure needs FK enforcement suspended
+    # outside the transaction. Validate the complete graph before committing and
+    # restore enforcement even when any statement fails.
+    rebuild = sql.startswith("-- rebuild-tables\n")
+    if rebuild:
+        if conn.in_transaction:
+            raise RuntimeError("A table rebuild requires an idle migration connection")
+        conn.execute("PRAGMA foreign_keys=OFF")
     conn.execute("BEGIN")
     try:
         for statement in statements:
             conn.execute(statement)
+        if rebuild and conn.execute("PRAGMA foreign_key_check").fetchone() is not None:
+            raise sqlite3.IntegrityError("Table rebuild left an invalid foreign key")
         conn.execute(
             "INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)",
             (version, name, datetime.now(UTC).isoformat()),
@@ -104,3 +114,6 @@ def _apply_one(conn: sqlite3.Connection, version: int, name: str, path: Path) ->
     except Exception:
         conn.execute("ROLLBACK")
         raise
+    finally:
+        if rebuild:
+            conn.execute("PRAGMA foreign_keys=ON")

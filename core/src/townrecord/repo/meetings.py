@@ -113,10 +113,14 @@ def upsert_meeting(
     if portal_source_id is not None and portal_meeting_id is not None:
         found = meeting_by_portal_id(conn, portal_source_id, portal_meeting_id)
     if found is None:
-        row = conn.execute(
-            "SELECT * FROM meetings WHERE body_id = ? AND starts_at = ?", (body_id, starts_at)
-        ).fetchone()
-        found = None if row is None else Meeting.from_row(row)
+        # Time is only a fallback for an unclaimed recording-side meeting.
+        # A distinct authoritative provider identity must never be overwritten.
+        rows = conn.execute(
+            "SELECT * FROM meetings WHERE body_id = ? AND starts_at = ? "
+            "AND portal_meeting_id IS NULL AND portal_source_id IS NULL",
+            (body_id, starts_at),
+        ).fetchall()
+        found = Meeting.from_row(rows[0]) if len(rows) == 1 else None
     if found is None:
         created = insert_meeting(
             conn,
@@ -138,10 +142,12 @@ def upsert_meeting(
         )
         return created, True
     conn.execute(
-        "UPDATE meetings SET title = ?, type = ?, is_cancelled = ?, is_continued = ?, "
+        "UPDATE meetings SET starts_at = ?, title = ?, type = ?, "
+        "is_cancelled = ?, is_continued = ?, "
         "portal_source_id = ?, portal_meeting_id = ?, portal_html_template_id = ? "
         "WHERE id = ?",
         (
+            starts_at,
             title,
             type,
             int(found.is_cancelled or is_cancelled),
@@ -336,7 +342,7 @@ def record_for_portal_document(
     no-op rather than a second row (spec 9.2).
     """
     row = conn.execute(
-        "SELECT * FROM records WHERE meeting_id = ? AND portal_document_id = ?",
+        "SELECT * FROM records WHERE meeting_id = ? AND portal_document_id = ? ORDER BY id DESC",
         (meeting_id, portal_document_id),
     ).fetchone()
     return None if row is None else Record.from_row(row)
@@ -345,7 +351,9 @@ def record_for_portal_document(
 def records_of_meeting(conn: sqlite3.Connection, meeting_id: int) -> list[Record]:
     """Return the documents of a meeting, in id order."""
     rows = conn.execute(
-        "SELECT * FROM records WHERE meeting_id = ? ORDER BY id", (meeting_id,)
+        "SELECT * FROM records WHERE meeting_id = ? AND id NOT IN "
+        "(SELECT previous_record_id FROM record_revisions) ORDER BY id",
+        (meeting_id,),
     ).fetchall()
     return [Record.from_row(row) for row in rows]
 
