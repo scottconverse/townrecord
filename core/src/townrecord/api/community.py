@@ -155,7 +155,8 @@ def overview(token=Depends(operator_token), conn=Depends(get_connection)):
         "jobs": [
             {**dict(r), "checkpoint": json.loads(r["checkpoint"]) if r["checkpoint"] else None}
             for r in conn.execute(
-                "SELECT id,kind,state,last_error,attempts,checkpoint FROM jobs ORDER BY id DESC LIMIT 100"
+                "SELECT id,kind,state,last_error,attempts,checkpoint "
+                "FROM jobs ORDER BY id DESC LIMIT 100"
             )
         ],
     }
