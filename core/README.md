@@ -14,3 +14,9 @@ Shared source configuration, account reads, private credentials, queued jobs, ev
 The reviewed community-record UI is at `/` and the operator workspace at
 `/operator`. See [Community workflow](../docs/COMMUNITY-WORKFLOW.md) for its
 publication/privacy boundary and current acceptance status.
+
+For operation with workers and scheduled retrieval, use `townrecord serve`, not
+the API-only development command above. Follow [Windows community
+operations](../docs/WINDOWS-COMMUNITY-OPERATIONS.md) for installation, named operator
+tokens, configuration and verified backup/restore. The exact tested package and
+remaining acceptance are in [Community acceptance](../docs/COMMUNITY-ACCEPTANCE.md).

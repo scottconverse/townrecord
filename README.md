@@ -1,18 +1,20 @@
 # TownRecord
 
-TownRecord is a free, open-source desktop app for a citizen or a reporter.
-It watches the city, county and state governments for one area.
-It captures meeting video transcripts and public records on your own computer.
-It links them together.
-It answers your questions with citations to the exact record page or video timestamp.
+TownRecord is a free, open-source local service and browser interface for community
+meeting records. Operators acquire documents and transcripts, review and publish
+meeting snapshots, and correct or withdraw them. Residents can browse and search
+published records, read documents and transcripts, and follow original sources.
 
 ## Status
 
 Pre-alpha. The Python core implements a local SQLite-backed service, source and
 job management, record capture and an authenticated local API. The desktop
 shell and the full product described in the specification remain in progress.
-The current connector integration is a development candidate; provider and
-installed-workflow acceptance are not established by its source code alone.
+The current Windows candidate has been exercised with Longmont Council and
+Planning records. It is not a published release. The planned desktop shell and
+question-answering assistant are not delivered features. See the
+[candidate acceptance record](docs/COMMUNITY-ACCEPTANCE.md) for observations,
+the exact package identity and remaining human acceptance.
 
 - [QuorumRelay connector configuration and limits](docs/CONNECTORS.md)
 - [Product specification](docs/SPEC.md)
