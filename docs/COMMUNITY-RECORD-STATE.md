@@ -37,16 +37,20 @@ No tag, release, signed MSI or public deployment is claimed.
 6. Acceptance and sanitized evidence are in docs/evidence/community-2026-11-13.
    Design verified in actual Big Picture Project sources, not only supporting folder.
 
-## Delivery remaining / next action
-Push final docs/evidence, let existing required PR43 checks complete, merge on pass.
-Then verify default branch and add final handoff to actual Big Picture Project.
-Goal remains active until those delivery steps finish. Hold tagging/publication.
+## Delivery
+PR43 merged at0f2ae54632d3a234626f353311a93de81bbcde57 after final-head
+CI43520915463 passed all existing jobs, including Windows. Engineering items1–6
+are complete. This documentation follow-up records the merge without rebuilding.
+Final handoff, design and updated acceptance are verified sources in the actual
+Big Picture Project (nine sources). Hold tagging/publication for Scott.
+See COMMUNITY-COMPLETION-HANDOFF.md for the next agent's starting point.
 
 ## Ownership and limits
 All local test services/workers stopped; loopback18290/18292/18310 clear and
 transcription children exited. Browser test tabs closed; viewport restored.
 No VM/Sandbox was created. Raw evidence/candidate preserved; no production touched.
-GitHub PR43 CI is owned asynchronous work; check final head before merging.
+PR43 CI is complete. GitHub may automatically run its normal main-branch CI;
+that does not alter the accepted wheel or authorize a release.
 Independent community trials are suggested, not mandatory until Scott says so.
 No genuinely new post-setup publisher meeting or human transcript certification
 is claimed. Historical live retrieval and synthetic lifecycle tests are distinct.
