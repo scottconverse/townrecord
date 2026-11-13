@@ -177,6 +177,7 @@ function showList(rows) {
     for (const m of rows) {
         const a = tile(m.title || "Untitled meeting", `${m.body_name} · ${m.starts_at}${m.is_cancelled ? " · Cancelled" : ""}`);
         const openButton = button("Open meeting", async () => { listFocus = openButton; await openMeeting(m.id); });
+        openButton.dataset.meetingId = String(m.id);
         a.append(openButton);
         if (operator)
             a.append(node("p", m.publication_status || "Not published"));
@@ -389,9 +390,9 @@ $("filters").addEventListener("submit", task(browse));
 $("back").onclick = () => {
     $("detail").hidden = true;
     $("browse").hidden = false;
+    const target = listFocus?.isConnected ? listFocus : $("meetings").querySelector(`button[data-meeting-id="${selected}"]`);
     selected = null;
-    if (listFocus?.isConnected)
-        listFocus.focus();
+    target?.focus();
 };
 $("login-form").addEventListener("submit", task(async () => {
     token = $("token").value;
