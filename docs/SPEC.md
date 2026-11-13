@@ -1,3 +1,7 @@
+> Current bounded delivery: Python service and TypeScript browser interface on Windows.
+> See COMMUNITY-INTERFACE-DESIGN.md and the owner-approved bounded plan. Older broad
+> milestones below are reference/backlog, not additional requirements for this delivery.
+
 # TownRecord: an open-source civic portal for your own computer
 
 **Product specification, draft 0.2**<br>
@@ -530,10 +534,10 @@ Windows 10 and 11 first. The first release is Windows only. The code is built an
 
 ### 14.2 Architecture (decided)
 
-A Python core service with a thin Tauri desktop shell and a React interface.
+Current owner decision, November 13, 2026: a Python core service with a TypeScript browser interface. See COMMUNITY-INTERFACE-DESIGN.md for the bounded interface specification.
 
 - yt-dlp, TextFlowKit, LiteLLM and most PDF and OCR tools are Python, so they run inside the core.
-- The shell only draws the interface, and starts and stops the core. It holds no domain logic (the TownLight rule).
+- The browser renders the interface and calls the core API. The Windows start command manages the service; domain logic stays in Python.
 - The interface talks to the core only through the local API (Section 13). There is no second path.
 - TownReporter's logic and tests are ported, not its code. Its code assumes PostgreSQL and a hosted server.
 
@@ -648,7 +652,7 @@ TownReporter's process lessons, as rules:
 | # | Decision | Choice |
 |---|---|---|
 | 1 | Name and repository | TownRecord. Repository at github.com/scottconverse/townrecord for now; it moves to a townrecord organization later |
-| 2 | Core language | Python core with a thin Tauri shell (Section 14.2) |
+| 2 | Core language | Python core with a TypeScript browser interface (Section 14.2) |
 | 3 | Database | SQLite (Section 14.3) |
 | 4 | TownReporter | TownRecord does not touch TownReporter. TownRecord offers a public API that TownReporter or anyone else can use. Integration comes later (Section 13.5) |
 | 5 | YouTube capture | Captions first as specified, plus a "Local transcription only" setting. No lawyer review; an AI legal-risk review with a "not legal advice" warning (Sections 8.10, 15.1) |

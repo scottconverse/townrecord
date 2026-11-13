@@ -21,10 +21,6 @@ yarn-error.log*
 pnpm-debug.log*
 .pnpm-store/
 
-# Rust and Tauri
-target/
-src-tauri/target/
-
 # SQLite
 *.db
 *.db-wal

@@ -1,3 +1,26 @@
+# Current completion increment — November 13, 2026
+
+Scott authorized: design first, remove desktop-shell architecture, convert interface
+to TypeScript, record the mistake in memory, finish engineering items 1–6,
+push/merge on pass; hold tag/publication. Scott determines required human work.
+Goal active. One accountable agent, serial work; no delegated jobs.
+
+Design written before conversion: COMMUNITY-INTERFACE-DESIGN.md. Explicit memory
+note saved in the authorized extensions/ad_hoc/notes directory. Strict TypeScript
+source in frontend/community.ts; compiler pinned 5.9.3; compiled asset stays in
+Python wheel. Current architecture docs updated. Typecheck/build and 28 affected
+community/serving/scheduler/recovery tests pass. UI busy buttons and back focus
+corrected within the design. No new framework or runtime Node dependency.
+
+Branch implement/typescript-community; candidate not yet committed/installed.
+Next: commit/build/install one candidate, run full local transcription from UI,
+remaining UI/handoff cases, isolated documented service/schedule/recovery, required
+CI, final handoff/project updates and merge. Reuse previous passed evidence below.
+No local worker/service currently owned. No VM/Sandbox launched by this increment.
+Any human trial below is a suggestion until Scott defines it as required.
+
+---
+
 # Community record implementation state
 
 Authorized November13,2026: implement the bounded TownRecord plan, reuse connectors,
@@ -9,7 +32,7 @@ TownReporter handoff. Test/push/merge; hold tagging and publishing for Scott.
 TownRecord PR39, PR40 and PR41 merged. PR41 merge65b8b499cea7ebd337f411ff6acc0374db480d87;
 required CI43477439541 passed. Packaged source538d044c8b87549e7f02ad59704fbdd9341f8611.
 Wheel SHA256066b7cfd413f87d72c415058f2a7ddf4d272eddafe2267876cacddb00884d49f.
-No signed MSI/Tauri shell, tag, release or public deployment is claimed.
+No signed MSI, tag, release or public deployment is claimed.
 
 Passed: live two-body discovery/repeat identity; actual documents/text; full source
 captions (5787 Council/2415 Planning segments); installed resident timestamp
@@ -19,7 +42,7 @@ browser handoff/idempotency; full Council/Planning receive-function handoff.
 See COMMUNITY-ACCEPTANCE.md for evidence tiers and limits.
 
 Scott requested both transcription engines tested. Same two real120-second clips:
-Whistle7.2–7.3s /83–85MiB; Whisper small28.9–30.4s /1884–1896MiB.
+Whistle7.2â€“7.3s /83â€“85MiB; Whisper small28.9â€“30.4s /1884â€“1896MiB.
 Whisper retained for better observed terminology, not a gold-reference accuracy
 claim. TRANSCRIPTION-COMPARISON.md is added to the actual Big Picture Project.
 

@@ -17,7 +17,7 @@ candidate, not a release announcement or completed human community trial.
 - TownReporter handoff: [PR388](https://github.com/scottconverse/TownReporter/pull/388),
   candidate `a66b331c254d34227a064f2f1648b1421efd3dbb`. Check the state record for merge status.
 - This is a Python service plus browser UI. No TownRecord MSI, signed desktop
-  installer, Tauri shell or public deployment is claimed. Tagging/publication is held.
+  installer or public deployment is claimed. Tagging/publication is held.
 
 ## Observed results and limits
 

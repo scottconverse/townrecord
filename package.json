@@ -1,0 +1,11 @@
+{
+  "name": "townrecord-community-ui",
+  "private": true,
+  "scripts": {
+    "build:ui": "tsc -p frontend/tsconfig.json",
+    "check:ui": "tsc -p frontend/tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}

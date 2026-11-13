@@ -15,9 +15,9 @@ Decision 10 was made later on September 27, 2026.
 
 ## 2. Core language
 
-**Choice:** Python core with a thin Tauri shell (Section 14.2).
+**Choice (updated by Scott, November 13, 2026):** Python core with a TypeScript browser interface (Section 14.2).
 
-**Reason:** yt-dlp, TextFlowKit, LiteLLM and most PDF and OCR tools are Python, so they run inside the core. The shell only draws the interface, and starts and stops the core (Section 14.2).
+**Reason:** yt-dlp, TextFlowKit, LiteLLM and most PDF and OCR tools are Python, so they run inside the core. The browser calls the existing core API. The documented Windows start command runs the service; no desktop shell is part of this delivery.
 
 ## 3. Database
 
