@@ -8,8 +8,13 @@ It answers your questions with citations to the exact record page or video times
 
 ## Status
 
-Pre-alpha. Specification stage. No working code yet.
+Pre-alpha. The Python core implements a local SQLite-backed service, source and
+job management, record capture and an authenticated local API. The desktop
+shell and the full product described in the specification remain in progress.
+The current connector integration is a development candidate; provider and
+installed-workflow acceptance are not established by its source code alone.
 
+- [QuorumRelay connector configuration and limits](docs/CONNECTORS.md)
 - [Product specification](docs/SPEC.md)
 - [Decisions](docs/DECISIONS.md)
 
@@ -18,10 +23,10 @@ Pre-alpha. Specification stage. No working code yet.
 YouTube blocks data-center access to meeting captions.
 A home connection works, so TownRecord runs on your own computer.
 
-## Planned stack
+## Stack
 
 - A Python core.
-- A thin Tauri desktop shell.
+- A planned thin Tauri desktop shell.
 - SQLite for the database.
 - Windows first. macOS later.
 
@@ -34,3 +39,11 @@ TownReporter, or anyone else, can use it.
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE).
+
+## Community record workflow
+
+The [community workflow](docs/COMMUNITY-WORKFLOW.md) adds operator review and
+explicit publication to the existing acquisition service. Resident pages expose
+reviewed snapshots; private acquisition data still requires authorization.
+See [implementation state](docs/COMMUNITY-RECORD-STATE.md) for passed evidence
+and remaining acceptance work. This branch is not a published release.

@@ -84,3 +84,27 @@ def test_failed_revalidation_keeps_the_available_document(area, wired, sync):
     sync.lane("heavy")
     assert sync.job(job)["state"] == "failed"
     assert records_of_meeting(sync.conn, meeting_id) == before
+
+
+def test_corrected_document_association_survives_source_refresh(
+    area, wired, sync, client, read_write_token
+):
+    from townrecord.repo import insert_meeting
+
+    original_meeting = a_stored_meeting(sync, wired, area)
+    sync.lane("heavy")
+    original = records_of_meeting(sync.conn, original_meeting)[0]
+    destination = insert_meeting(sync.conn, body_id=area.body_id, starts_at="2026-09-09T19:00:00")
+    response = client.post(
+        f"/v1/operator/records/{original.id}/associate",
+        json={"meeting_id": destination, "reason": "Corrected misplaced attachment"},
+        headers={"Authorization": f"Bearer {read_write_token}"},
+    )
+    assert response.status_code == 200, response.text
+    wired.document_bytes += b"\n% changed after association correction\n"
+    sync.queue("download_record", agenda_job(area, meeting_id=original_meeting))
+    sync.lane("heavy")
+    assert records_of_meeting(sync.conn, original_meeting) == []
+    current = records_of_meeting(sync.conn, destination)
+    assert len(current) == 1 and current[0].id != original.id
+    assert get_record(sync.conn, original.id).meeting_id == destination

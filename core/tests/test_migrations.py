@@ -24,7 +24,7 @@ from townrecord.db import applied_versions, connect, discover, migrate, split_st
 #: missing-records catalog (spec 9.5, 12.7). 0015 is not written yet.
 #: This list is exact on purpose, so a number that ships without an entry here
 #: fails rather than passes quietly.
-SHIPPED_VERSIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 20]
+SHIPPED_VERSIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21]
 
 
 def table_names(conn: sqlite3.Connection) -> set[str]:
