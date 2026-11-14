@@ -35,12 +35,18 @@ as the packaging candidate commit, compiler and internal signing identities.
 The final outer installer still requires signing and independent verification.
 
 Clean Windows Application Control also rejected the five unsigned bundled entry
-executables. The observed base inventory has 90 native `.exe`/`.dll`/`.pyd` files:
-88 unsigned files and two valid Microsoft runtime DLLs. Preserve the Microsoft
+executables. The initial base inventory had 90 native `.exe`/`.dll`/`.pyd` files:
+88 unsigned files and two valid Microsoft runtime DLLs. The signing service
+rejected only the optional Tcl/Tk DLLs (`tcl86t.dll`, `tk86t.dll`) with
+`0x800700C1`. TownRecord and QuorumRelay have no Tkinter GUI usage, so the build
+omits the unused optional Tcl/Tk component, its `_tkinter.pyd` extension and GUI
+library/demos. The browser interface, interpreter, service libraries, `venv` and
+`ensurepip` are retained. The resulting native inventory is 85 unsigned files
+and two valid Microsoft runtime DLLs. Preserve the Microsoft
 signatures. After preparing the internal Inno PE, run
 `native-signing.ps1 -Mode Prepare`. This re-verifies the original payload and
 creates `dist/windows/TownRecord-0.2.0-native-unsigned.zip`, containing only the
-88 unsigned native files, the internal PE, and an allowlist/hash manifest.
+85 unsigned native files, the internal PE, and an allowlist/hash manifest.
 The internal `.e32` is staged as `.exe` without changing its PE bytes; its original
 target filename is retained in the manifest.
 

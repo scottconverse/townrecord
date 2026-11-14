@@ -5,7 +5,8 @@ is a per-user Windows x64 Inno Setup package; it needs no administrator rights,
 Python installation, terminal commands or Node installation on the target machine.
 
 The application directory is `%LOCALAPPDATA%\Programs\TownRecord`. It contains a
-portable CPython 3.13 distribution, the app wheel and every locked production
+portable CPython 3.13 runtime with the unused optional Tcl/Tk desktop toolkit
+excluded, the app wheel and every locked production
 Python dependency (including the vendored QuorumRelay wheel), uv, ffmpeg and
 ffprobe. Only an explicit payload staging tree is packaged: never the checkout,
 local virtual environment, caches, credentials or a user's data.
@@ -53,7 +54,7 @@ preserving their original source provenance while recording the packaging commit
 and internal signature identities separately.
 
 The clean Windows policy also rejected unsigned shipped entry executables.
-The base payload contains 88 unsigned native PE files and two valid Microsoft
+The initial base payload contained 88 unsigned native PE files and two valid Microsoft
 runtime DLLs. The unsigned files and internal Inno PE are signed in one hash-gated
 batch through the existing Azure account on an isolated helper branch; the two
 vendor signatures are preserved. The original payload manifest remains unchanged
@@ -62,6 +63,16 @@ identities. Local return verification accepts only Authenticode metadata changes
 to the original PE bytes. It never changes application source, dependency versions,
 the wheel or machine security policy. Installed acceptance still has to verify
 the final signed installer and actual native runtime under the unchanged policy.
+
+The first batch signer accepted 87 of 89 inputs but rejected upstream
+`tcl86t.dll` and `tk86t.dll` with `0x800700C1` (bad executable format).
+TownRecord and its vendored QuorumRelay do not use Tkinter or a Tcl/Tk desktop
+interface. Packaging therefore omits the optional Tcl/Tk files, Tkinter extension
+and associated standard-library GUI demos. It preserves the CPython interpreter,
+standard service libraries, `venv` and `ensurepip`; no binary headers or security
+policy are modified. The resulting native payload contains 85 unsigned PE files
+and two vendor-signed Microsoft DLLs, plus one separately prepared internal Inno
+PE in the signing intake. The browser interface and application wheel are unchanged.
 
 This is the first native installer. Reinstalling 0.2.0 verifies repair and profile
 retention, not a version upgrade from an earlier native installer.

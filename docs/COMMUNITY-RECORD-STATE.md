@@ -12,6 +12,8 @@ It is NOT accepted: clean Windows Application Control blocked unsigned internal
 Inno setup and bundled native programs. Failed evidence is preserved under
 outputs/townrecord-windows-020; no release/tag has been made for 0.2.0.
 
+Packaging commit d83997b passed required CI43563463235. Native signing run43563556453 signed 87 files but rejected optional Tcl/Tk DLLs tcl86t.dll and tk86t.dll with SignTool 0x800700C1. Logs and input are preserved. The browser application and QuorumRelay do not use Tk. Packaging agent is excluding that unused toolkit through the existing build path and producing a fresh payload manifest; Windows policy stays unchanged.
+
 Current work: packaging agent prepares two-pass signed Inno internals and signs
 88 unsigned payload PE files, preserving two valid Microsoft DLL signatures.
 Reuse the recorded wheel and unchanged Python/TypeScript payload; record every

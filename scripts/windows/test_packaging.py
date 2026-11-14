@@ -10,6 +10,15 @@ from verify_payload import verify
 
 
 class PayloadChecks(unittest.TestCase):
+    def test_unsigned_optional_tcl_toolkit_is_not_shipped(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            library = root / "python/DLLs/tcl86t.dll"
+            library.parent.mkdir(parents=True)
+            library.write_bytes(b"upstream optional desktop toolkit")
+            with self.assertRaisesRegex(ValueError, "Unused optional Tcl/Tk"):
+                verify(root)
+
     def test_signed_pe_allows_only_authenticode_fields(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

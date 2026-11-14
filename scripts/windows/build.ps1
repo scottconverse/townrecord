@@ -89,6 +89,13 @@ try {
     Remove-BuildTree $payload
     New-Item -ItemType Directory $payload,(Join-Path $payload 'tools'),(Join-Path $payload 'notices') -Force | Out-Null
     Copy-Item $managedPython (Join-Path $payload 'python') -Recurse
+    # TownRecord uses a browser UI, never Tk. The optional Tcl/Tk desktop
+    # toolkit's tcl86t.dll and tk86t.dll fail Authenticode signing with
+    # ERROR_BAD_EXE_FORMAT in this upstream Python build. Omit that unused
+    # component rather than modifying vendor binaries or machine policy.
+    foreach ($component in @('python/tcl','python/Lib/tkinter','python/Lib/turtledemo','python/Lib/turtle.py','python/DLLs/_tkinter.pyd','python/DLLs/tcl86t.dll','python/DLLs/tk86t.dll')) {
+        Remove-BuildTree (Join-Path $payload $component)
+    }
     $python = Join-Path $payload 'python/python.exe'
     # Prevent ambient packages and index credentials from becoming build inputs.
     Invoke-Checked npm.cmd @('--prefix',$repo,'run','build:ui')
