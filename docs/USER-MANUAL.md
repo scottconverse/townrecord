@@ -74,9 +74,14 @@ uses the chosen coverage dates. The service does not wake a sleeping computer.
 
 Source captions are evidence supplied by the source, not certified minutes.
 When they are missing or unsuitable, the operator can create a local transcript
-for the recording. Under Processing, set up/check yt-dlp and TextFlowKit. FFmpeg
-is bundled with the installer; CLI users supply it as described in the guide. Initial setup and
-the first model download require internet access and storage.
+for the recording. Under Processing, set up/check yt-dlp and TextFlowKit. The
+Windows installer candidate includes FFmpeg and a pinned, signed TextFlowKit
+0.1.19 runtime without model weights. TextFlowKit setup verifies and copies that
+local runtime into managed storage, so its initial bootstrap can work offline.
+Model downloads, yt-dlp setup/checks and source recordings still need internet
+access and storage. Online update checks retain the working runtime if a newer
+version fails installation or its check. CLI users follow the separate tool
+installation instructions in the Windows guide.
 
 Choose **Create local transcript**, provide a reason, and check the resulting
 job. This candidate uses Whisper small through TextFlowKit on the local machine.

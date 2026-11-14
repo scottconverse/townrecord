@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 import json
+import runpy
 import sys
 from pathlib import Path
 
 
 def verify(root: Path) -> dict:
+    seed = runpy.run_path(
+        str(Path(__file__).with_name("seed_payload.py")), run_name="seed_manifest"
+    )
+    root = seed["filesystem_path"](root)
     for name in (
         "python/tcl",
         "python/Lib/tkinter",
@@ -68,6 +73,7 @@ def verify(root: Path) -> dict:
                 path.unlink()
     if not list((root / "tools").glob("avcodec-*.dll")):
         raise ValueError("FFmpeg shared libraries were not included")
+    seed["verify_seed"](root)
     return {"status": "passed", "required_files": len(required)}
 
 

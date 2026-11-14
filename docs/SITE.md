@@ -10,8 +10,13 @@ questions with AI. Townlight is the umbrella; TownReporter is a separate consume
 
 The primary action is **Read the user manual**, followed by the Windows setup
 guide. The 0.2.0 Windows installer candidate is the normal-user path; 0.1.0 remains
-a historical wheel. Signing and installed acceptance are separate receipts. Engineering links
-lead to the technical manual, source and exact acceptance record.
+a historical wheel. The candidate bundles Python, FFmpeg and a pinned, signed
+TextFlowKit 0.1.19 runtime without model weights. TextFlowKit setup verifies and
+copies the local runtime and can bootstrap offline. Model downloads, yt-dlp
+setup/checks and source access still need internet access. Online update checks
+retain a working runtime if a newer version fails installation or its check.
+Signing and installed acceptance are separate receipts. Engineering links lead
+to the technical manual, source and exact acceptance record.
 
 The static site extends the application's existing palette: ink `#153344`, paper
 `#f5f7f8`, accent `#165c70`, line `#c5d0d5`, and gold `#b58b2c` for decoration only.

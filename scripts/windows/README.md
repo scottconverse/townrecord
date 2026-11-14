@@ -41,12 +41,12 @@ rejected only the optional Tcl/Tk DLLs (`tcl86t.dll`, `tk86t.dll`) with
 `0x800700C1`. TownRecord and QuorumRelay have no Tkinter GUI usage, so the build
 omits the unused optional Tcl/Tk component, its `_tkinter.pyd` extension and GUI
 library/demos. The browser interface, interpreter, service libraries, `venv` and
-`ensurepip` are retained. The resulting native inventory is 85 unsigned files
+`ensurepip` are retained. The resulting native inventory is 82 unsigned files
 and two valid Microsoft runtime DLLs. Preserve the Microsoft
 signatures. After preparing the internal Inno PE, run
 `native-signing.ps1 -Mode Prepare`. This re-verifies the original payload and
 creates `dist/windows/TownRecord-0.2.0-native-unsigned.zip`, containing only the
-85 unsigned native files, the internal PE, and an allowlist/hash manifest.
+82 unsigned native files, the internal PE, and an allowlist/hash manifest.
 The internal `.e32` is staged as `.exe` without changing its PE bytes; its original
 target filename is retained in the manifest.
 
@@ -106,3 +106,20 @@ the complete manifest file set. It does not switch the active user profile.
 program removal and retained configuration. GUI setup, settings readback,
 resident workflow and real tool/model operation remain observed acceptance,
 not claims made by these script results.
+
+The installer also carries a locked TextFlowKit 0.1.19 seed, including the
+Whisper Python dependency closure and no model weights. `build-seed.ps1`
+prepares it from `textflowkit-seed-requirements.txt` (hash-locked) with pinned
+source-build dependencies in `seed-build-constraints.txt`. It stages only
+`Lib/site-packages` and the generic Python venv interpreter launcher. The app
+copies verified files into its existing per-user managed runtime and generates
+that runtime's local `pyvenv.cfg`; generated console launchers are not shipped.
+
+Unsigned native seed files join the existing native signing batch. Applying
+that batch preserves the original seed manifest in notices and derives the
+final seed manifest by substituting only receipt-verified signed PE hashes.
+The original full-payload manifest stays immutable; the signing overlay and
+repack receipt explicitly record the derived JSON hash. Upstream wheel RECORD
+files remain unchanged as provenance for the original wheel bytes; the final
+seed manifest covers the actual signed bytes. No arbitrary non-native package
+or metadata rewrites are allowed during this step.

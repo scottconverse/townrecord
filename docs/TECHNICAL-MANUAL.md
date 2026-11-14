@@ -80,7 +80,8 @@ new operating-system packages or installed acceptance on those systems.
 
 ## Packaged Windows runtime
 
-The 0.2.0 installer candidate adds a per-user launcher with bundled Python/FFmpeg,
+The 0.2.0 installer candidate adds a per-user launcher with bundled Python, FFmpeg
+and a pinned, signed TextFlowKit 0.1.19 runtime without model weights,
 preserving the Python service and strict TypeScript interface. One service owns
 the profile. Start Menu opens `/operator#launch=...`; the browser immediately
 removes the fragment and exchanges the short-lived one-use code for the existing
@@ -98,8 +99,14 @@ See [first-run design](WINDOWS-FIRST-RUN-DESIGN.md).
 | `POST /v1/desktop/backup` | Stop workers, verified timestamped backup, restart and result receipt |
 | `POST /v1/desktop/restore` | `{source}` verifies separate profile then switches on restart |
 
-Existing body/source/tool/job endpoints drive setup. FFmpeg is bundled; managed
-setup jobs remain yt-dlp and TextFlowKit. Closing the browser leaves the service
+Existing body/source/tool/job endpoints drive setup. TextFlowKit setup verifies
+the bundled runtime inventory and file hashes, copies it into managed storage and
+checks the copy before activation. Initial bootstrap can use that local copy when
+the online version lookup is unavailable. The installer includes no model weights:
+model downloads, yt-dlp setup/checks and meeting-source access still need internet
+access. Existing online update checks remain in place and preserve a working
+runtime if a newer candidate fails installation or its check. Managed setup jobs
+remain yt-dlp and TextFlowKit. Closing the browser leaves the service
 running. LAN/HTTPS and public hosting are separate configuration. Build, signature,
 installed behavior and delivery evidence are recorded in the candidate handoff;
 historical wheel evidence does not establish installer acceptance.

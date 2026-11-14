@@ -228,3 +228,24 @@ def test_backup_waits_for_workers_and_keeps_launcher_claim(tmp_path, monkeypatch
     assert not serving.is_running(root / "desktop")
     assert not serving.is_running(profile)
     assert windows.read_json(root / "last-operation.json")["operation_id"] == "first-backup"
+
+
+def test_desktop_ca_bundle_is_verified_default_and_explicit_override_is_preserved(monkeypatch):
+    import ssl
+
+    import certifi
+
+    from townrecord.proc import allowed_environment
+
+    monkeypatch.setenv("SSL_CERT_FILE", "initial-ca-fixture")
+    monkeypatch.delenv("SSL_CERT_FILE")
+    monkeypatch.setenv("PATH", "original-path")
+    monkeypatch.setenv("TOWNRECORD_RUNTIME_PYTHON", "original-runtime-python")
+    monkeypatch.setenv("TOWNRECORD_RUNTIME_SEED_ROOT", "original-seed-root")
+    windows.configure_path()
+    assert os.environ["SSL_CERT_FILE"] == certifi.where()
+    assert allowed_environment()["SSL_CERT_FILE"] == certifi.where()
+    assert ssl.create_default_context().verify_mode == ssl.CERT_REQUIRED
+    monkeypatch.setenv("SSL_CERT_FILE", "C:/operator/explicit-ca.pem")
+    windows.configure_path()
+    assert allowed_environment()["SSL_CERT_FILE"] == "C:/operator/explicit-ca.pem"

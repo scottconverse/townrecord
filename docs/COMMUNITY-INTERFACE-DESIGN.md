@@ -198,3 +198,39 @@ current data and backup, then restarts using that profile. Errors are retained
 in the desktop log and operation receipt; failures never become success claims.
 The bundled tools directory and interpreter precede system PATH, and existing
 allow-listed, hidden subprocess execution is reused for managed tools.
+
+## Signed Windows transcription seed (observed first-run repair)
+
+The clean Windows guest blocked both the generated TextFlowKit console launcher
+and downloaded NumPy/Torch/tiktoken native files under Application Control. The
+Windows installer therefore carries a pinned TextFlowKit 0.1.19 dependency seed,
+with every native payload signature verified during packaging and a manifest of
+final signed file hashes. This introduces no new provider or update channel.
+
+`runtime-seeds/textflowkit/0.1.19/manifest.json` uses format
+`townrecord-runtime-seed-v1`, tool `textflowkit`, version `0.1.19`, Python version
+`3.13`, exact `packages` and a relative POSIX-path `files` to SHA-256 map. Payload
+files are the package dependency closure under `Lib/site-packages` and the PSF
+venv launcher `Scripts/python.exe` (optionally pythonw.exe). Generated console
+launchers, pyvenv.cfg and model weights are absent. Package metadata accounting
+for signed/repacked files is recorded by the packaging workflow.
+
+Desktop setup verifies paths, complete file inventory, Python compatibility and
+hashes before copying the seed into the existing per-user managed runtime.
+Only pyvenv.cfg is generated, naming the installed bundled Python. It runs the
+supported `python.exe -I -m textflowkit.cli` entry point for version/transcription
+and imports Whisper's native dependencies before activation. The existing tool
+pointer, job API, probes and rollback remain authoritative. Developer console
+launching and other platforms retain their existing behavior.
+
+Initial setup selects the bundled version independently of the latest version
+reported by PyPI. An unavailable online check is recorded as `checked: unknown`
+and explicitly explained; the verified seed can still bootstrap. Later daily
+checks continue. A downloaded update that cannot install or load preserves the
+working runtime and reports failure. A broken active Windows runtime is never
+repaired by mutating its packages in place.
+
+The Windows launcher supplies the installed certifi CA bundle through
+SSL_CERT_FILE only when no explicit operator override exists. Allow-listed
+children inherit that CA path. TLS verification stays enabled; no shared
+connector source or certificate policy is weakened.

@@ -70,9 +70,30 @@ TownRecord and its vendored QuorumRelay do not use Tkinter or a Tcl/Tk desktop
 interface. Packaging therefore omits the optional Tcl/Tk files, Tkinter extension
 and associated standard-library GUI demos. It preserves the CPython interpreter,
 standard service libraries, `venv` and `ensurepip`; no binary headers or security
-policy are modified. The resulting native payload contains 85 unsigned PE files
+policy are modified. The resulting native payload contains 82 unsigned PE files
 and two vendor-signed Microsoft DLLs, plus one separately prepared internal Inno
 PE in the signing intake. The browser interface and application wheel are unchanged.
 
 This is the first native installer. Reinstalling 0.2.0 verifies repair and profile
 retention, not a version upgrade from an earlier native installer.
+
+## Signed TextFlowKit seed
+
+Clean-Windows acceptance demonstrated Smart App Control blocking unsigned
+native extensions downloaded for TextFlowKit. The installer therefore includes
+a pinned TextFlowKit 0.1.19 dependency seed at
+`runtime-seeds/textflowkit/0.1.19`. Its hash-locked closure includes Whisper
+libraries but no model weights. The seed contains only `Lib/site-packages`,
+a generic `Scripts/python.exe` venv launcher, and its manifest; the per-user
+runtime creates its own `pyvenv.cfg` and invokes TextFlowKit as a module.
+The existing managed-tool activation, rollback, updates and model download
+remain in place.
+
+All unsigned native seed EXE/DLL/PYD files enter the same signature-only batch
+as the base runtime. Valid vendor signatures remain intact. Packaging retains
+the original seed manifest in notices and derives the final manifest solely
+by replacing the signed native file hashes named by the verified receipt.
+The immutable original payload manifest, signing overlay and repack receipt
+record this one explicit JSON derivation. Package RECORD files retain their
+upstream wheel hashes; the final seed manifest identifies the redistributed
+signed bytes. No model files, user data or credentials enter the seed.

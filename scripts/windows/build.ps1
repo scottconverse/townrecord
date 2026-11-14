@@ -128,6 +128,11 @@ try {
     Copy-Item (Join-Path $PSScriptRoot 'THIRD-PARTY-NOTICES.txt') (Join-Path $payload 'notices/THIRD-PARTY-NOTICES.txt')
     Copy-Item (Join-Path $PSScriptRoot 'uv-LICENSE-*.txt') (Join-Path $payload 'notices')
     Copy-Item (Join-Path $PSScriptRoot 'build-constraints.txt') (Join-Path $payload 'notices')
+    & (Join-Path $PSScriptRoot 'build-seed.ps1') -Payload $payload
+    $receipt.seed_manifest_sha256=(Get-FileHash (Join-Path $payload 'runtime-seeds/textflowkit/0.1.19/manifest.json')).Hash.ToLowerInvariant()
+    $receipt.seed_requirements_sha256=(Get-FileHash (Join-Path $PSScriptRoot 'textflowkit-seed-requirements.txt')).Hash.ToLowerInvariant()
+    Copy-Item (Join-Path $PSScriptRoot 'textflowkit-seed-requirements.txt') (Join-Path $payload 'notices')
+    Copy-Item (Join-Path $PSScriptRoot 'seed-build-constraints.txt') (Join-Path $payload 'notices')
     Invoke-Checked $python @('-I','-c',"import townrecord, townrecord.windows, quorumrelay, fastapi; from importlib.metadata import version; assert townrecord.__version__ == '0.2.0'; assert version('quorumrelay') == '0.1.0.dev11'; print('Bundled imports and versions verified')")
     Invoke-Checked (Join-Path $payload 'tools/ffmpeg.exe') @('-version')
     Invoke-Checked (Join-Path $payload 'tools/ffprobe.exe') @('-version')

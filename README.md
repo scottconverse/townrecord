@@ -19,12 +19,18 @@ back to the source. It is free, open-source community infrastructure in the
 
 ## Windows application and delivery
 
-The 0.2.0 Windows installer candidate bundles Python and FFmpeg. Install it for
+The 0.2.0 Windows installer candidate bundles Python, FFmpeg and a pinned, signed
+TextFlowKit 0.1.19 runtime without model weights. Install it for
 your account, open **TownRecord** from Start Menu and complete the browser
 checklist: timezone/daily time/sample recording, community/body, source/coverage
 and managed tools. Sign-in is automatic. Settings, status/retry, verified backup,
 restore, restart and stop use the workspace. Closing the browser leaves retrieval
 running. Public hosting remains separate.
+
+TextFlowKit setup verifies and copies the bundled runtime into managed storage;
+its initial bootstrap can work offline. Model downloads, yt-dlp setup/checks and
+meeting-source access still need internet access. Existing online update checks
+retain a working runtime if a newer version fails installation or its check.
 
 See [Windows installation and recovery](docs/WINDOWS-COMMUNITY-OPERATIONS.md) and
 [the candidate handoff](docs/COMMUNITY-COMPLETION-HANDOFF.md) for exact build,

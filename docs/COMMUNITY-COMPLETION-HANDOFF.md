@@ -7,15 +7,27 @@ acceptance, documentation, push/merge/tag/publication and Big Picture updates.
 The browser source remains TypeScript and the service Python; no Tauri was added.
 The historical 0.1.0 wheel release below remains intact.
 
-Implementation is in progress on `feat/windows-installer-020`. The per-user
-installer will bundle Python, locked app dependencies, uv and FFmpeg. The Windows
+Implementation is on `feat/windows-installer-020`. The per-user
+installer bundles Python, locked app dependencies, uv and FFmpeg. The Windows
 launcher supplies a one-use sign-in link to the browser interface; setup and
 recovery use the existing service and data model. Saved data is separate from
 installed program files. Resident-facing network hosting remains a separate
 operator deployment, not a service supplied by installing on one PC.
 
-No signed 0.2.0 candidate or clean Windows pass is claimed yet. The active state
-record is [COMMUNITY-RECORD-STATE.md](COMMUNITY-RECORD-STATE.md). Design:
+The signed 0.2.0 candidate is built from `497a1696e62ab68862f16da211c5fb116da09d32`.
+Installer SHA-256: `547ce1abac70309beab32cb0604647d848e346f88a96f3d6b21864e7701f919b`;
+size 96,793,560 bytes. Azure signing run43564959702 and independent signature and
+timestamp verification passed. Native payload signing43564421083 also passed.
+Required CI43564202207 passed. The exact installer passed clean Windows installation
+and bundled runtime/service/shortcut verification in the existing Sandbox, without
+preinstalled Python, uv or FFmpeg commands. All 85 installed native PE signatures are
+valid. These results do not yet establish complete first-run/workflow/recovery
+acceptance: those headless browser and managed-tool checks are in progress.
+PR49 remains unmerged; 0.2.0 is not tagged or published yet. The existing v0.1.0
+release remains intact. Current receipts live under `outputs/townrecord-windows-020`
+and will be included in the final sanitized release evidence.
+
+The active state record is [COMMUNITY-RECORD-STATE.md](COMMUNITY-RECORD-STATE.md). Design:
 [Windows installer](WINDOWS-INSTALLER-DESIGN.md), [first-run interface](WINDOWS-FIRST-RUN-DESIGN.md),
 and [desktop runtime contract](COMMUNITY-INTERFACE-DESIGN.md#windows-desktop-runtime-contract-2026-11-13).
 

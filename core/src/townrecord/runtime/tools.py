@@ -104,6 +104,10 @@ class ToolSpec:
         The answer is what gets pinned (spec 8.9): the request is a wish, the
         venv is the fact.
         """
+        from .seed import desktop_textflowkit
+
+        if desktop_textflowkit(self.tool):
+            return [str(python), "-I", "-m", "textflowkit.cli", "--version"]
         if self.module is not None:
             return [str(python), "-m", self.module, "--version"]
         return [str(program_in(venv, self.program)), "--version"]

@@ -13,7 +13,7 @@ $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 function Safe-NativePath([string]$Path) {
-    if ($Path -notmatch '^(payload/(python|tools)/[A-Za-z0-9_./+ -]+\.(exe|dll|pyd)|internal/uninst-[A-Za-z0-9_.-]+\.(exe|e32|e64))$' -or
+    if ($Path -notmatch '^(payload/(python|tools|runtime-seeds/textflowkit/0\.1\.19)/[A-Za-z0-9_./+ -]+\.(exe|dll|pyd)|internal/uninst-[A-Za-z0-9_.-]+\.(exe|e32|e64))$' -or
         @($Path.Split('/') | Where-Object {$_ -in @('','..','.')}).Count) { throw "Invalid native signing path: $Path" }
 }
 function Assert-PE([string]$File) {

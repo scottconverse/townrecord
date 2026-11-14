@@ -44,6 +44,7 @@ try {
         }
         $receipt.payload_signing_overlay_sha256=(Get-FileHash $overlayPath).Hash.ToLowerInvariant()
         $receipt.payload_signing_workflow_run=$overlay.workflow_run
+        $receipt.derived_seed_manifest=$overlay.derived_seed_manifest
     } elseif (!$PrepareUninstaller) {throw 'Final compiler-only repack requires the verified signed native payload overlay.'}
     $wheel = @(Get-ChildItem (Join-Path $work 'wheels') -Filter '*.whl')
     if ($wheel.Count -ne 1 -or (Get-FileHash $wheel[0].FullName).Hash.ToLowerInvariant() -ne $base.wheel_sha256) {

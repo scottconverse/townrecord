@@ -350,7 +350,9 @@ class TranscribeAudio:
         burning through a download first.
         """
         program = str(self.textflowkit_program)
-        result = self._run([program, "--version"], self.settings.version_timeout_s)
+        from ..stt.textflowkit import command_prefix
+
+        result = self._run([*command_prefix(program), "--version"], self.settings.version_timeout_s)
         if not result.ok:
             ctx.pause(
                 f"The TextFlowKit runtime would not say which version it holds "
@@ -431,7 +433,9 @@ class TranscribeAudio:
         )
         # Element 0 is the program to run: the console script of the runtime
         # this tool owns (spec 8.9), not a name looked up on PATH.
-        argv[0] = str(self.textflowkit_program)
+        from ..stt.textflowkit import command_prefix
+
+        argv = [*command_prefix(str(self.textflowkit_program)), *argv[1:]]
         timeout_s = transcription_timeout_s(_audio_seconds(audio_folder))
         logger.info(
             "Transcribing %s with %s (%s), up to %.0f seconds.",

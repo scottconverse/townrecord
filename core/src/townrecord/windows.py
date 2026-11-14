@@ -185,12 +185,18 @@ def stamp() -> str:
 
 
 def configure_path() -> None:
+    import certifi
+
     python = Path(sys.executable).parent
     tools = python.parent / "tools"
     os.environ["PATH"] = os.pathsep.join([str(tools), str(python), os.environ.get("PATH", "")])
     # uv receives this interpreter explicitly; a clean desktop needs no system
     # Python discovery or download, and pythonw itself is not a venv base.
     os.environ["TOWNRECORD_RUNTIME_PYTHON"] = str(python / "python.exe")
+    os.environ["TOWNRECORD_RUNTIME_SEED_ROOT"] = str(python.parent / "runtime-seeds")
+    # Portable Python may not inherit a populated Windows certificate store.
+    # Keep TLS verification and an explicit operator CA override intact.
+    os.environ.setdefault("SSL_CERT_FILE", certifi.where())
 
 
 def run(root: Path, *, open_browser: bool) -> int:

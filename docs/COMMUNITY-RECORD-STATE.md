@@ -4,40 +4,44 @@ Scott authorized implementation, signing, clean Windows acceptance, documentatio
 push, merge, tag and publication of TownRecord 0.2.0. Preserve v0.1.0. Keep the
 TypeScript browser/Python service stack; no Tauri. Normal operators must not need
 Python, commands or copied tokens. Public hosting remains a separate deployment.
+Root coordinates/audits/delivers; implementation belongs to the authorized agents.
 
-Branch: feat/windows-installer-020; PR49. Runtime source: 2acd5cde0ea1d72a1e9ac24f96db1040c320ab43.
-Required CI43561395186 passed. First signed outer installer SHA256:
-4a52333a0760a0cccc92ab1803d2c9c504f6c3e8c5684d8e9ed776a4a37ba0c1.
-It is NOT accepted: clean Windows Application Control blocked unsigned internal
-Inno setup and bundled native programs. Failed evidence is preserved under
-outputs/townrecord-windows-020; no release/tag has been made for 0.2.0.
+Branch feat/windows-installer-020; PR49. Current packaging source:
+497a1696e62ab68862f16da211c5fb116da09d32; required CI43564202207 passed.
+Wheel remains byte-identical to the initially tested app:
+bcaa66a4726dc648a8b420fa96c7548230dbaaf2bc6bc1e06d93cc9acf55af85.
+Native signing43564421083 PASSED: 82 payload PE files plus Inno internal executable,
+Scott Converse Valid/timestamp verified; two Microsoft DLL signatures preserved.
+Independent content checks permit only Authenticode-related byte changes.
+Compiled installer SHA81d90152e292164bac29bd26f4dd12777c780f008dd4de65fd002cce985da6f8,
+96,777,921 bytes. Outer signing43564959702 PASSED; final signed SHA547ce1abac70309beab32cb0604647d848e346f88a96f3d6b21864e7701f919b (96,793,560 bytes). Clean Install and Verify PASSED; all85installed PE signatures Valid. Headless browser setup PASSED in Edge157 using supported JavaScript Playwright with signed Node (Python test-only greenlet was blocked).
+Current local doc count corrections do not alter this candidate or require rebuild.
 
-Packaging commit d83997b passed required CI43563463235. Native signing run43563556453 signed 87 files but rejected optional Tcl/Tk DLLs tcl86t.dll and tk86t.dll with SignTool 0x800700C1. Logs and input are preserved. The browser application and QuorumRelay do not use Tk. Packaging agent is excluding that unused toolkit through the existing build path and producing a fresh payload manifest; Windows policy stays unchanged.
+Observed defects corrected: first installer was blocked by Windows Application
+Control because inner setup and bundled programs were unsigned. First native batch
+rejected two upstream Tcl/Tk DLLs (0x800700C1). Browser app/QuorumRelay do not use Tk;
+existing build now excludes that optional toolkit. Failed evidence is retained
+under outputs/townrecord-windows-020/failed. No Windows policy was weakened.
 
-Current work: packaging agent prepares two-pass signed Inno internals and signs
-88 unsigned payload PE files, preserving two valid Microsoft DLL signatures.
-Reuse the recorded wheel and unchanged Python/TypeScript payload; record every
-native signature overlay. Root audits and dispatches signing. UI agent prepared
-guest-only headless setup/review/recovery scripts; execution awaits installation.
-Runtime helper is prepared for installed status and the bounded real-audio test.
+Owned guest 3bca7846-b403-4ac2-916e-b33763117c21 remains running headlessly, 8GB;
+no TownRecord app installed yet. Both visible remote-session clients were closed.
+Stop after evidence preservation: wsb stop --id 3bca7846-b403-4ac2-916e-b33763117c21.
+Owned temporary signing draft: civiccast/townrecord-020-signing-2acd5cde; helper
+branch townrecord-signing-020-20261113. Root owns dispatch and cleanup. See job JSON
+in outputs/townrecord-windows-020 for run IDs, start times and cancellation commands.
 
-Owned guest: 3bca7846-b403-4ac2-916e-b33763117c21, 8GB, no app installed yet.
-Guest remains running headlessly; its two owned visible remote-session clients
-were closed. Cancel after evidence preservation with wsb stop --id <owned ID>.
-Owned draft signing intake: civiccast/townrecord-020-signing-2acd5cde.
-No production, QuorumRelay or unrelated desktop work is authorized.
+Global rule: headless while Scott uses the machine or occupancy is unknown. No
+visible browser/app/Sandbox/VM windows or interactive control without approval.
+No production, QuorumRelay or unrelated desktop changes.
 
-Global rule saved: remain headless while Scott uses the machine or occupancy is
-unknown. No visible browser/app/Sandbox/VM windows or interactive computer control
-without specific prior approval. Continue independent authorized headless work.
-
-Remaining: complete native signatures and corrected outer installer; install and
-verify first-run/operator/resident/runtime/recovery/reinstall/uninstall behavior;
-update docs and evidence, required CI, merge/tag/release/Pages, verify public bytes
-and pages, update existing Big Picture project sources, remove owned test resources
-and temporary signing intake. Reuse unaffected v0.1.0 domain evidence with attribution.
-Next action: commit completed packaging correction, prepare internal PE and dispatch
-hash-gated Azure native signing. No Windows policy bypass or weakened checks.
+Remaining: retrieve/verify outer signature; install in existing guest; run prepared
+headless setup/review/recovery phases, real managed tool setup/sample transcription,
+startup/reinstall/uninstall retention. Managed downloaded native binaries remain an
+unverified policy risk, not an observed failure or authority for speculative work.
+Then finish current docs/evidence, merge/tag/release/Pages, public download and live
+site verification, update existing Big Picture project sources, owned cleanup.
+Reuse unaffected v0.1.0 domain evidence with attribution.
+Next action: runtime agent diagnoses actual TextFlowKit job2 WinError4551 on generated console executable, probing supported module/native dependencies before any larger fix. Packaging agent diagnoses actual yt-dlp job1 sample failure and PrimeGov jobs3/4 provider_page_failed from raw installed logs/public HTTP. UI settings, one-use login, 31 choices, body/source save and job submission passed; no successful acquisition, active tools, review/recovery or transcription yet. Existing guest remains headless with app running. External harness task phases run as WDAG session1 via limited InteractiveToken; ExistingLogin CLI fails for disconnected session. No publication/merge/tag yet.
 ---
 ## Preserved prior delivery record
 # TownRecord bounded completion state — November 13, 2026
@@ -128,3 +132,24 @@ Integration check session10269 finished:1580passed48skipped1failure (new public 
 Candidate source2acd5cde0ea1d72a1e9ac24f96db1040c320ab43 built clean. Unsignedsetup99003002bytes SHA35f9c91e1b46e75c0f6723ee2ec01600e142b644def52e71d8066d3d8a7bff70. Azure signing run43561666388 active; CI43561395186 active. No Sandbox started yet. Buildowner43712 exited. BigPicture twoWindowsdesigns added andverified actualProject15sources; existinghandoffupdated in-place. Next retrieve signedartifact, independentlyverify, runownedSandbox. Signingintake townrecord-020-signing-2acd5cde isownedtemporarydraft; clean afterverifiedpublicdelivery.
 
 Current checkpoint: CI43561395186 PASSED alljobs; Azure43561666388 PASSED. Independent signedsetup Valid ScottConverse timestampverified SHA4a52333a0760a0cccc92ab1803d2c9c504f6c3e8c5684d8e9ed776a4a37ba0c1. OwnedSandbox3bca7846-b403-4ac2-916e-b33763117c21 RUNNING; cancellation wsb stop --id3bca7846-b403-4ac2-916e-b33763117c21. Clean install FAILED exit1: ApplicationControl event3077 blocks unsignedInno temporaryselfcopy. Notpublished. Agentwindows_packaging fixingofficialtwo-passSignedUninstaller/compile-only flow; reuseexistingwheel/payload then signinternalstub andoutersetup. No securitypolicychanges. Elevatedhelperjobbbc6251cf6d14bb6bb0b36d5c30584c7 couldnotreachSandboxbroker; normal signed-in guardedlauncher createdguest. NativeCUA Sandbox capture unavailable (returnsbackground); UI partclosed fornow, gueststillup. TwoRDPclients mayremain; do notmistake for2guests. Exactevidence outputs/townrecord-windows-020. Next commitpackagingfix, signinternalstub, repack/signouter, retest sameguest. Rootmustresumeexistingwork, notreportdone.
+
+## Current installed failure resolution
+
+Headless first-run UI passed on the exact installed 497a1696 candidate. Jobs exposed
+real failures: TextFlowKit console executable and numpy/torch/tiktoken native loads
+were blocked by Application Control; PrimeGov and yt-dlp failed TLS issuer lookup.
+Read-only diagnostics proved bundled certifi SSL_CERT_FILE resolves both exact
+network paths without disabling TLS verification. Runtime agent owns launcher CA
+configuration plus child-environment allowance, supported Windows module invocation,
+and pinned signed-seed bootstrap. Packaging agent owns seed dependency pins/build,
+native signing coverage and deterministic final seed manifest. Contract: app/runtime-seeds/
+textflowkit/0.1.19/{manifest.json,Lib/site-packages/**,Scripts/python.exe,optional pythonw.exe};
+no generated console executables or pyvenv.cfg. Manifest files carry final signed
+SHA256 values; runtime verifies/copies then generates config for installed Python.
+First bootstrap can use verified bundled seed offline with explicit reason; existing
+online checks, probes, active-pointer and rollback behavior remain. No new channel,
+policy changes or model weights in installer. These fixes require a new candidate;
+current installation is diagnostic evidence, not final acceptance. Agent implementations
+are pending; root must inspect affected paths, test, build/sign and verify exact final
+candidate headlessly. Existing guest contains failed jobs and setup data, not a passed
+acquisition/transcription workflow. No merge/tag/publication yet.

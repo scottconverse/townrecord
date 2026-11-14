@@ -208,6 +208,36 @@ def artifact_meta(conn: sqlite3.Connection, storage_root: Path, artifact_id: int
 # -- the whole of spec 8.5 in one run --------------------------------------
 
 
+def test_managed_windows_module_entry_transcribes_and_preserves_provenance(
+    conn: sqlite3.Connection, storage_root: Path, video: int, tmp_path: Path
+) -> None:
+    python = str(tmp_path / "managed" / "Scripts" / "python.exe")
+    fake = tools()
+    module_calls = []
+
+    def runner(argv, **kwargs):
+        if str(argv[0]) == python:
+            assert argv[1:4] == ["-I", "-m", "textflowkit.cli"]
+            module_calls.append(list(argv))
+            return fake.textflowkit(argv, **kwargs)
+        return fake.ytdlp(argv, **kwargs)
+
+    handler = TranscribeAudio(
+        storage_root=storage_root,
+        runner=runner,
+        ytdlp_interpreter=str(YTDLP_PYTHON),
+        textflowkit_program=python,
+    )
+    ctx = transcribe_job(conn, video, FakeClock())
+    handler(ctx)
+    assert len(module_calls) == 2
+    assert module_calls[0][-1] == "--version"
+    assert module_calls[1][4] == "transcribe"
+    assert "--model" in module_calls[1] and "small" in module_calls[1]
+    assert len(transcript_rows(conn, video)) == 1
+    assert checkpoint(conn, ctx.job_id)["segments"] == 2
+
+
 def test_the_audio_is_transcribed_and_stored_as_a_transcript(
     conn: sqlite3.Connection, storage_root: Path, video: int
 ) -> None:

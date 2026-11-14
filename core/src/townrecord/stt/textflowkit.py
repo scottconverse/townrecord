@@ -133,6 +133,16 @@ def textflowkit_argv(
     ]
 
 
+def command_prefix(program: str) -> list[str]:
+    """Run the managed Windows interpreter through its supported module entry point."""
+    from pathlib import Path
+
+    path = Path(program)
+    if path.is_absolute() and path.name.lower() == "python.exe":
+        return [program, "-I", "-m", "textflowkit.cli"]
+    return [program]
+
+
 def parse_textflowkit_json(data: bytes) -> list[Segment]:
     """Read TextFlowKit's JSON transcript into the shared segment type.
 

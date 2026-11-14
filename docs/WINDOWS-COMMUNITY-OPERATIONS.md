@@ -1,8 +1,10 @@
 # Windows community-record operation
 
-This is the Python community-record service and TypeScript browser interface.
-[Download TownRecord 0.1.0 community preview](https://github.com/scottconverse/townrecord/releases/tag/v0.1.0).
-Scott approved publication of the exact tested candidate on November 13, 2026.
+TownRecord uses a Python service and TypeScript browser interface. Start with the
+0.2.0 Windows installer candidate guidance below; final acceptance and publication
+status remain in the [candidate handoff](COMMUNITY-COMPLETION-HANDOFF.md).
+The earlier Python-wheel preview instructions are preserved in the historical
+advanced section.
 
 ## Install and open the Windows application (0.2.0)
 
@@ -15,7 +17,8 @@ when 0.2.0 is available. Check Windows file Properties > Digital Signatures for
 **Scott Converse**, following the release verification notes.
 
 Run the installer for your Windows account, then choose **TownRecord** in Start
-Menu. Python, FFmpeg and the runtime are supplied; no pip, Node, PowerShell or
+Menu. Python, FFmpeg and a pinned, signed TextFlowKit 0.1.19 runtime are supplied;
+model weights are not bundled. No pip, Node, PowerShell or
 copied operator token is needed. The browser opens already signed in. Its launch
 link is short-lived and works once. After reload or sign out, open TownRecord
 from Start Menu again. Closing the browser leaves retrieval running. Use **Stop
@@ -36,10 +39,14 @@ separate IT work.
    supported provider URL, verified document origins and explicit coverage dates.
    **Validate and save source** uses existing connector validation. See
    [connector capabilities](CONNECTORS.md).
-3. Under Processing, **Set up / check** yt-dlp and TextFlowKit. FFmpeg is bundled.
-   Initial tool/model downloads need internet access and disk space. Read job
-   states; **Refresh status** checks progress and **Retry** retries failed/paused
-   jobs after resolving their stated cause.
+3. Under Processing, **Set up / check** yt-dlp and TextFlowKit. TextFlowKit setup
+   verifies and copies the bundled signed 0.1.19 runtime into managed storage;
+   this initial bootstrap can work offline. FFmpeg is bundled. Model downloads,
+   yt-dlp setup/checks and meeting-source access still need internet access and
+   disk space. Existing online update checks retain a working runtime if a newer
+   version fails installation or its check. Read job states; **Refresh status**
+   checks progress and **Retry** retries failed/paused jobs after resolving their
+   stated cause.
 4. Retrieve configured coverage, review records and publish deliberately. Setup
    saved or a queued job does not establish completed acquisition.
 
@@ -63,6 +70,9 @@ restored copy. Keep the old profile. External provider credentials and managed
 tool/model caches are excluded; set up tools again after restore when needed.
 
 ## Advanced: historical 0.1.0 Python installation
+
+[Historical 0.1.0 Python-wheel preview](https://github.com/scottconverse/townrecord/releases/tag/v0.1.0).
+Scott approved publication of that unchanged wheel on November 13, 2026.
 
 The following commands preserve the published preview instructions for a manually
 managed service. They are not required for the 0.2.0 installer. Manual token entry

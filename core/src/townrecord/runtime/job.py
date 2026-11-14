@@ -113,7 +113,14 @@ def program_probe(program: str) -> Probe:
     from . import tools
 
     def probe(python: str) -> bool:
+        from .seed import desktop_textflowkit
+
         venv = Path(python).parent.parent
+        if desktop_textflowkit(program):
+            return (
+                Path(python).is_file()
+                and (venv / "Lib" / "site-packages" / "textflowkit" / "cli.py").is_file()
+            )
         return tools.program_in(venv, program).is_file()
 
     return probe

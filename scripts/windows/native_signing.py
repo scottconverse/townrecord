@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import runpy
 import shutil
 import struct
 import zipfile
@@ -14,6 +15,10 @@ REPO = Path(__file__).resolve().parents[2]
 WORK = REPO / "build/windows"
 PAYLOAD = WORK / "payload"
 NATIVE = {".exe", ".dll", ".pyd"}
+SEED = runpy.run_path(
+    str(Path(__file__).with_name("seed_payload.py")), run_name="seed_manifest"
+)
+PAYLOAD = SEED["filesystem_path"](PAYLOAD)
 
 
 def digest(path: Path) -> str:
@@ -90,6 +95,12 @@ def verify_payload(allow_overlay=False):
     if overlay:
         if overlay["original_payload_manifest_sha256"] != digest(manifest_path):
             raise ValueError("Signing overlay names another payload")
+        derived_seed = SEED["verify_derived"](PAYLOAD, overlay)
+        if (
+            overlay.get("derived_seed_manifest", {}).get("derived_sha256")
+            != derived_seed
+        ):
+            raise ValueError("Derived seed manifest receipt hash mismatch")
         for item in overlay["files"]:
             if item["kind"] == "payload":
                 if item["target"] in overrides:
@@ -99,6 +110,10 @@ def verify_payload(allow_overlay=False):
     for item in manifest:
         target = child(PAYLOAD, item["path"])
         seen.add(item["path"])
+        if overlay and item["path"] == (SEED["RELATIVE"] / "manifest.json").as_posix():
+            if overlay["derived_seed_manifest"]["original_sha256"] != item["sha256"]:
+                raise ValueError("Original seed manifest identity mismatch")
+            continue  # only this JSON is deterministically derived above
         signed = overrides.get(item["path"])
         if signed:
             if signed["unsigned_sha256"] != item["sha256"]:
@@ -290,6 +305,7 @@ def apply():
             item["target"],
         )
         shutil.copy2(source, destination)
+    receipt["derived_seed_manifest"] = SEED["derive"](PAYLOAD, receipt)
     write(PAYLOAD / "payload-signing-overlay.json", receipt)
     return verify_payload(allow_overlay=True)
 
