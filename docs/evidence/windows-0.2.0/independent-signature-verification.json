@@ -1,0 +1,10 @@
+{
+  "sha256": "01af39b6984aea6c09770a5a864cb40d4de99aa161d6f4ea4b138d3af263f719",
+  "status": "verified",
+  "timestamp": "CN=Microsoft Public RSA Time Stamping Authority, OU=nShield TSS ESN:7D00-05E0-D947, OU=Microsoft America Operations, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+  "signer": "CN=Scott Converse, O=Scott Converse, L=Longmont, S=co, C=US",
+  "bytes": 221381512,
+  "source": "02b66993cb741c6d571f67d2031f7946c8b6b001",
+  "verified_utc": "2026-11-14T07:22:20.4927023Z",
+  "workflow_run": 43570543904
+}

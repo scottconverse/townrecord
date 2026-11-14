@@ -1,0 +1,44 @@
+{
+  "attempt": 2,
+  "conclusion": "success",
+  "createdAt": "2026-11-14T07:12:55Z",
+  "databaseId": 43569493649,
+  "event": "pull_request",
+  "headBranch": "feat/windows-installer-020",
+  "headSha": "02b66993cb741c6d571f67d2031f7946c8b6b001",
+  "jobs": [
+    {
+      "databaseId": 132372177030,
+      "name": "core (windows-latest)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-11-14T07:12:58Z",
+      "completedAt": "2026-11-14T07:18:00Z",
+      "url": "https://github.com/scottconverse/townrecord/actions/runs/43569493649/job/132372177030"
+    },
+    {
+      "databaseId": 132372177662,
+      "name": "core (ubuntu-latest)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-11-14T07:06:18Z",
+      "completedAt": "2026-11-14T07:07:43Z",
+      "url": "https://github.com/scottconverse/townrecord/actions/runs/43569493649/job/132372177662"
+    },
+    {
+      "databaseId": 132372178166,
+      "name": "core (macos-latest)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-11-14T07:06:20Z",
+      "completedAt": "2026-11-14T07:07:34Z",
+      "url": "https://github.com/scottconverse/townrecord/actions/runs/43569493649/job/132372178166"
+    }
+  ],
+  "status": "completed",
+  "updatedAt": "2026-11-14T07:18:01Z",
+  "url": "https://github.com/scottconverse/townrecord/actions/runs/43569493649/attempts/2",
+  "queried_utc": "2026-11-14T07:26:52.541303+00:00",
+  "query": "gh run view 43569493649 --attempt 2 --json databaseId,attempt,status,conclusion,headSha,headBranch,event,createdAt,updatedAt,url,jobs",
+  "scope": "Existing required repository matrix. Attempt 2 reran Windows; retained passing Ubuntu/macOS jobs are listed by the Actions API."
+}

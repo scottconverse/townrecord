@@ -1,0 +1,11 @@
+{
+  "file": "TownRecord-0.2.0-windows-x64-setup-02b6699.exe",
+  "unsigned_sha256": "ac7e2d8e71ddd10724c4612060b77783577dde3e0ff756548ca3a1b2afcfc9cc",
+  "signed_sha256": "01af39b6984aea6c09770a5a864cb40d4de99aa161d6f4ea4b138d3af263f719",
+  "signed_bytes": 221381512,
+  "signer_subject": "CN=Scott Converse, O=Scott Converse, L=Longmont, S=co, C=US",
+  "signer_thumb": "CC4C2AA73F9701DF8D02D074A3D929F9FE07FF7B",
+  "timestamp": "CN=Microsoft Public RSA Time Stamping Authority, OU=nShield TSS ESN:7D00-05E0-D947, OU=Microsoft America Operations, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+  "workflow_run": "43570543904",
+  "status": "Valid"
+}

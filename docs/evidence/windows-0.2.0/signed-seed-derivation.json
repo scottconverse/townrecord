@@ -1,0 +1,10 @@
+{
+  "overlay_sha256": "55ba405951af47eeb4bc60c4b9257db656fa28715cb3a742052a69749c5878e8",
+  "derived_seed_manifest": {
+    "path": "runtime-seeds/textflowkit/0.1.19/manifest.json",
+    "original_sha256": "a4d39c56e804066c4248fad682ed0a1ea0ef42acbf7a6540e93c4eaffe9cbcf8",
+    "derived_sha256": "0bf631371bf3247f35c1c80e28b341821899fcc0b667648270ede12bc404d41f",
+    "rule": "original seed metadata with signed PE hashes substituted by verified signing receipt"
+  },
+  "workflow_run": "43569539324"
+}
