@@ -3,7 +3,7 @@
 ## Contract
 Design first; strict TypeScript browser interface/Python service; no desktop shell.
 Finish engineering items1–6, reuse unaffected evidence, push/merge on pass.
-Hold tagging and publication for Scott. Scott defines required human work.
+Scott approved this exact candidate publication on November13. Scott defines human work.
 No production changes, new OS packaging, new providers or delegated agents.
 
 ## Candidate
@@ -14,7 +14,7 @@ The packaged source passed CI43518744977, including Windows.
 TownRecord PR43 is the TypeScript/design/completion increment; original PR39–42 merged.
 TownReporter PR388 merged at755827c0f251bd8b3507da8295e11830e62a733d;
 accepted head a66b331c254d34227a064f2f1648b1421efd3dbb, required/post-merge CI passed.
-No tag, release, signed MSI or public deployment is claimed.
+v0.1.0 and the website are published; this is a Python service package, not an MSI.
 
 ## Completed engineering
 1. Full local Whisper small CPU job70 completed the5900-second Planning recording:
@@ -42,7 +42,7 @@ PR43 merged at0f2ae54632d3a234626f353311a93de81bbcde57 after final-head
 CI43520915463 passed all existing jobs, including Windows. Engineering items1–6
 are complete. This documentation follow-up records the merge without rebuilding.
 Final handoff, design and updated acceptance are verified sources in the actual
-Big Picture Project (now thirteen sources including the documentation follow-up). Hold tagging/publication for Scott.
+Big Picture Project (now thirteen sources including the documentation follow-up). Scott subsequently approved publication; see the final delivery below.
 See COMMUNITY-COMPLETION-HANDOFF.md for the next agent's starting point.
 
 ## Ownership and limits
@@ -65,5 +65,18 @@ browser review and keyboard focus passed. Full details: COMMUNITY-COMPLETION-HAN
 Big Picture has13 verified Project sources, including the new manuals/site guide/README.
 Its existing design and handoff documents were updated. Preview stopped, port18320
 clear, browser tabs closed, viewport restored. No product profile or VM started.
-Next action requires Scott's approval: tagging/release and website deployment.
+Tagging/release and website deployment were subsequently approved and completed.
 No product rebuild, additional engineering requirement or human trial is imposed.
+
+## Public delivery — complete
+
+Release: https://github.com/scottconverse/townrecord/releases/tag/v0.1.0
+Website: https://scottconverse.github.io/townrecord/
+Tag targets exact accepted source758abf6; wheel hash unchanged. Nine public assets
+were anonymously downloaded and hash-verified. Fresh downloaded-wheel dependency/
+CLI install check passed; temporary environment removed. No product service started.
+PR47 merged at a9b6662 after all CI43557289241 checks passed. Pages43557671448
+passed. Automatic post-merge CI:43557671485. Live desktop/mobile and14 URL checks
+passed. Updated existing Big Picture sources in place;13 Project sources retained.
+No owned local process or browser tab remains. Publication is complete with no
+remaining owner approval for this release. See COMMUNITY-COMPLETION-HANDOFF.md.

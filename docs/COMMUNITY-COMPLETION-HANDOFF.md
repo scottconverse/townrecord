@@ -52,8 +52,9 @@ tokens; do not upload that folder wholesale or start its queued jobs for inspect
 
 ## Owner decision and actual limits
 
-Tagging and publishing remain held for Scott's approval. No signed MSI or public
-TownRecord deployment is claimed. Follow the documented Python-service installation.
+Scott approved publication on November 13, 2026. The exact tested Python package
+is now released; see the public-delivery record below. No signed MSI or hosted
+TownRecord application service is claimed. Follow the Python-service installation.
 No additional mandatory human trial has been invented. Scott defines human work.
 Suggested next observation: an independent operator/resident uses the documented
 workflow and checks transcript wording against audio. This is a suggestion, not
@@ -76,7 +77,7 @@ memory note: design first, verify current owner stack, distinguish compiled JS
 from source language, do not carry forward stale architecture as a requirement,
 and let Scott define human acceptance. No framework was needed for this conversion.
 
-The Big Picture Project has nine verified sources, including this handoff, the
+At the initial implementation handoff, Big Picture had nine verified sources, including the
 interface design and updated candidate acceptance. Existing file identities and
 sharing were preserved.
 
@@ -116,6 +117,42 @@ The loopback website preview/session31172 was stopped, port18320 is clear, brows
 viewport reset and owned tabs closed. No application profile or VM was started.
 The superseded PR run43532395907 was cancelled; the final-head run passed.
 
-**Remaining authorization:** Scott's approval to tag/publish the package and deploy
-its website. The Pages workflow is manual-only and has not been dispatched. The
-accepted wheel is unchanged. No additional implementation or human trial is imposed.
+The documentation-stage publication hold was lifted by Scott on November 13.
+The accepted wheel is unchanged. No additional implementation or human trial is imposed.
+
+## Public release and website — complete
+
+Scott approved tagging, publication and deployment on November 13, 2026.
+
+- Release: https://github.com/scottconverse/townrecord/releases/tag/v0.1.0
+- Website: https://scottconverse.github.io/townrecord/
+- Tag `v0.1.0` points to tested source `758abf6fa4a0f629bc2c54a4dd937ade423f364a`.
+- Wheel SHA-256 remains `9cab2e58d36b3024caa095815854ae5d2d367708e3dba2ac6b539e0f17d2b5ce`.
+- Published as a community-preview pre-release, with nine assets: original wheel,
+  corresponding-source ZIP, checksums, provenance, sanitized acceptance evidence,
+  acceptance summary, Windows install guide, user manual and technical manual.
+- All nine assets were downloaded anonymously and matched their local SHA-256.
+  The source ZIP includes the lockfile and vendored QuorumRelay. Of147 payloads,
+  145 are byte-identical to Git source; two differ only by Windows line endings.
+  No application content changed and the wheel was not rebuilt.
+- The public wheel and archived lockfile installed into a fresh temporary Windows
+  Python3.13.5 environment. TownRecord0.1.0 / QuorumRelay0.1.0.dev11 and CLI help
+  passed. No product service/profile was started. The temporary environment and
+  extracted source copy were removed; downloads and receipts are preserved.
+- PR47 merged at `a9b66620fbf68f7f192411b308cfec6388993d20` after all existing
+  checks passed in CI43557289241. Automatic post-merge run:43557671485.
+- Pages deployment43557671448 succeeded from that commit. Public HTML matches
+  the build after newline normalization; CSS and screenshot match byte-for-byte.
+  All14 linked page/asset URLs returned HTTP200. Chrome desktop/mobile review
+  passed with no horizontal overflow, loaded image and working release button.
+- Existing13 Big Picture Project sources retain their identities and sharing.
+  The handoff, README, manuals/site guide and acceptance publication status are
+  updated in place; this is not a supporting-folder-only delivery.
+
+Evidence folder: `outputs/townrecord-public-download-verification` contains
+`verification.json`, `website-verification.json`, `website-live.png` and
+`website-live-mobile.png`. Release upload files remain in
+`outputs/townrecord-community-release-0.1.0`.
+No local service, model process, Sandbox or VM was started for publication.
+Browser tabs closed and viewport reset. No additional publication approval is
+outstanding for this release; no future product expansion is implied.

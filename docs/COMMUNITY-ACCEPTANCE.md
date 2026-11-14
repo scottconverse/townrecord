@@ -1,5 +1,10 @@
 # TownRecord community candidate acceptance
 
+**Publication update — November 13, 2026:** Scott approved publication of this
+unchanged tested candidate as [v0.1.0](https://github.com/scottconverse/townrecord/releases/tag/v0.1.0).
+The [website](https://scottconverse.github.io/townrecord/) is deployed. The original
+acceptance observations and pre-publication wording below remain historical evidence.
+
 November 13, 2026. Engineering acceptance of a bounded Windows local-service
 candidate. Tagging and publication remain held for Scott. Independent community
 trials are suggestions unless Scott makes them requirements.
