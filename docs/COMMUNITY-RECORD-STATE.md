@@ -54,3 +54,16 @@ that does not alter the accepted wheel or authorize a release.
 Independent community trials are suggested, not mandatory until Scott says so.
 No genuinely new post-setup publisher meeting or human transcript certification
 is claimed. Historical live retrieval and synthetic lifecycle tests are distinct.
+
+## Documentation follow-up (November 13)
+
+User and technical manuals, four Mermaid diagrams, corrected README/workflow and
+static landing page are prepared on `docs/community-manuals-site`.
+Build and 41 relative documentation links passed. Desktop/tablet/mobile browser
+review passed: effective CSS widths 1309/698/355 (browser zoom preserved), no
+horizontal overflow, image loaded, navigation and visible keyboard focus worked.
+Text contrast ratios are 6.4:1 or higher. Local preview session 31172 stopped;
+no product service/profile was opened. Screenshots are in the existing local
+acceptance output folder as landing-desktop/tablet/mobile.png.
+Remaining: required CI and merge, GitHub manual/diagram verification, updated
+Big Picture Project sources. Tagging and publishing remain held for Scott.

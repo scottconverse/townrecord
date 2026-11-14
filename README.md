@@ -1,60 +1,65 @@
 # TownRecord
 
-TownRecord is a free, open-source local service and browser interface for community
-meeting records. Operators acquire documents and transcripts, review and publish
-meeting snapshots, and correct or withdraw them. Residents can browse and search
-published records, read documents and transcripts, and follow original sources.
+**Keep your community's public meeting record within reach.**
 
-## Status
+TownRecord collects meeting documents and available transcripts, lets an operator
+review and publish a snapshot, and gives residents a searchable record with links
+back to the source. It is free, open-source community infrastructure in the
+[Townlight](https://github.com/townlight) family.
 
-Pre-alpha. The Python core implements a local SQLite-backed service, source and
-job management, record capture and an authenticated local API. The wider product described in the specification is reference/backlog, not the
-completion contract for this bounded service and browser product.
-The current Windows candidate has been exercised with Longmont Council and
-Planning records. It is not a published release. A question-answering assistant is not part of this bounded delivery. See the
-[candidate acceptance record](docs/COMMUNITY-ACCEPTANCE.md) for observations,
-the exact package identity and observed limits. Scott determines which human
-trials are required; they are not additional engineering release gates.
+## Start here
 
-- [QuorumRelay connector configuration and limits](docs/CONNECTORS.md)
-- [Product specification](docs/SPEC.md)
-- [Decisions](docs/DECISIONS.md)
+- [User manual — operators and residents](docs/USER-MANUAL.md)
+- [Windows installation, daily operation and recovery](docs/WINDOWS-COMMUNITY-OPERATIONS.md)
+- [Technical manual — architecture, Mermaid diagrams and HTTP API](docs/TECHNICAL-MANUAL.md)
+- [Supported connector capabilities and limits](docs/CONNECTORS.md)
+- [Exact candidate acceptance and evidence](docs/COMMUNITY-ACCEPTANCE.md)
 
-## Why it runs on your computer
+## Current delivery
 
-YouTube blocks data-center access to meeting captions.
-A home connection works, so TownRecord runs on your own computer.
+The bounded Windows community-record candidate passed acquisition from two public
+bodies, operator/resident workflows, full local transcription, TownReporter browser
+handoff, scheduling and backup/restore. These observations do not establish all
+providers, certified transcript accuracy or the broader specification's backlog.
+The [completion handoff](docs/COMMUNITY-COMPLETION-HANDOFF.md) records exact identities.
+**Tagging, release publication and website deployment await Scott's approval.**
+There is no published MSI or hosted TownRecord service claimed here.
 
-## Stack
+## How it works
 
-- A Python core.
-- A TypeScript browser interface served by the Python core.
-- SQLite for the database.
-- Windows first. macOS later.
+1. Collect documents and available text from configured, supported meeting sources.
+2. Check metadata, associations, source links and gaps before publishing.
+3. Let residents browse, filter, search and follow recording timestamps.
+4. Review and republish corrections; withdraw public access when needed.
+5. Export published evidence JSON to TownReporter as an unpublished lead.
 
-## Relation to TownReporter
+Private acquisition and public snapshots are separate. Machine transcripts remain
+provisional. Source access and captions depend on the publisher and network;
+a home connection is not a guarantee of access. Local transcription uses Whisper
+small through TextFlowKit; see the [comparison](docs/TRANSCRIPTION-COMPARISON.md).
+TownReporter is a separate product, not a bundled service or automatic publisher.
 
-TownReporter is a separate product.
-TownRecord offers a public local API.
-TownReporter, or anyone else, can use it.
+## Development and website
+
+Python service, strict TypeScript browser interface, SQLite and local artifacts.
+No Tauri runtime. Operators do not need Node; contributors use Node to compile UI.
+
+```powershell
+npm ci
+npm run build:ui
+npm run build:site
+npm run preview:site
+```
+
+Preview the built landing page at `http://127.0.0.1:18320/townrecord/`.
+The [website guide](docs/SITE.md) describes its design, source files and manual-only
+GitHub Pages deployment. The site is prepared, not yet publicly deployed.
+See the technical manual for Python setup, tests, package builds and API access.
+
+The [broader specification](docs/SPEC.md) remains a reference and backlog;
+[decisions](docs/DECISIONS.md) preserve architecture context. Report reproducible
+problems or propose bounded improvements in [Issues](https://github.com/scottconverse/townrecord/issues).
 
 ## License
 
-Apache-2.0. See [LICENSE](LICENSE).
-
-## Community record workflow
-
-The [community workflow](docs/COMMUNITY-WORKFLOW.md) adds operator review and
-explicit publication to the existing acquisition service. Resident pages expose
-reviewed snapshots; private acquisition data still requires authorization.
-See [implementation state](docs/COMMUNITY-RECORD-STATE.md) for passed evidence
-and remaining acceptance work. This branch is not a published release.
-
-Windows operator installation, scheduling and verified backup/restore instructions
-are in [Windows community operations](docs/WINDOWS-COMMUNITY-OPERATIONS.md).
-The [transcription comparison](docs/TRANSCRIPTION-COMPARISON.md) records the
-Whistle/Whisper results and why this candidate explicitly selects Whisper small.
-
-Interface design and stack: [Community interface design](docs/COMMUNITY-INTERFACE-DESIGN.md).
-Developers run `npm ci` and `npm run build:ui` before building the Python wheel.
-Operators use the packaged browser asset and do not need Node.
+[Apache-2.0](LICENSE).

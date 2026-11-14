@@ -7,7 +7,8 @@ Install uv (https://docs.astral.sh/uv/), then run these commands in this folder.
 - `uv run ruff check` and `uv run ruff format --check` check the code.
 - `uv run python -m townrecord.api` runs the API on 127.0.0.1:8190. Set
   `TOWNRECORD_PORT` to change the port. Private API paths need a bearer token, including
-  `/docs`. Add a token with `townrecord.api.tokens.create_token`.
+  `/docs`. Create a named token with `uv run townrecord token create --name Operator --scope write`
+  using the same profile settings.
 
 Shared source configuration, account reads, private credentials, queued jobs, evidence limits and the current pinned candidate are documented in [QuorumRelay connectors](../docs/CONNECTORS.md). No separate Townlight Runtime or connector service is required.
 
@@ -19,4 +20,6 @@ For operation with workers and scheduled retrieval, use `townrecord serve`, not
 the API-only development command above. Follow [Windows community
 operations](../docs/WINDOWS-COMMUNITY-OPERATIONS.md) for installation, named operator
 tokens, configuration and verified backup/restore. The exact tested package and
-remaining acceptance are in [Community acceptance](../docs/COMMUNITY-ACCEPTANCE.md).
+observed acceptance limits are in [Community acceptance](../docs/COMMUNITY-ACCEPTANCE.md).
+
+Full guides: [User manual](../docs/USER-MANUAL.md) · [Technical manual and architecture](../docs/TECHNICAL-MANUAL.md).
