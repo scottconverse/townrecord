@@ -59,5 +59,5 @@ human accuracy certification or completion of the wider specification.
 See the [user manual](USER-MANUAL.md), [technical manual](TECHNICAL-MANUAL.md) and
 [acceptance record](COMMUNITY-ACCEPTANCE.md) for instructions and exact evidence.
 An independent operator/resident trial remains a suggestion; Scott defines any
-required human work. Tagging, release publication and website deployment are held
-for Scott's approval.
+required human work. Scott approved publication of the exact tested candidate on
+November 13, 2026. [TownRecord 0.1.0 community preview](https://github.com/scottconverse/townrecord/releases/tag/v0.1.0).

@@ -7,6 +7,8 @@ review and publish a snapshot, and gives residents a searchable record with link
 back to the source. It is free, open-source community infrastructure in the
 [Townlight](https://github.com/townlight) family.
 
+[Website](https://scottconverse.github.io/townrecord/) · [Download 0.1.0 community preview](https://github.com/scottconverse/townrecord/releases/tag/v0.1.0)
+
 ## Start here
 
 - [User manual — operators and residents](docs/USER-MANUAL.md)
@@ -22,8 +24,9 @@ bodies, operator/resident workflows, full local transcription, TownReporter brow
 handoff, scheduling and backup/restore. These observations do not establish all
 providers, certified transcript accuracy or the broader specification's backlog.
 The [completion handoff](docs/COMMUNITY-COMPLETION-HANDOFF.md) records exact identities.
-**Tagging, release publication and website deployment await Scott's approval.**
-There is no published MSI or hosted TownRecord service claimed here.
+**TownRecord 0.1.0 community preview is published from the exact tested wheel.**
+Download the wheel and source archive together; follow the Windows guide.
+This release is a Python service package, not an MSI or hosted TownRecord service.
 
 ## How it works
 
@@ -53,7 +56,7 @@ npm run preview:site
 
 Preview the built landing page at `http://127.0.0.1:18320/townrecord/`.
 The [website guide](docs/SITE.md) describes its design, source files and manual-only
-GitHub Pages deployment. The site is prepared, not yet publicly deployed.
+GitHub Pages deployment. The public site is at https://scottconverse.github.io/townrecord/.
 See the technical manual for Python setup, tests, package builds and API access.
 
 The [broader specification](docs/SPEC.md) remains a reference and backlog;
