@@ -1,4 +1,4 @@
-Current corrected candidate: [3a247d8 receipts](candidate-3a247d8/). Build, required CI, corrected outer signing and independent verification passed; corrected installed acceptance remains pending. The receipts below describe the earlier 02b candidate, which subsequently failed CRT-loading and desktop storage checks and was retired. They retain their historical identities and are not final acceptance evidence.
+Current corrected candidate: [3a247d8 receipts](candidate-3a247d8/). Build, required CI, corrected outer signing and independent verification passed; bounded installed acceptance and public verification are complete. The receipts below describe the earlier 02b candidate, which subsequently failed CRT-loading and desktop storage checks and was retired. They retain their historical identities and are not final acceptance evidence.
 
 # Windows 0.2.0 build and signing evidence
 
@@ -37,3 +37,5 @@ No private profiles, credentials, databases, token material or raw full logs are
 included. Prior v0.1.0 acquisition, full transcription and TownReporter evidence
 remains historical in the [acceptance record](../../COMMUNITY-ACCEPTANCE.md).
 The new candidate needs its own clean installed/runtime/recovery observations.
+
+[Final verified public delivery](candidate-3a247d8/PUBLIC-DELIVERY.md) supersedes capture-time pending status in immutable JSON checkpoints.

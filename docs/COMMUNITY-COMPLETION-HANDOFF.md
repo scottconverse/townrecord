@@ -36,11 +36,23 @@ are absent, API access is closed after uninstall, and the owned guest was stoppe
 with live Sandbox inventory empty. Private recovery files and database integrity
 were verified separately and remain excluded from public receipts.
 
-Public 0.2.0 release, merge/tag, site deployment and
-post-delivery verification remain pending. [PR49](https://github.com/scottconverse/townrecord/pull/49)
-is open. Download links in the manuals are prepared for publication, not evidence
-that an asset is already public. Do not repeat completed acquisition/model jobs
-or rebuild unchanged signed application bytes for documentation edits.
+[PR49](https://github.com/scottconverse/townrecord/pull/49) merged at
+`73f282e8e45679b1d539adf8194706782e01f98c` after final CI 43576964924 passed.
+Post-merge CI 43577345645 also passed. [v0.2.0](https://github.com/scottconverse/townrecord/releases/tag/v0.2.0)
+was published at 2026-11-14T08:45:53Z as a community-preview pre-release, with 29 assets
+and exact 3a application/packaging tag. All 29 assets were downloaded anonymously:
+HTTP 200, 243,662,812 bytes, all 28 checksum entries matched and manifest identity
+verified. Downloaded installer signature/timestamp passed; source ZIP 365-file
+Git-tree/archive reproduction passed. Pages 43577354304 deployed main 73f282e,
+and anonymous live HTTP 200 confirmed the exact Windows download link. Public
+verification completed 08:50:54Z. [Delivery receipt](evidence/windows-0.2.0/candidate-3a247d8/PUBLIC-DELIVERY.md).
+
+The temporary signing-intake draft/helper branch were removed only after identity
+verification; public artifacts and recovery evidence remain intact. Existing v0.1.0
+and its nine assets remain unchanged. Final documentation/Big Picture copies use
+absolute maintained GitHub links; the coordinator updates existing Project sources
+in place. No further product build, model job or acceptance run is required.
+
 
 The installer includes bundled Python/FFmpeg, a pinned signed TextFlowKit seed
 without model weights, app-local Microsoft CRT files and process-scoped certifi

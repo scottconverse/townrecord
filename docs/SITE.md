@@ -53,12 +53,19 @@ The technical manual includes architecture, publication and recovery diagrams.
 ## Public deployment
 
 Public URL: https://scottconverse.github.io/townrecord/
-Prepared 0.2.0 release: https://github.com/scottconverse/townrecord/releases/tag/v0.2.0
-Prepared direct download: https://github.com/scottconverse/townrecord/releases/download/v0.2.0/TownRecord-0.2.0-windows-x64-setup.exe
+0.2.0 release: https://github.com/scottconverse/townrecord/releases/tag/v0.2.0
+Direct download: https://github.com/scottconverse/townrecord/releases/download/v0.2.0/TownRecord-0.2.0-windows-x64-setup.exe
 
-The signed 0.2.0 installer completed bounded installed acceptance. Publication,
-Pages deployment and post-delivery verification remain pending; this file does
-not claim they occurred. The existing
+The signed 0.2.0 installer completed bounded installed acceptance and was
+published at 2026-11-14T08:45:53Z as a community-preview pre-release. PR49 merged at
+`73f282e8e45679b1d539adf8194706782e01f98c` after final CI 43576964924 passed.
+Manual Pages run 43577354304 passed from that commit. Anonymous HTTP 200 at 08:47:05Z
+verified the actual Windows setup download link and no stale preparation wording.
+Live HTML SHA256: `a9cf7ec2fc0214aa2d9192e3fd8be8d20f9c28a67e6db8151972ac502e7bff8c`.
+Anonymous verification of all 29 release assets passed at 08:50:54Z: 28 checksum
+entries and independent manifest identity matched; downloaded installer signature
+and source archive reproduction passed. [Delivery receipt](evidence/windows-0.2.0/candidate-3a247d8/PUBLIC-DELIVERY.md).
+The existing
 [v0.1.0 release](https://github.com/scottconverse/townrecord/releases/tag/v0.1.0)
 and historical November13 publication/site evidence remain unchanged.
 
