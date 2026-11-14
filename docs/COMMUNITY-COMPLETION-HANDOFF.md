@@ -80,17 +80,42 @@ The Big Picture Project has nine verified sources, including this handoff, the
 interface design and updated candidate acceptance. Existing file identities and
 sharing were preserved.
 
-## Documentation and website follow-up — in progress
+## Documentation and website delivery — November 13
 
-Authorized November 13: complete user and technical manuals with Mermaid diagrams,
-correct README and stale maintained docs, build and visually verify a landing page,
-push and merge, and add the updated documents to The Big Picture Project sources.
-Post-merge implementation CI 43521706630 passed for merge 0f2ae54;
-PR44 added the handoff on main ff4a8ea without changing product code.
-The accepted wheel remains unchanged. Tagging, release publication and website
-deployment are held for Scott. No test service is currently running.
-Prepared: USER-MANUAL.md, TECHNICAL-MANUAL.md (four Mermaid diagrams across
-the manuals), SITE.md, static site and manual-only deployment workflow. README
-and stale workflow wording corrected. Build, 41 relative docs links, desktop/
-tablet/mobile review, keyboard navigation and text contrast passed. Preview
-was stopped. Remaining: CI/merge, rendered diagrams and Big Picture additions.
+[PR45](https://github.com/scottconverse/townrecord/pull/45) merged at
+`ffbd012d7b830cb09e3d9185dbd9ef6f6fa2e517` after all existing jobs passed in
+[CI43532515496](https://github.com/scottconverse/townrecord/actions/runs/43532515496),
+including the Windows TypeScript compile and new static website build.
+[Post-merge CI43533143321](https://github.com/scottconverse/townrecord/actions/runs/43533143321)
+is the automatic main-branch verification for that merge.
+
+Delivered documents: [User manual](USER-MANUAL.md), [technical manual](TECHNICAL-MANUAL.md),
+[website design/build/deploy guide](SITE.md), corrected README, workflow, core README
+and interface-design links. Four Mermaid diagrams render on GitHub. The new manuals
+cover new operators, residents, technical architecture, HTTP/API access and recovery.
+The source-access guarantee and stale implementation-in-progress wording are removed.
+
+The static landing page is in `site/`; `npm run build:site` produces `dist/site`.
+It uses the existing application palette and a real acceptance screenshot.
+Build and nine local links/assets/anchors passed; 41 relative documentation links
+resolved. Ten unique external page URLs returned HTTP200 after the merge.
+Desktop/tablet/mobile review passed at effective CSS widths1309/698/355 (existing
+browser zoom preserved): no horizontal overflow, image loaded, anchors worked and
+keyboard focus was visible. Text contrast was at least6.4:1. All diagrams were
+checked in GitHub's actual renderer; a sequence delimiter defect was corrected.
+
+The Big Picture Project now has13 sources. The user manual, technical manual,
+website guide and README were added to **Project sources**, not just the supporting
+folder. Its existing interface-design and completion-handoff documents were updated.
+Drive copies use absolute GitHub links. Project URL:
+https://drive.google.com/drive/u/0/project/1oOMbBp0vHKu_c6bOzqlojqQbDwxNvhoT
+
+Local evidence: `landing-desktop.png`, `landing-tablet.png`, `landing-mobile.png`
+and `big-picture-manuals-sources.png` in the existing acceptance output folder.
+The loopback website preview/session31172 was stopped, port18320 is clear, browser
+viewport reset and owned tabs closed. No application profile or VM was started.
+The superseded PR run43532395907 was cancelled; the final-head run passed.
+
+**Remaining authorization:** Scott's approval to tag/publish the package and deploy
+its website. The Pages workflow is manual-only and has not been dispatched. The
+accepted wheel is unchanged. No additional implementation or human trial is imposed.

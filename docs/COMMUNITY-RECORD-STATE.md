@@ -42,7 +42,7 @@ PR43 merged at0f2ae54632d3a234626f353311a93de81bbcde57 after final-head
 CI43520915463 passed all existing jobs, including Windows. Engineering items1–6
 are complete. This documentation follow-up records the merge without rebuilding.
 Final handoff, design and updated acceptance are verified sources in the actual
-Big Picture Project (nine sources). Hold tagging/publication for Scott.
+Big Picture Project (now thirteen sources including the documentation follow-up). Hold tagging/publication for Scott.
 See COMMUNITY-COMPLETION-HANDOFF.md for the next agent's starting point.
 
 ## Ownership and limits
@@ -55,15 +55,15 @@ Independent community trials are suggested, not mandatory until Scott says so.
 No genuinely new post-setup publisher meeting or human transcript certification
 is claimed. Historical live retrieval and synthetic lifecycle tests are distinct.
 
-## Documentation follow-up (November 13)
+## Documentation delivery (November 13)
 
-User and technical manuals, four Mermaid diagrams, corrected README/workflow and
-static landing page are prepared on `docs/community-manuals-site`.
-Build and 41 relative documentation links passed. Desktop/tablet/mobile browser
-review passed: effective CSS widths 1309/698/355 (browser zoom preserved), no
-horizontal overflow, image loaded, navigation and visible keyboard focus worked.
-Text contrast ratios are 6.4:1 or higher. Local preview session 31172 stopped;
-no product service/profile was opened. Screenshots are in the existing local
-acceptance output folder as landing-desktop/tablet/mobile.png.
-Remaining: required CI and merge, GitHub manual/diagram verification, updated
-Big Picture Project sources. Tagging and publishing remain held for Scott.
+PR45 merged at ffbd012d7b830cb09e3d9185dbd9ef6f6fa2e517 after all existing CI
+jobs passed in run43532515496. Automatic post-merge run:43533143321.
+User and technical manuals, four verified Mermaid diagrams, corrected README/
+workflow and static landing page are on main. Build, local/remote links, responsive
+browser review and keyboard focus passed. Full details: COMMUNITY-COMPLETION-HANDOFF.md.
+Big Picture has13 verified Project sources, including the new manuals/site guide/README.
+Its existing design and handoff documents were updated. Preview stopped, port18320
+clear, browser tabs closed, viewport restored. No product profile or VM started.
+Next action requires Scott's approval: tagging/release and website deployment.
+No product rebuild, additional engineering requirement or human trial is imposed.
