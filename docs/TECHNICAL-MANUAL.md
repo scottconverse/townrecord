@@ -158,7 +158,7 @@ sequenceDiagram
   O->>N: Import file in Sources & scan
   N-->>O: Unpublished New lead
   O->>N: Import same instance / meeting / revision
-  N-->>O: Existing lead; newsroom edits preserved
+  N-->>O: Existing lead with newsroom edits preserved
 ```
 
 Snapshots separate acquisition from publication. Corrections and association
