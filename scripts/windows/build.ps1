@@ -138,7 +138,11 @@ try {
     Invoke-Checked (Join-Path $payload 'tools/ffprobe.exe') @('-version')
     Invoke-Checked $python @('-I',(Join-Path $PSScriptRoot 'verify_payload.py'),$payload)
     $manifest = Get-ChildItem $payload -File -Recurse | Sort-Object FullName | ForEach-Object {
-        [ordered]@{ path = $_.FullName.Substring($payload.Length + 1).Replace('\','/'); size = $_.Length; sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
+        # Windows PowerShell 5's path resolver rejects long Torch filenames.
+        $stream = [IO.File]::OpenRead('\\?\' + $_.FullName)
+        try {
+            [ordered]@{ path = $_.FullName.Substring($payload.Length + 1).Replace('\','/'); size = $_.Length; sha256 = (Get-FileHash -InputStream $stream -Algorithm SHA256).Hash.ToLowerInvariant() }
+        } finally { $stream.Dispose() }
     }
     $manifest | ConvertTo-Json -Depth 4 | Set-Content (Join-Path $payload 'payload-manifest.json')
     $receipt.payload_manifest_sha256 = (Get-FileHash (Join-Path $payload 'payload-manifest.json') -Algorithm SHA256).Hash.ToLowerInvariant()
