@@ -89,13 +89,15 @@ try {
     Invoke-Checked $uv @('export','--project',(Join-Path $repo 'core'),'--frozen','--no-dev','--no-emit-project','--no-editable','--quiet','--format','requirements-txt','--output-file',$requirements)
     Push-Location (Join-Path $repo 'core')
     try {
-        Invoke-Checked $uv @('pip','install','--python',$python,'--no-config','--no-deps','--require-hashes','--only-binary',':all:','--requirements',$requirements)
+        # This is the disposable payload copy, never the managed source or a
+        # global interpreter. uv's external-management marker is retained.
+        Invoke-Checked $uv @('pip','install','--python',$python,'--break-system-packages','--no-config','--no-deps','--require-hashes','--only-binary',':all:','--requirements',$requirements)
         $wheelDir = Join-Path $work 'wheels'
         Remove-BuildTree $wheelDir
         Invoke-Checked $uv @('build','--wheel','--python',$python,'--build-constraint',(Join-Path $PSScriptRoot 'build-constraints.txt'),'--out-dir',$wheelDir)
         $wheel = @(Get-ChildItem $wheelDir -Filter '*.whl')
         if ($wheel.Count -ne 1) { throw 'Expected exactly one application wheel' }
-        Invoke-Checked $uv @('pip','install','--python',$python,'--no-deps',$wheel[0].FullName)
+        Invoke-Checked $uv @('pip','install','--python',$python,'--break-system-packages','--no-deps',$wheel[0].FullName)
         $receipt.wheel_sha256 = (Get-FileHash $wheel[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
     } finally { Pop-Location }
     $ffmpeg = @(Get-ChildItem (Join-Path $cache 'ffmpeg') -Directory)[0].FullName
@@ -122,13 +124,15 @@ try {
     $manifest | ConvertTo-Json -Depth 4 | Set-Content (Join-Path $payload 'payload-manifest.json')
     $receipt.payload_manifest_sha256 = (Get-FileHash (Join-Path $payload 'payload-manifest.json') -Algorithm SHA256).Hash.ToLowerInvariant()
     $version = (& $python -I -c 'import townrecord; print(townrecord.__version__)').Trim()
-    $compilerVersion = (Get-Item $Compiler).VersionInfo.ProductVersion
-    if (!$compilerVersion.StartsWith($pins.compiler.version)) { throw "Unexpected compiler version: $compilerVersion" }
-    Invoke-Checked $Compiler @("/DPayloadDir=$payload","/DOutputDir=$output","/DAppVersion=$version",(Join-Path $repo 'installer/townrecord.iss'))
+    # ISCC file metadata can be 0.0.0.0. The script verifies the compiler's
+    # actual ISPP VER value against this pin before compiling any files.
+    $compilerVersion = $pins.compiler.version
+    Invoke-Checked $Compiler @("/DPayloadDir=$payload","/DOutputDir=$output","/DAppVersion=$version","/DExpectedCompilerVersion=$compilerVersion",(Join-Path $repo 'installer/townrecord.iss'))
     $installer = Join-Path $output "TownRecord-$version-windows-x64-setup.exe"
     $receipt.phase = 'built_unsigned'; $receipt.installer = $installer
     $receipt.installer_sha256 = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant()
     $receipt.compiler_version = $compilerVersion
+    $receipt.compiler_sha256 = (Get-FileHash $Compiler -Algorithm SHA256).Hash.ToLowerInvariant()
     $receipt.lock_sha256 = (Get-FileHash (Join-Path $repo 'core/uv.lock') -Algorithm SHA256).Hash.ToLowerInvariant()
     $receipt.completed_utc = [DateTime]::UtcNow.ToString('o')
 } catch {

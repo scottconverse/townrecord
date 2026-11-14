@@ -7,6 +7,12 @@
 #ifndef AppVersion
   #define AppVersion "0.2.0"
 #endif
+#ifndef ExpectedCompilerVersion
+  #define ExpectedCompilerVersion "6.7.3"
+#endif
+#if DecodeVer(VER) != ExpectedCompilerVersion
+  #error The compiler version does not match the pinned packaging toolchain
+#endif
 
 [Setup]
 AppId={{46ECEE68-85B7-4D93-B8A0-49BF6E61958F}
