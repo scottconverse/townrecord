@@ -203,6 +203,7 @@ def test_backup_waits_for_workers_and_keeps_launcher_claim(tmp_path, monkeypatch
     class Server:
         def __init__(self, config):
             self.host = config.app.state.desktop
+            assert windows.Settings.from_env() == self.host.settings
 
         def run(self, sockets):
             if "backup" not in calls:
@@ -217,6 +218,9 @@ def test_backup_waits_for_workers_and_keeps_launcher_claim(tmp_path, monkeypatch
         assert serving.is_running(root / "desktop")
         assert calls[-2:] == ["stopped", "closed"]
         calls.append("backup")
+        windows.write_json(
+            root / "config.json", {"time_zone": "America/Denver", "daily_time": "07:45"}
+        )
 
     monkeypatch.setattr(windows, "operator_credential", lambda *_: "test-token")
     monkeypatch.setattr(windows, "bound_socket", lambda *_: Mock())
@@ -249,3 +253,123 @@ def test_desktop_ca_bundle_is_verified_default_and_explicit_override_is_preserve
     monkeypatch.setenv("SSL_CERT_FILE", "C:/operator/explicit-ca.pem")
     windows.configure_path()
     assert allowed_environment()["SSL_CERT_FILE"] == "C:/operator/explicit-ca.pem"
+
+
+def test_desktop_connector_download_can_be_published_from_custom_profile(tmp_path, monkeypatch):
+    import json
+
+    from civic_data_connectors import create_engine
+    from civic_data_connectors.providers import Response
+
+    from townrecord import connectors, records
+    from townrecord.config import Settings
+    from townrecord.connector_storage import AppStorage
+    from townrecord.jobs import Registry, Runner
+
+    root = tmp_path / "Desktop"
+    profile = root / "custom-profile"
+    windows.write_json(
+        root / "config.json",
+        {
+            "profile": str(profile),
+            "time_zone": "America/Denver",
+            "daily_time": "07:45",
+            "test_video_url": "https://example.com/known-video",
+        },
+    )
+    for key in windows.settings_environment(Settings()):
+        monkeypatch.setenv(key, "stale-desktop-environment")
+    origin = "https://synthetic.escribemeetings.com"
+
+    class Network:
+        def request(self, url, **options):
+            if options.get("method") == "POST":
+                meeting = {
+                    "ID": "42",
+                    "MeetingName": "City Council",
+                    "StartDate": "2026/09/08 19:00:00",
+                    "Url": "/Meeting.aspx?Id=42",
+                    "MeetingDocumentLink": [
+                        {"Type": "Agenda", "Title": "Agenda", "Url": "/agenda.txt"}
+                    ],
+                }
+                return Response(url, json.dumps({"d": [meeting]}).encode(), "application/json")
+            assert url == origin + "/agenda.txt"
+            return Response(url, b"Custom desktop profile agenda.", "text/plain")
+
+    monkeypatch.setattr(
+        connectors,
+        "engine_for",
+        lambda conn, **kw: create_engine(
+            storage=AppStorage(conn), provider_transport=Network(), **kw
+        ),
+    )
+
+    def credential(_root, settings):
+        with contextlib.closing(windows._open_database(settings.db_path)) as conn:
+            return create_token(conn, "Desktop", "read_write")
+
+    class Server:
+        def __init__(self, config):
+            self.app = config.app
+
+        def run(self, sockets):
+            host = self.app.state.desktop
+            assert Settings.from_env() == host.settings
+            headers = {"Authorization": f"Bearer {host.token}"}
+            with TestClient(self.app) as client:
+                body = client.post(
+                    "/v1/operator/bodies",
+                    headers=headers,
+                    json={"community": "Example", "body": "City Council"},
+                )
+                assert body.status_code == 201, body.text
+                source = client.post(
+                    "/v1/operator/sources",
+                    headers=headers,
+                    json={
+                        "jurisdiction_id": body.json()["jurisdiction_id"],
+                        "url": origin,
+                        "provider": "escribe",
+                        "download_origins": [],
+                        "date_from": "2026-09-08",
+                        "date_to": "2026-09-08",
+                    },
+                )
+                assert source.status_code == 201, source.text
+                source_id = source.json()["source_id"]
+                queued = client.post(f"/v1/operator/sources/{source_id}/sync", headers=headers)
+                assert queued.status_code == 202, queued.text
+                registry = Registry()
+                records.register_jobs(registry)
+                runner = Runner(host.settings.db_path, registry=registry)
+                for lane in ("normal", "heavy", "normal"):
+                    while runner.run_once(lane) is not None:
+                        pass
+                meetings = client.get("/v1/operator/meetings", headers=headers).json()
+                assert len(meetings) == 1
+                meeting_id = meetings[0]["id"]
+                snapshot = client.get(f"/v1/operator/meetings/{meeting_id}", headers=headers).json()
+                document = snapshot["detail"]["meeting"]["documents"][0]
+                file = client.get(f"/v1/records/{document['id']}/file", headers=headers)
+                assert file.status_code == 200, file.text
+                assert file.content == b"Custom desktop profile agenda."
+                published = client.post(
+                    f"/v1/operator/meetings/{meeting_id}/publish",
+                    headers=headers,
+                    json={"reason": "Reviewed source"},
+                )
+                assert published.status_code == 200, published.text
+                assert client.get(f"/public/v1/meetings/{meeting_id}").status_code == 200
+                assert list((profile / "storage").glob("record-*"))
+            host.action = "stop"
+
+    monkeypatch.setattr(windows, "operator_credential", credential)
+    monkeypatch.setattr(windows, "bound_socket", lambda *_: Mock())
+    monkeypatch.setattr(windows, "build_service", lambda *_: Mock())
+    monkeypatch.setattr(windows.uvicorn, "Server", Server)
+    assert windows.run(root, open_browser=False) == 0
+    assert all(
+        os.environ[key] == "stale-desktop-environment"
+        for key in windows.settings_environment(Settings())
+    )

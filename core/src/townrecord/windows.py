@@ -95,6 +95,18 @@ def load_settings(root: Path) -> Settings:
     )
 
 
+def settings_environment(settings: Settings) -> dict[str, str]:
+    """Give legacy environment-based handlers the selected desktop profile."""
+    return {
+        "TOWNRECORD_DB": str(settings.db_path),
+        "TOWNRECORD_STORAGE": str(settings.storage_root),
+        "TOWNRECORD_RUNTIME_ROOT": str(settings.runtime_root),
+        "TOWNRECORD_TIME_ZONE": settings.time_zone,
+        "TOWNRECORD_DAILY_TIME": settings.daily_time.strftime("%H:%M"),
+        "TOWNRECORD_TEST_VIDEO": settings.test_video_url,
+    }
+
+
 def operator_credential(root: Path, settings: Settings) -> str:
     path = root / "operator.dpapi"
     token = protect(path.read_bytes(), decrypt=True).decode() if path.exists() else None
@@ -206,9 +218,13 @@ def run(root: Path, *, open_browser: bool) -> int:
     launcher = serving.ServiceLock.acquire(root / "desktop")
     if not launcher.held:
         return contact(root, "open" if open_browser else "start")
+    previous_environment = {key: os.environ.get(key) for key in settings_environment(Settings())}
     try:
         while True:
             settings = load_settings(root)
+            # Some connector handlers still obtain settings from the process.
+            # Rebind after every restart, including a restored profile switch.
+            os.environ.update(settings_environment(settings))
             token = operator_credential(root, settings)
             listener = bound_socket(settings.host, settings.port)
             desktop = Desktop(root, settings, token)
@@ -277,6 +293,11 @@ def run(root: Path, *, open_browser: bool) -> int:
     finally:
         (root / "desktop-service.json").unlink(missing_ok=True)
         launcher.release()
+        for key, value in previous_environment.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
 
 def contact(root: Path, command: str) -> int:
