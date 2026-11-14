@@ -9,7 +9,7 @@ snapshot with original sources. It does not create certified minutes or answer
 questions with AI. Townlight is the umbrella; TownReporter is a separate consumer.
 
 The primary action is **Read the user manual**, followed by the Windows setup
-guide. This candidate has no published installer to advertise. Engineering links
+guide. The 0.1.0 community preview is a Python wheel, not an MSI. Engineering links
 lead to the technical manual, source and exact acceptance record.
 
 The static site extends the application's existing palette: ink `#153344`, paper
@@ -44,14 +44,17 @@ at `/townrecord/` and at a domain root. There are no client-side routes. The
 manuals link to maintained GitHub Markdown, where Mermaid renders natively.
 The technical manual includes architecture, publication and recovery diagrams.
 
-## Publication is held
+## Public deployment
 
-The `Publish website` Actions workflow is **manual only**. It is not triggered by
-push or merge. After Scott approves website publication, configure GitHub Pages
-to use GitHub Actions, then run that workflow from the approved main commit.
-It builds and uploads `dist/site/` and deploys through the Pages environment.
-Expected URL: https://scottconverse.github.io/townrecord/ — not claimed live yet.
-This deploys documentation only; it does not tag or publish the Python package.
+Scott approved release publication and website deployment on November 13, 2026.
+Public URL: https://scottconverse.github.io/townrecord/
+Release: https://github.com/scottconverse/townrecord/releases/tag/v0.1.0
+
+The `Publish website` Actions workflow remains **manual only**. GitHub Pages uses
+GitHub Actions. Run that workflow from an approved main commit for future site
+updates. It builds `dist/site/` and deploys through the Pages environment.
+Relative asset paths work under `/townrecord/`. It does not tag or publish the
+Python package. Release assets retain the tested wheel and source identity.
 
 ## Verification record
 

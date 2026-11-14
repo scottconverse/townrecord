@@ -10,7 +10,8 @@ Windows community-record candidate, not every feature in the wider specification
 for the person running the service; [resident instructions](#for-residents) for
 readers; [technical manual](TECHNICAL-MANUAL.md) for developers and IT.
 The [acceptance record](COMMUNITY-ACCEPTANCE.md) identifies the exact tested
-package. Tagging, release publication and website deployment await Scott's approval.
+package. [Download the 0.1.0 community preview](https://github.com/scottconverse/townrecord/releases/tag/v0.1.0).
+Scott approved publication of the unchanged tested candidate on November 13, 2026.
 
 ## Before the first meeting
 

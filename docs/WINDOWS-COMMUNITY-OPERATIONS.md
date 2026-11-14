@@ -1,22 +1,34 @@
 # Windows community-record operation
 
-This is the bounded Python community-record service and TypeScript browser interface.
-Tagging, downloadable
-release publication and public deployment require Scott's approval.
+This is the Python community-record service and TypeScript browser interface.
+[Download TownRecord 0.1.0 community preview](https://github.com/scottconverse/townrecord/releases/tag/v0.1.0).
+Scott approved publication of the exact tested candidate on November 13, 2026.
 
-## Install the reviewed revision
+## Install the released package
 
-Use a dedicated Windows account/profile and a supported Python 3.12 or newer,
-Git, uv and FFmpeg on PATH. FFmpeg is needed for local audio transcription;
-it is not supplied by a browser or by the TownRecord wheel. Do not use a city
-production profile for evaluation. Keep the reviewed source checkout to preserve
-the pinned QuorumRelay wheel and uv lockfile.
+Use a dedicated Windows account/profile, Python 3.12 or newer, uv and FFmpeg on
+PATH. FFmpeg is needed for local transcription and is not supplied by the wheel.
+Use an evaluation profile first. Download these three release assets into the same
+working directory: `TownRecord-0.1.0-source.zip`,
+`townrecord-0.1.0-py3-none-any.whl`, and `SHA256SUMS.txt`.
+Compare `Get-FileHash` results with the checksum file before extraction/install.
+The wheel SHA-256 must be
+`9cab2e58d36b3024caa095815854ae5d2d367708e3dba2ac6b539e0f17d2b5ce`.
+
+The source archive includes the lockfile and vendored QuorumRelay dependency.
+The commands install those locked dependencies, then the exact release wheel;
+they do not rebuild TownRecord or substitute the current main branch.
+Keep the archive checkout for future dependency setup. Internet access is needed
+for dependencies, source retrieval and initial managed-tool/model downloads.
 
 ```powershell
-git clone https://github.com/scottconverse/townrecord.git
-Set-Location townrecord
-# Check out the exact reviewed commit named in the acceptance/handoff record.
-uv sync --project core --frozen --no-dev
+Get-FileHash .\TownRecord-0.1.0-source.zip -Algorithm SHA256
+Get-FileHash .\townrecord-0.1.0-py3-none-any.whl -Algorithm SHA256
+Get-Content .\SHA256SUMS.txt
+Expand-Archive .\TownRecord-0.1.0-source.zip -DestinationPath .
+Set-Location townrecord-0.1.0
+uv sync --project core --frozen --no-dev --no-install-project
+uv pip install --python core/.venv/Scripts/python.exe --no-deps ../townrecord-0.1.0-py3-none-any.whl
 $profileRoot = Join-Path $env:LOCALAPPDATA 'TownRecord-Community'
 New-Item -ItemType Directory -Force -Path $profileRoot | Out-Null
 $env:TOWNRECORD_DB = Join-Path $profileRoot 'townrecord.db'
