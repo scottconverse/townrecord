@@ -1,3 +1,5 @@
+Current corrected candidate: [3a247d8 receipts](candidate-3a247d8/). Build, required CI, corrected outer signing and independent verification passed; corrected installed acceptance remains pending. The receipts below describe the earlier 02b candidate, which subsequently failed CRT-loading and desktop storage checks and was retired. They retain their historical identities and are not final acceptance evidence.
+
 # Windows 0.2.0 build and signing evidence
 
 These receipts establish the prepared candidate's provenance, signing and required

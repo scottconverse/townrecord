@@ -1,86 +1,38 @@
 # Active Windows installer delivery — November 14, 2026
 
-Scott authorized implementation, signing, clean Windows acceptance, documentation,
-push, merge, tag and publication of TownRecord 0.2.0. Preserve published v0.1.0 and
-per-user data. Keep TypeScript/Python; no Tauri, new provider or update channel.
-Normal operators need no Python, commands or copied tokens. Root owns integration,
-acceptance and delivery; stay within the existing bounded completion contract.
+Scott authorized implementation, signing, clean Windows acceptance, documentation, push, merge, tag and publication of TownRecord 0.2.0. Preserve published v0.1.0 and per-user data. Keep TypeScript/Python; no Tauri, new provider or update channel. Normal operators need no Python, terminal commands or copied tokens. Root owns integration, acceptance and delivery within the existing bounded completion contract.
 
-## Candidate and passed evidence
+## Current corrected candidate
 
-Branch feat/windows-installer-020; PR49 remains unmerged.
+Branch `feat/windows-installer-020`; [PR49](https://github.com/scottconverse/townrecord/pull/49) remains open. No 0.2.0 merge, tag or publication is complete.
 
-- Application source: 4ca190e3449604488dd765a39f6f33e3d927604c.
-- Application wheel: townrecord-0.2.0-py3-none-any.whl; SHA256
-  4cd30b55bfb691a0fb849464855a2d8894110385455561e00f1abddcd3bff8d0.
-- Packaging source: 02b66993cb741c6d571f67d2031f7946c8b6b001.
-- Required CI43569493649 attempt2 PASSED all jobs. The earlier POSIX fixture
-  mismatch is corrected; unrelated Windows timing failure passed the rerun.
-- Full local runtime/CA suite: 1592 passed, 48 skipped; focused long-path/fixture
-  seed and manager checks: 25 passed. Ruff passed. Reuse unaffected evidence.
-- Native signing43569539324 PASSED 125 files. Returned signatures and executable
-  content were verified; upstream valid signatures were preserved. Overlay SHA256:
-  55ba405951af47eeb4bc60c4b9257db656fa28715cb3a742052a69749c5878e8.
-- Derived final signed-seed manifest SHA256:
-  0bf631371bf3247f35c1c80e28b341821899fcc0b667648270ede12bc404d41f.
-- Compilation PASSED from the 4ca application payload and 02b packaging source.
-  Unsigned outer installer: 221,365,875 bytes; SHA256
-  ac7e2d8e71ddd10724c4612060b77783577dde3e0ff756548ca3a1b2afcfc9cc.
-- Outer signing43570543904 is RUNNING. Final signed installer identity and
-  independent outer verification remain pending. Root owns dispatch/retrieval;
-  use outputs/townrecord-windows-020 job receipts for ownership/cancellation.
+- Application and packaging source: `3a247d8865f1692911f4bed15cae370410ec6d70`.
+- Wheel `townrecord-0.2.0-py3-none-any.whl`: SHA256 `88857f9b821e67a273bb5197356a2125a04fbfad3961124fb1da9e0ba8da0bec`.
+- Required [CI43573893300](https://github.com/scottconverse/townrecord/actions/runs/43573893300) PASSED all three platform jobs, including strict TypeScript/package verification on Windows.
+- Build and compilation PASSED. Unsigned outer SHA256 `8513c25113c857dd2c3e772c725c174af0d7ad172ebb53ce93dfdb24676e1063`, 221,849,525 bytes. This unsigned identity is not a deliverable signature claim.
+- Outer signing 43574774784 PASSED. Independent Scott Converse signature and Microsoft timestamp verification PASSED at 08:17:16 UTC. Signed installer SHA256 `e08a4f4447abb611a331cd7146df56493eb92f76bc14c9a660cb80fb9c3067a8`, 221,865,160 bytes. This is the corrected candidate; installed acceptance remains pending.
+- Unchanged native inputs reuse original signing 43569539324 through exact path/kind/target/hash/size checks. The new verified overlay is `c9a5ec586bfdeadf4f0723b4af3ad95f48d16b62ba8bab30f062b5973771ce2b`; original signing receipt identities are retained. Final derived seed manifest remains `0bf631371bf3247f35c1c80e28b341821899fcc0b667648270ede12bc404d41f`.
+- Curated current receipts: [candidate-3a247d8](evidence/windows-0.2.0/candidate-3a247d8/). Previous candidate receipts remain in the parent directory under their original identities. Staging is `outputs/townrecord-windows-020/release-staging-3a247d8`; it contains the exact verified signed installer, source, wheel, source/license archives and receipts. Earlier staging is preserved separately.
 
-The current candidate includes the observed first-run repairs: a pinned signed
-TextFlowKit 0.1.19/Whisper dependency seed, verified inventory/hashes and per-user
-copy, generated pyvenv.cfg for bundled Python, supported module invocation, native
-imports before activation, and Windows long-path copy/retry handling. Offline
-bootstrap records an unavailable online check honestly; later online checks,
-failed-update retention and rollback remain. No model weights are bundled.
-Desktop certifi CA defaults preserve explicit SSL_CERT_FILE overrides and pass the
-CA path to children without disabling TLS or changing shared connector code.
-These implementation/signing results do not establish final installed acceptance.
+The corrected candidate includes official pinned Microsoft-signed VC runtime 14.44.35211.0 files deployed beside bundled Python, with license/provenance and vendor signatures preserved. Desktop connector jobs bind to the configured desktop database/storage environment on every service start (source fix 7eb098e; 23 affected tests passed). No systemwide redistributable installation or TLS verification change is involved.
 
-## Guest ownership and historical diagnostics
+## Passed evidence and observed installed defects
 
-Live wsb inventory is empty: no guest or diagnostic job is running. Superseded
-guest 3bca7846-b403-4ac2-916e-b33763117c21 was stopped after TownRecord shutdown,
-verified recovery backup and preservation of 92 evidence files/private configuration.
-Retirement: outputs/townrecord-windows-020/retirement-497a1696.json. Archive:
-outputs/townrecord-windows-020/failed/497a1696/sandbox-evidence.
-Do not publish private profile/configuration, databases or token material.
+The previous 02b6699 candidate used application source 4ca190e and signed installer SHA256 `01af39b6984aea6c09770a5a864cb40d4de99aa161d6f4ea4b138d3af263f719`. Signing and independent verification passed. Clean Windows per-user installation, all 23,083 payload and 18,330 seed-file inventory checks, ordinary-user first-run configuration, browser/service bootstrap, live source retrieval and caption acquisition passed.
 
-Old 497a1696 / signed installer 547ce1 passed clean Install/Verify and headless
-first-run UI setup. Its actual tool jobs failed: unsigned TextFlowKit wrapper and
-NumPy/Torch/tiktoken native loads were blocked; source/video requests failed CA
-issuer lookup. Supported module-version and exact CA diagnostics established the
-repairs. Those observations belong to the retired candidate, not final acceptance.
+That installed candidate failed two required outcomes: managed TextFlowKit activation could not load Torch because Microsoft C++ dependencies were absent, and desktop publication/download used inconsistent storage roots. It is superseded, not accepted. PE imports and ordinary-user loader probes confirmed missing MSVCP140/VCRUNTIME140_THREADS, with additional MSVCP140_ATOMIC_WAIT/VCOMP dependencies. A clearly labeled diagnostic added only those four valid Microsoft-signed DLLs beside bundled Python. Exact TextFlowKit 0.1.19 version and Torch 2.15.0+cpu/Whisper 20250625 imports then passed through the managed environment and bundled Python. No model download/inference or service restart occurred; this cause proof does not establish corrected-installer acceptance.
 
-Remain headless while Scott uses the machine or occupancy is unknown. No visible
-app/browser/Sandbox windows or replacement guest before root verifies the exact
-final signed candidate. No Application Control or TLS policy was weakened.
+Previously passed unaffected runtime/CA/long-path and security/lifecycle evidence is retained. The first-run signed seed, supported module invocation, offline bootstrap with honest online-check status, update retention/rollback, long-path support and process-scoped certifi CA handling remain. No model weights are bundled.
 
-## Remaining authorized work
+## Ownership and remaining authorized work
 
-1. Retrieve outer signing43570543904; independently verify exact signed installer,
-   timestamp, provenance and final hashes against the prepared candidate.
-2. Root launches one owned clean Windows guest for that identity. Verify normal-user
-   install, one-use Start menu login, first-run settings and managed tool setup,
-   real source/video retrieval, and the prepared 120-second public meeting-audio
-   transcription using the installed managed Whisper runtime.
-3. Complete agreed installed review/recovery, graceful stop/reopen, scheduler/
-   startup, reinstall/update and uninstall data retention. Attribute reused v0.1.0
-   domain/UI/full-transcription/TownReporter evidence explicitly; do not invent
-   gates or call a sample transcription a full acquisition workflow.
-4. Reconcile manuals, sanitized acceptance evidence, handoff and this state; finish
-   PR49 merge, v0.2.0 tag/release and site delivery after checks/acceptance. Verify
-   public downloads/hashes and deployed site; update actual existing Big Picture
-   Project sources. Preserve v0.1.0 and clean only owned temporary work after delivery.
+The failed 02b guest was retired after ordinary-user recovery shutdown and verified preservation of desktop data/configuration/DPAPI and the legacy record-storage root. Evidence and private recovery data remain local; never publish them wholesale. Retirement receipt: `outputs/townrecord-windows-020/retirement-02b6699.json`; 205 retained evidence files, no owned jobs remaining. Its four-DLL diagnostic mutation is recorded explicitly. No runtime-agent guest jobs remain. Fresh guest `f85b3c96-963f-416f-b39e-dfb04d5c604d` launched at 08:17:33 UTC. Root/UI acceptance own batch setup and pending installed acceptance. Acceptance remains headless with no visible browser/installer windows.
 
-No v0.2.0 merge, tag, publication or final installed acceptance has occurred.
-Next: root retrieves and verifies the outer signing result before guest launch.
-The following preserved record is historical, not live ownership/progress.
+1. Exact corrected signed installer retrieval and independent verification are complete. Continue with this e08a candidate; the old 01af installer remains superseded.
+2. Run clean installed first-run/tool setup, the agreed actual transcription/workflow outcomes, configured-profile publication/download and startup/backup/restore/reinstall/uninstall checks. Keep original and restored data protected; record exact receipts. Corrected installed acceptance is pending.
+3. Reconcile maintained README/manuals/operations/site/acceptance/handoff/state documents against the final evidence, curate sanitized acceptance receipts, and update the existing Big Picture sources in place.
+4. Complete already-authorized final merge, tag, release and website delivery with exact source/license assets, checksums and post-delivery verification. Preserve v0.1.0. No 0.2.0 public release or final acceptance is claimed at this checkpoint.
 
----
 ## Preserved prior delivery record
 # TownRecord bounded completion state — November 13, 2026
 

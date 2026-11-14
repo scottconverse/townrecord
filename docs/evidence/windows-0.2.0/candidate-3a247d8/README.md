@@ -1,0 +1,7 @@
+# Corrected Windows candidate 3a247d8
+
+These curated receipts identify the corrected 0.2.0 source, wheel, unsigned build, successful required CI and verified reuse of unchanged signed native inputs. They also preserve the official pinned Microsoft VC runtime source and per-file provenance. Machine paths and process ownership fields were omitted from build receipts; hashes identify their originals. Original native-signing and reuse receipt bytes are preserved.
+
+Outer signing 43574774784 passed; independent signature/timestamp verification passed for signed SHA256 `e08a4f4447abb611a331cd7146df56493eb92f76bc14c9a660cb80fb9c3067a8`, 221,865,160 bytes. Installed acceptance of this corrected candidate remains pending. The earlier candidate receipts in the parent directory retain their original identities and do not establish acceptance for this one. The original 125-entry signing run 43569539324 is reused by verified native identity; it was not rerun. Microsoft vendor signatures are preserved.
+
+The prior 02b candidate installed and passed payload/seed inventory, first-run, source and caption checks, then failed CRT loading and desktop publication storage. A labeled modified-guest four-DLL cause proof passed TextFlowKit version and Torch/Whisper imports; it is diagnostic evidence only. That guest was retired with recovery data/evidence preserved. No model inference or final installed acceptance is claimed here.
