@@ -1,29 +1,41 @@
 # Active Windows installer delivery — November 13, 2026
 
 Scott authorized implementation, signing, clean Windows acceptance, documentation,
-push, merge, tag and publication. New version 0.2.0; preserve released v0.1.0.
-Use existing TypeScript/Python stack, no Tauri. Normal operators need no Python,
-uv, terminal commands or copied bearer token. Keep public hosting a separate
-operator deployment decision; this task installs the local operator application.
+push, merge, tag and publication of TownRecord 0.2.0. Preserve v0.1.0. Keep the
+TypeScript browser/Python service stack; no Tauri. Normal operators must not need
+Python, commands or copied tokens. Public hosting remains a separate deployment.
 
-Delegation explicitly authorized: windows_runtime owns Python launcher/config/API
-and tests; windows_ui owns TypeScript first-run and maintained manuals/site;
-windows_packaging owns bundled runtime/Inno installer/version/build scripts.
-Coordinator owns architecture, integration audit, signing, clean Windows evidence,
-required CI, delivery and Big Picture updates. Branch feat/windows-installer-020.
+Branch: feat/windows-installer-020; PR49. Runtime source: 2acd5cde0ea1d72a1e9ac24f96db1040c320ab43.
+Required CI43561395186 passed. First signed outer installer SHA256:
+4a52333a0760a0cccc92ab1803d2c9c504f6c3e8c5684d8e9ed776a4a37ba0c1.
+It is NOT accepted: clean Windows Application Control blocked unsigned internal
+Inno setup and bundled native programs. Failed evidence is preserved under
+outputs/townrecord-windows-020; no release/tag has been made for 0.2.0.
 
-Passed preflight: repository clean at a06a162; ~400 GiB disk headroom; Codex elevated
-helper CheckAdmin job4b03d49620314ec99b7fc3cc205188d3 returned is_admin=true.
-wsb list reports no guests. WindowsSandboxServer alone is infrastructure, not a
-running guest. No Sandbox started for this task yet. No signed candidate exists.
+Current work: packaging agent prepares two-pass signed Inno internals and signs
+88 unsigned payload PE files, preserving two valid Microsoft DLL signatures.
+Reuse the recorded wheel and unchanged Python/TypeScript payload; record every
+native signature overlay. Root audits and dispatches signing. UI agent prepared
+guest-only headless setup/review/recovery scripts; execution awaits installation.
+Runtime helper is prepared for installed status and the bounded real-audio test.
 
-Remaining: implementation, affected checks and required CI, one integrated build,
-Azure signing and independent verification, exact signed installer clean Windows
-GUI/setup/runtime/recovery/uninstall acceptance, docs, merge/release/Pages,
-public download verification, actual Big Picture source updates, owned cleanup.
-Next: receive contracts/implementation, audit security and lifecycle, build once
-integrated. Reuse unchanged v0.1.0 domain/transcription evidence with attribution.
+Owned guest: 3bca7846-b403-4ac2-916e-b33763117c21, 8GB, no app installed yet.
+Guest remains running headlessly; its two owned visible remote-session clients
+were closed. Cancel after evidence preservation with wsb stop --id <owned ID>.
+Owned draft signing intake: civiccast/townrecord-020-signing-2acd5cde.
+No production, QuorumRelay or unrelated desktop work is authorized.
 
+Global rule saved: remain headless while Scott uses the machine or occupancy is
+unknown. No visible browser/app/Sandbox/VM windows or interactive computer control
+without specific prior approval. Continue independent authorized headless work.
+
+Remaining: complete native signatures and corrected outer installer; install and
+verify first-run/operator/resident/runtime/recovery/reinstall/uninstall behavior;
+update docs and evidence, required CI, merge/tag/release/Pages, verify public bytes
+and pages, update existing Big Picture project sources, remove owned test resources
+and temporary signing intake. Reuse unaffected v0.1.0 domain evidence with attribution.
+Next action: commit completed packaging correction, prepare internal PE and dispatch
+hash-gated Azure native signing. No Windows policy bypass or weakened checks.
 ---
 ## Preserved prior delivery record
 # TownRecord bounded completion state — November 13, 2026
@@ -110,3 +122,7 @@ No owned local process or browser tab remains. Publication is complete with no
 remaining owner approval for this release. See COMMUNITY-COMPLETION-HANDOFF.md.
 
 Integration check session10269 finished:1580passed48skipped1failure (new public desktop/info not yet in explicit anonymous-route guard). Runtime agent correcting exact exception and checking response; unaffected tests reused. Ruff/UI/site/packaging checks pass. No Sandbox started.
+
+Candidate source2acd5cde0ea1d72a1e9ac24f96db1040c320ab43 built clean. Unsignedsetup99003002bytes SHA35f9c91e1b46e75c0f6723ee2ec01600e142b644def52e71d8066d3d8a7bff70. Azure signing run43561666388 active; CI43561395186 active. No Sandbox started yet. Buildowner43712 exited. BigPicture twoWindowsdesigns added andverified actualProject15sources; existinghandoffupdated in-place. Next retrieve signedartifact, independentlyverify, runownedSandbox. Signingintake townrecord-020-signing-2acd5cde isownedtemporarydraft; clean afterverifiedpublicdelivery.
+
+Current checkpoint: CI43561395186 PASSED alljobs; Azure43561666388 PASSED. Independent signedsetup Valid ScottConverse timestampverified SHA4a52333a0760a0cccc92ab1803d2c9c504f6c3e8c5684d8e9ed776a4a37ba0c1. OwnedSandbox3bca7846-b403-4ac2-916e-b33763117c21 RUNNING; cancellation wsb stop --id3bca7846-b403-4ac2-916e-b33763117c21. Clean install FAILED exit1: ApplicationControl event3077 blocks unsignedInno temporaryselfcopy. Notpublished. Agentwindows_packaging fixingofficialtwo-passSignedUninstaller/compile-only flow; reuseexistingwheel/payload then signinternalstub andoutersetup. No securitypolicychanges. Elevatedhelperjobbbc6251cf6d14bb6bb0b36d5c30584c7 couldnotreachSandboxbroker; normal signed-in guardedlauncher createdguest. NativeCUA Sandbox capture unavailable (returnsbackground); UI partclosed fornow, gueststillup. TwoRDPclients mayremain; do notmistake for2guests. Exactevidence outputs/townrecord-windows-020. Next commitpackagingfix, signinternalstub, repack/signouter, retest sameguest. Rootmustresumeexistingwork, notreportdone.

@@ -1,6 +1,8 @@
 [CmdletBinding()]
 param(
     [switch]$PrepareOnly,
+    [switch]$CompileOnly,
+    [switch]$PrepareUninstaller,
     [string]$Compiler = "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"
 )
 $ErrorActionPreference = 'Stop'
@@ -11,6 +13,11 @@ $cache = Join-Path $work 'cache'
 $payload = Join-Path $work 'payload'
 $output = Join-Path $repo 'dist/windows'
 $pins = Get-Content (Join-Path $PSScriptRoot 'dependencies.json') -Raw | ConvertFrom-Json
+if ($CompileOnly -or $PrepareUninstaller) {
+    if ($PrepareOnly) { throw 'PrepareOnly cannot be combined with compiler-only modes.' }
+    & (Join-Path $PSScriptRoot 'repack.ps1') -Compiler $Compiler -PrepareUninstaller:$PrepareUninstaller
+    return
+}
 
 function Invoke-Checked([string]$File, [string[]]$Arguments) {
     & $File @Arguments
@@ -127,7 +134,7 @@ try {
     # ISCC file metadata can be 0.0.0.0. The script verifies the compiler's
     # actual ISPP VER value against this pin before compiling any files.
     $compilerVersion = $pins.compiler.version
-    Invoke-Checked $Compiler @("/DPayloadDir=$payload","/DOutputDir=$output","/DAppVersion=$version","/DExpectedCompilerVersion=$compilerVersion",(Join-Path $repo 'installer/townrecord.iss'))
+    Invoke-Checked $Compiler @("/DPayloadDir=$payload","/DOutputDir=$output","/DAppVersion=$version","/DExpectedCompilerVersion=$compilerVersion","/DInternalSigningDir=$(Join-Path $work 'signed-uninstaller')",(Join-Path $repo 'installer/townrecord.iss'))
     $installer = Join-Path $output "TownRecord-$version-windows-x64-setup.exe"
     $receipt.phase = 'built_unsigned'; $receipt.installer = $installer
     $receipt.installer_sha256 = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant()

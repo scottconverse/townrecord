@@ -10,6 +10,9 @@
 #ifndef ExpectedCompilerVersion
   #define ExpectedCompilerVersion "6.7.3"
 #endif
+#ifndef InternalSigningDir
+  #error InternalSigningDir must name the persistent signed-uninstaller directory
+#endif
 #if DecodeVer(VER) != ExpectedCompilerVersion
   #error The compiler version does not match the pinned packaging toolchain
 #endif
@@ -37,6 +40,8 @@ UninstallDisplayIcon={app}\python\pythonw.exe
 CloseApplications=no
 RestartApplications=no
 SetupLogging=yes
+SignedUninstaller=yes
+SignedUninstallerDir={#InternalSigningDir}
 LicenseFile=..\LICENSE
 
 [Tasks]

@@ -13,6 +13,57 @@ The script reports the operation's owner PID and terminal result in
 `build/windows/build-receipt.json`; it overwrites only its isolated payload tree.
 Archive hash failures require investigation, not accepting a new hash blindly.
 
+The installer uses Inno's official cached signed-uninstaller flow. The first
+compilation emits a stable `build/windows/signed-uninstaller/uninst-*.e32` file
+and stops because that file needs signing. Sign that exact PE through the
+authorized signing process, then retain its original filename in that directory.
+If the signing intake requires `.exe`, a temporary renamed copy may be signed
+and the signed bytes returned to the exact `.e32` name. Inno verifies that its
+contents match the expected internal executable before reusing its signature.
+This embeds signatures into the uninstaller and temporary setup copies; signing
+only the outer setup afterwards does not do that.
+
+For an already verified payload, use `build.ps1 -PrepareUninstaller` to produce
+the internal signing input without reinstalling dependencies or rebuilding the
+application. After signing, use `build.ps1 -CompileOnly` to repack. These modes
+require a clean committed candidate, unchanged `core` and `frontend` inputs,
+and verification of every payload file and the retained wheel against the
+original build receipt plus the explicitly verified signing overlay described
+below. They produce `repack-receipt.json`, retaining
+the original payload's source commit, hashes and build receipt identity as well
+as the packaging candidate commit, compiler and internal signing identities.
+The final outer installer still requires signing and independent verification.
+
+Clean Windows Application Control also rejected the five unsigned bundled entry
+executables. The observed base inventory has 90 native `.exe`/`.dll`/`.pyd` files:
+88 unsigned files and two valid Microsoft runtime DLLs. Preserve the Microsoft
+signatures. After preparing the internal Inno PE, run
+`native-signing.ps1 -Mode Prepare`. This re-verifies the original payload and
+creates `dist/windows/TownRecord-0.2.0-native-unsigned.zip`, containing only the
+88 unsigned native files, the internal PE, and an allowlist/hash manifest.
+The internal `.e32` is staged as `.exe` without changing its PE bytes; its original
+target filename is retained in the manifest.
+
+The reusable `sign-native-payload.yml` and `signing-batch.ps1` are copied to the
+isolated `townrecord-signing-020-20261113` helper branch in `scottconverse/civiccast`,
+replacing that branch's existing `sign-native-installer.yml` only. The root task
+uploads the intake ZIP and dispatches the existing workflow against that helper
+branch with the exact ZIP SHA-256. The helper verifies the ZIP hash, rejects paths
+or members outside its manifest, verifies every unsigned PE, signs recursively
+through the existing Azure account, then verifies every Scott Converse signature
+and timestamp. It returns `signed-native-payload.zip` and per-file before/after
+hashes. It never publishes or changes a production branch.
+
+Run `native-signing.ps1 -Mode Apply -Archive <returned-zip> -ExpectedSha256 <hash>`
+after independently capturing the returned archive's SHA-256. It verifies the
+complete return allowlist, original hashes, signed hashes, every actual signature
+and timestamp, and that PE content changed only in Authenticode's certificate,
+checksum and security-directory fields. Application Python, TypeScript, packages
+and the wheel remain unchanged. The original `payload-manifest.json` is retained;
+`payload-signing-overlay.json` records the permitted native-byte changes and their
+workflow provenance. Repack verifies both manifests and signature-only changes
+before using the signed payload and internal setup executable.
+
 Outputs are `dist/windows/TownRecord-0.2.0-windows-x64-setup.exe`, exact FFmpeg
 source/build archives, and the build receipt in `build/windows`. The installer is
 unsigned at this stage. The receipt records source commit, dirty status, pins,

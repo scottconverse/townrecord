@@ -41,5 +41,27 @@ startup; graceful stop; same-version repair/reinstall and uninstall preserving p
 using retained settings. The root release task owns those installed checks and
 signing; a successful build alone is not their evidence.
 
+The installer enables `SignedUninstaller=yes` and retains Inno's stable signing
+inputs outside the shipped payload. The first compiler pass emits an unsigned
+internal PE and stops. After authorized external signing, the second pass reuses
+that signed PE to sign the temporary setup copies and uninstaller. The final
+outer setup is signed separately. This follows Inno's documented two-pass flow;
+signing only the outer executable leaves temporary copies unsigned and failed
+the observed clean-Windows Application Control policy. No policy is disabled.
+Compiler-only passes verify and reuse the recorded application wheel and payload,
+preserving their original source provenance while recording the packaging commit
+and internal signature identities separately.
+
+The clean Windows policy also rejected unsigned shipped entry executables.
+The base payload contains 88 unsigned native PE files and two valid Microsoft
+runtime DLLs. The unsigned files and internal Inno PE are signed in one hash-gated
+batch through the existing Azure account on an isolated helper branch; the two
+vendor signatures are preserved. The original payload manifest remains unchanged
+and a separate signed overlay records before/after hashes, signer and timestamp
+identities. Local return verification accepts only Authenticode metadata changes
+to the original PE bytes. It never changes application source, dependency versions,
+the wheel or machine security policy. Installed acceptance still has to verify
+the final signed installer and actual native runtime under the unchanged policy.
+
 This is the first native installer. Reinstalling 0.2.0 verifies repair and profile
 retention, not a version upgrade from an earlier native installer.
