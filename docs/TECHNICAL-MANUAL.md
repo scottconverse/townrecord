@@ -74,7 +74,7 @@ operational lifecycle. Never point a development/test instance at a production
 profile, or run two service owners against the same profile.
 
 The [website guide](SITE.md) covers its separate zero-dependency static build,
-preview and approval-held deployment. Website work does not require rebuilding
+preview and manual deployment. Website work does not require rebuilding
 the accepted wheel. The existing CI matrix remains unchanged; it does not imply
 new operating-system packages or installed acceptance on those systems.
 
@@ -213,4 +213,4 @@ association corrections, lifecycle, receiver validation and recovery. Installed
 observations cover the bounded Windows flows. Live retrieval, synthetic staged
 arrival, model comparison and full local transcription are distinct evidence
 tiers, not interchangeable claims. The [handoff](COMMUNITY-COMPLETION-HANDOFF.md)
-records delivery, cleanup, approval holds and current documentation progress.
+records delivery, cleanup, publication and documentation progress.
