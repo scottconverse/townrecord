@@ -35,6 +35,7 @@ setting.
 from __future__ import annotations
 
 import logging
+import os
 import re
 import shutil
 from collections.abc import Callable, Sequence
@@ -150,7 +151,9 @@ class RuntimeManager:
     #: The path of `uv`. None means look for it on PATH.
     uv_path: str | None = None
     #: The Python `uv venv` should build from. None leaves the choice to uv.
-    python: str | None = None
+    python: str | None = field(
+        default_factory=lambda: os.environ.get("TOWNRECORD_RUNTIME_PYTHON") or None
+    )
     #: How a child is run. None means the real one, :func:`townrecord.proc.run`.
     runner: Runner | None = None
 

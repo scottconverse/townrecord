@@ -5,11 +5,14 @@ meeting record. This supersedes the original local-API specification's
 all-routes-private rule **only** for the resident page, its two static assets,
 and GET routes under `/public/v1/`. Every private API route, API documentation,
 and operator operation continues to require an existing bearer token. Operator
-operations require `read_write`. No new account system is introduced.
+operations require `read_write`. Packaged Windows mode additionally exposes a
+public mode signal and short-lived one-use launch exchange, without exposing
+operator records. No new account system is introduced.
 
 ## Review and publication
 
-Open `/operator` and sign in with an administrator-issued write token. The token
+Open TownRecord from Start Menu for automatic local sign-in. Advanced nonpackaged
+CLI mode retains administrator-issued write token entry at `/operator`. The token
 is held in browser memory only. Sign out before leaving a shared workstation.
 Create the community and its two public bodies using their source names. Add
 the supported provider URL and explicit coverage dates. Validate and save,

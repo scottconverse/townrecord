@@ -1,3 +1,31 @@
+# Active Windows installer delivery — November 13, 2026
+
+Scott authorized implementation, signing, clean Windows acceptance, documentation,
+push, merge, tag and publication. New version 0.2.0; preserve released v0.1.0.
+Use existing TypeScript/Python stack, no Tauri. Normal operators need no Python,
+uv, terminal commands or copied bearer token. Keep public hosting a separate
+operator deployment decision; this task installs the local operator application.
+
+Delegation explicitly authorized: windows_runtime owns Python launcher/config/API
+and tests; windows_ui owns TypeScript first-run and maintained manuals/site;
+windows_packaging owns bundled runtime/Inno installer/version/build scripts.
+Coordinator owns architecture, integration audit, signing, clean Windows evidence,
+required CI, delivery and Big Picture updates. Branch feat/windows-installer-020.
+
+Passed preflight: repository clean at a06a162; ~400 GiB disk headroom; Codex elevated
+helper CheckAdmin job4b03d49620314ec99b7fc3cc205188d3 returned is_admin=true.
+wsb list reports no guests. WindowsSandboxServer alone is infrastructure, not a
+running guest. No Sandbox started for this task yet. No signed candidate exists.
+
+Remaining: implementation, affected checks and required CI, one integrated build,
+Azure signing and independent verification, exact signed installer clean Windows
+GUI/setup/runtime/recovery/uninstall acceptance, docs, merge/release/Pages,
+public download verification, actual Big Picture source updates, owned cleanup.
+Next: receive contracts/implementation, audit security and lifecycle, build once
+integrated. Reuse unchanged v0.1.0 domain/transcription evidence with attribution.
+
+---
+## Preserved prior delivery record
 # TownRecord bounded completion state — November 13, 2026
 
 ## Contract
@@ -80,3 +108,5 @@ passed. Automatic post-merge CI:43557671485. Live desktop/mobile and14 URL check
 passed. Updated existing Big Picture sources in place;13 Project sources retained.
 No owned local process or browser tab remains. Publication is complete with no
 remaining owner approval for this release. See COMMUNITY-COMPLETION-HANDOFF.md.
+
+Integration check session10269 finished:1580passed48skipped1failure (new public desktop/info not yet in explicit anonymous-route guard). Runtime agent correcting exact exception and checking response; unaffected tests reused. Ruff/UI/site/packaging checks pass. No Sandbox started.

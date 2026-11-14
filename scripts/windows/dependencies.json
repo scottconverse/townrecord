@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "python": {
+    "version": "3.13.15",
+    "build": "20260807",
+    "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260807/cpython-3.13.15%2B20260807-x86_64-pc-windows-msvc-install_only_stripped.tar.gz",
+    "sha256": "44bf9ae71f4b45e3ba3104ae331c6eff3f7002593c26fd12453eb9310c4f259a"
+  },
+  "uv": {
+    "version": "0.12.3",
+    "url": "https://github.com/astral-sh/uv/releases/download/0.12.3/uv-x86_64-pc-windows-msvc.zip",
+    "sha256": "b23350c79e8ad0192b8124af13a0f17e8d4e4549524785e1aef389ae5a06990e"
+  },
+  "ffmpeg": {
+    "version": "n9.0.2-57-gd838f9f9ae-win64-lgpl-shared",
+    "url": "https://github.com/FFmpeg-Builds/FFmpeg-Builds/releases/download/autobuild-2026-11-13-12-43/ffmpeg-n9.0.2-57-gd838f9f9ae-win64-lgpl-shared-9.0.zip",
+    "sha256": "1604210cff6b8814ad3e925719234acdd465226c20f49b7f7a54847292e88181",
+    "source": "https://github.com/FFmpeg/FFmpeg/commit/d838f9f9ae",
+    "build_scripts": "https://github.com/FFmpeg-Builds/FFmpeg-Builds/tree/autobuild-2026-11-13-12-43"
+  },
+  "compiler": {
+    "version": "6.7.3",
+    "winget_id": "JRSoftware.InnoSetup"
+  },
+  "ffmpeg-source": {
+    "url": "https://github.com/FFmpeg/FFmpeg/archive/d838f9f9ae.tar.gz",
+    "sha256": "479396204090c378cc2d181fef5355a1da64c5903e29a7fda687960101e70df9"
+  },
+  "ffmpeg-build-source": {
+    "url": "https://api.github.com/repos/FFmpeg-Builds/FFmpeg-Builds/tarball/autobuild-2026-11-13-12-43",
+    "sha256": "1b57e95ae01b03da36cbfd231d7482c85df2ce87ad4a0e491ca656fa7e3706be"
+  }
+}

@@ -9,7 +9,8 @@ snapshot with original sources. It does not create certified minutes or answer
 questions with AI. Townlight is the umbrella; TownReporter is a separate consumer.
 
 The primary action is **Read the user manual**, followed by the Windows setup
-guide. The 0.1.0 community preview is a Python wheel, not an MSI. Engineering links
+guide. The 0.2.0 Windows installer candidate is the normal-user path; 0.1.0 remains
+a historical wheel. Signing and installed acceptance are separate receipts. Engineering links
 lead to the technical manual, source and exact acceptance record.
 
 The static site extends the application's existing palette: ink `#153344`, paper

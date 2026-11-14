@@ -450,6 +450,13 @@ def test_every_route_read_from_the_app_is_401_without_a_token(
             _, _, after = after.partition("}")
             path = f"{before}1{after}"
         for method in route.methods:
+            # The reviewed desktop-mode signal contains only a boolean. It
+            # identifies the launch flow without disclosing private settings.
+            if method == "GET" and path == "/v1/desktop/info":
+                response = client.get(path)
+                assert response.status_code == 200
+                assert response.json() == {"desktop": False}
+                continue
             # Only the explicitly reviewed public namespace and UI shell are public.
             if method == "GET" and (path in {"/", "/operator"} or path.startswith("/public/v1/")):
                 continue

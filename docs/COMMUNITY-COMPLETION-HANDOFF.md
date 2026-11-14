@@ -1,3 +1,25 @@
+# TownRecord Windows installer handoff — November 13, 2026
+
+## Active delivery: Windows 0.2.0
+
+Scott authorized a signed Windows installer, first-run setup, clean Windows
+acceptance, documentation, push/merge/tag/publication and Big Picture updates.
+The browser source remains TypeScript and the service Python; no Tauri was added.
+The historical 0.1.0 wheel release below remains intact.
+
+Implementation is in progress on `feat/windows-installer-020`. The per-user
+installer will bundle Python, locked app dependencies, uv and FFmpeg. The Windows
+launcher supplies a one-use sign-in link to the browser interface; setup and
+recovery use the existing service and data model. Saved data is separate from
+installed program files. Resident-facing network hosting remains a separate
+operator deployment, not a service supplied by installing on one PC.
+
+No signed 0.2.0 candidate or clean Windows pass is claimed yet. The active state
+record is [COMMUNITY-RECORD-STATE.md](COMMUNITY-RECORD-STATE.md). Design:
+[Windows installer](WINDOWS-INSTALLER-DESIGN.md), [first-run interface](WINDOWS-FIRST-RUN-DESIGN.md),
+and [desktop runtime contract](COMMUNITY-INTERFACE-DESIGN.md#windows-desktop-runtime-contract-2026-11-13).
+
+## Historical 0.1.0 completion record
 # TownRecord community completion handoff — November 13, 2026
 
 Townlight is the umbrella. This is the bounded TownRecord Windows community-record

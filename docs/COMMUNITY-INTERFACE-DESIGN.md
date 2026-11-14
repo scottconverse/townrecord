@@ -167,3 +167,34 @@ The [technical manual](TECHNICAL-MANUAL.md) diagrams the implemented architectur
 publication handoff and recovery. The [user manual](USER-MANUAL.md) covers operator
 and resident workflows. The separate [website design](SITE.md) extends this
 interface palette; it does not change the application or its accepted package.
+
+## Windows desktop runtime contract (2026-11-13)
+
+The Windows Start menu opens the installed browser interface through bundled
+`pythonw -m townrecord.windows open`; `start` serves without opening the browser,
+and `stop` authenticates to that profile and waits for its service lock to clear.
+Only one desktop launcher owns a profile. The existing service, workers,
+scheduler, SQLite migrations and serving record remain authoritative.
+
+Private configuration, database, runtimes and storage live under the current
+user's LocalAppData/TownRecord, outside installed application files. Updates and
+uninstall preserve these files. First run asks for the local IANA timezone, scan
+time and known test recording in the browser before managed tool setup. Settings
+are validated and persisted; an explicit restart applies them to every worker.
+
+An operator credential is protected by Windows current-user DPAPI and never
+printed or put in a URL. Each authenticated desktop launch mints a random,
+one-use code expiring after 120 seconds, delivered only in the URL fragment.
+The browser clears that fragment before exchanging it. Exchange requires the
+exact loopback origin/Host; random websites cannot obtain a credential merely
+because the service listens on localhost. Existing developer bearer-token routes
+and reviewed public records retain their authorization rules.
+
+Settings expose real data and backup paths, graceful stop/restart, backup and
+restore. Backup stops workers and releases the existing service claim before
+using the existing verified recovery format; the desktop restarts afterwards.
+Restore verifies hashes/database and creates a separate profile, preserving the
+current data and backup, then restarts using that profile. Errors are retained
+in the desktop log and operation receipt; failures never become success claims.
+The bundled tools directory and interpreter precede system PATH, and existing
+allow-listed, hidden subprocess execution is reused for managed tools.

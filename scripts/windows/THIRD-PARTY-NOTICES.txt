@@ -1,0 +1,34 @@
+TownRecord Windows distribution
+===============================
+TownRecord is Apache-2.0 licensed; see LICENSE.txt at the application root.
+
+CPython 3.13.15 is distributed by Astral's python-build-standalone project.
+Its complete license and bundled component notices are python/LICENSE.txt.
+https://github.com/astral-sh/python-build-standalone/releases/tag/20260807
+https://www.python.org/downloads/release/python-31315/
+
+uv 0.12.3 is Copyright Astral Software Inc. and contributors, distributed
+under MIT OR Apache-2.0. The unmodified upstream licenses are included here.
+https://github.com/astral-sh/uv/tree/0.12.3
+
+FFmpeg n9.0.2-57-gd838f9f9ae, LGPL shared Windows x64 build
+Copyright the FFmpeg developers and contributors.
+The LGPL-3.0 text is FFmpeg-LGPL-3.0.txt; documentation is ffmpeg-doc/.
+FFmpeg is invoked as a separate executable. Its shared libraries remain
+separate files and may be replaced with compatible modified versions.
+TownRecord imposes no restriction on modification or reverse engineering
+for debugging modifications to these LGPL components.
+Exact binary provenance and SHA-256 are recorded in dependencies.json.
+Upstream FFmpeg source:
+https://github.com/FFmpeg/FFmpeg/commit/d838f9f9ae
+Build scripts and build dependency source retrieval instructions:
+https://github.com/FFmpeg-Builds/FFmpeg-Builds/releases/tag/autobuild-2026-11-13-12-43
+https://github.com/FFmpeg-Builds/FFmpeg-Builds
+The release distributor must retain corresponding source availability for
+redistributed binaries in accordance with the accompanying licenses.
+
+Python dependencies, including QuorumRelay 0.1.0.dev11, remain separate
+packages. Their licenses are included in python/Lib/site-packages within
+each package's .dist-info directory or package directory. Exact versions,
+upstream locations and hashes are recorded in uv.lock and
+python-requirements.txt here. QuorumRelay is Apache-2.0 licensed.

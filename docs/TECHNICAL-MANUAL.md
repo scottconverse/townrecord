@@ -78,9 +78,36 @@ preview and manual deployment. Website work does not require rebuilding
 the accepted wheel. The existing CI matrix remains unchanged; it does not imply
 new operating-system packages or installed acceptance on those systems.
 
+## Packaged Windows runtime
+
+The 0.2.0 installer candidate adds a per-user launcher with bundled Python/FFmpeg,
+preserving the Python service and strict TypeScript interface. One service owns
+the profile. Start Menu opens `/operator#launch=...`; the browser immediately
+removes the fragment and exchanges the short-lived one-use code for the existing
+write token kept only in tab memory. CLI mode retains explicit token entry.
+See [first-run design](WINDOWS-FIRST-RUN-DESIGN.md).
+
+| Desktop route | Contract |
+|---|---|
+| `GET /v1/desktop/info` | Anonymous mode signal; no credentials/profile data |
+| `POST /v1/desktop/exchange` | `{code}` returns `{token}`; desktop-only one-use launch |
+| `GET /v1/desktop/settings` | Authenticated schedule, sample video, setup state, profile paths and operation receipt |
+| `PUT /v1/desktop/settings` | Persist `time_zone`, `daily_time`, `test_video_url`; restart required |
+| `POST /v1/desktop/restart` | Graceful restart; interface waits for applied settings |
+| `POST /v1/desktop/stop` | Graceful stop; Start Menu starts it again |
+| `POST /v1/desktop/backup` | Stop workers, verified timestamped backup, restart and result receipt |
+| `POST /v1/desktop/restore` | `{source}` verifies separate profile then switches on restart |
+
+Existing body/source/tool/job endpoints drive setup. FFmpeg is bundled; managed
+setup jobs remain yt-dlp and TextFlowKit. Closing the browser leaves the service
+running. LAN/HTTPS and public hosting are separate configuration. Build, signature,
+installed behavior and delivery evidence are recorded in the candidate handoff;
+historical wheel evidence does not establish installer acceptance.
+
 ## Configuration
 
-Set these in a private start script before creating tokens and serving. Defaults
+For advanced CLI mode set these in a private start script. The Windows application
+persists schedule and sample recording through its settings form. Defaults
 are from `Settings.from_env`; prefer explicit profile paths in operation.
 
 | Variable | Default | Purpose |
@@ -103,7 +130,8 @@ configuration and an IT-managed HTTPS boundary; the service does not provision T
 
 ## Authentication and HTTP integration
 
-Create a named token with `townrecord token create --name NAME --scope write`
+Packaged users use the launch exchange above. For advanced CLI mode create a
+named token with `townrecord token create --name NAME --scope write`
 under the intended profile. The CLI's `write` maps to `read_write`. Read tokens
 cannot perform writes, and the operator workspace requires write scope. Tokens
 are printed once and stored hashed. The browser keeps the supplied token in
