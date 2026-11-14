@@ -1,47 +1,85 @@
-# Active Windows installer delivery — November 13, 2026
+# Active Windows installer delivery — November 14, 2026
 
 Scott authorized implementation, signing, clean Windows acceptance, documentation,
-push, merge, tag and publication of TownRecord 0.2.0. Preserve v0.1.0. Keep the
-TypeScript browser/Python service stack; no Tauri. Normal operators must not need
-Python, commands or copied tokens. Public hosting remains a separate deployment.
-Root coordinates/audits/delivers; implementation belongs to the authorized agents.
+push, merge, tag and publication of TownRecord 0.2.0. Preserve published v0.1.0 and
+per-user data. Keep TypeScript/Python; no Tauri, new provider or update channel.
+Normal operators need no Python, commands or copied tokens. Root owns integration,
+acceptance and delivery; stay within the existing bounded completion contract.
 
-Branch feat/windows-installer-020; PR49. Current packaging source:
-497a1696e62ab68862f16da211c5fb116da09d32; required CI43564202207 passed.
-Wheel remains byte-identical to the initially tested app:
-bcaa66a4726dc648a8b420fa96c7548230dbaaf2bc6bc1e06d93cc9acf55af85.
-Native signing43564421083 PASSED: 82 payload PE files plus Inno internal executable,
-Scott Converse Valid/timestamp verified; two Microsoft DLL signatures preserved.
-Independent content checks permit only Authenticode-related byte changes.
-Compiled installer SHA81d90152e292164bac29bd26f4dd12777c780f008dd4de65fd002cce985da6f8,
-96,777,921 bytes. Outer signing43564959702 PASSED; final signed SHA547ce1abac70309beab32cb0604647d848e346f88a96f3d6b21864e7701f919b (96,793,560 bytes). Clean Install and Verify PASSED; all85installed PE signatures Valid. Headless browser setup PASSED in Edge157 using supported JavaScript Playwright with signed Node (Python test-only greenlet was blocked).
-Current local doc count corrections do not alter this candidate or require rebuild.
+## Candidate and passed evidence
 
-Observed defects corrected: first installer was blocked by Windows Application
-Control because inner setup and bundled programs were unsigned. First native batch
-rejected two upstream Tcl/Tk DLLs (0x800700C1). Browser app/QuorumRelay do not use Tk;
-existing build now excludes that optional toolkit. Failed evidence is retained
-under outputs/townrecord-windows-020/failed. No Windows policy was weakened.
+Branch feat/windows-installer-020; PR49 remains unmerged.
 
-Owned guest 3bca7846-b403-4ac2-916e-b33763117c21 remains running headlessly, 8GB;
-no TownRecord app installed yet. Both visible remote-session clients were closed.
-Stop after evidence preservation: wsb stop --id 3bca7846-b403-4ac2-916e-b33763117c21.
-Owned temporary signing draft: civiccast/townrecord-020-signing-2acd5cde; helper
-branch townrecord-signing-020-20261113. Root owns dispatch and cleanup. See job JSON
-in outputs/townrecord-windows-020 for run IDs, start times and cancellation commands.
+- Application source: 4ca190e3449604488dd765a39f6f33e3d927604c.
+- Application wheel: townrecord-0.2.0-py3-none-any.whl; SHA256
+  4cd30b55bfb691a0fb849464855a2d8894110385455561e00f1abddcd3bff8d0.
+- Packaging source: 02b66993cb741c6d571f67d2031f7946c8b6b001.
+- Required CI43569493649 attempt2 PASSED all jobs. The earlier POSIX fixture
+  mismatch is corrected; unrelated Windows timing failure passed the rerun.
+- Full local runtime/CA suite: 1592 passed, 48 skipped; focused long-path/fixture
+  seed and manager checks: 25 passed. Ruff passed. Reuse unaffected evidence.
+- Native signing43569539324 PASSED 125 files. Returned signatures and executable
+  content were verified; upstream valid signatures were preserved. Overlay SHA256:
+  55ba405951af47eeb4bc60c4b9257db656fa28715cb3a742052a69749c5878e8.
+- Derived final signed-seed manifest SHA256:
+  0bf631371bf3247f35c1c80e28b341821899fcc0b667648270ede12bc404d41f.
+- Compilation PASSED from the 4ca application payload and 02b packaging source.
+  Unsigned outer installer: 221,365,875 bytes; SHA256
+  ac7e2d8e71ddd10724c4612060b77783577dde3e0ff756548ca3a1b2afcfc9cc.
+- Outer signing43570543904 is RUNNING. Final signed installer identity and
+  independent outer verification remain pending. Root owns dispatch/retrieval;
+  use outputs/townrecord-windows-020 job receipts for ownership/cancellation.
 
-Global rule: headless while Scott uses the machine or occupancy is unknown. No
-visible browser/app/Sandbox/VM windows or interactive control without approval.
-No production, QuorumRelay or unrelated desktop changes.
+The current candidate includes the observed first-run repairs: a pinned signed
+TextFlowKit 0.1.19/Whisper dependency seed, verified inventory/hashes and per-user
+copy, generated pyvenv.cfg for bundled Python, supported module invocation, native
+imports before activation, and Windows long-path copy/retry handling. Offline
+bootstrap records an unavailable online check honestly; later online checks,
+failed-update retention and rollback remain. No model weights are bundled.
+Desktop certifi CA defaults preserve explicit SSL_CERT_FILE overrides and pass the
+CA path to children without disabling TLS or changing shared connector code.
+These implementation/signing results do not establish final installed acceptance.
 
-Remaining: retrieve/verify outer signature; install in existing guest; run prepared
-headless setup/review/recovery phases, real managed tool setup/sample transcription,
-startup/reinstall/uninstall retention. Managed downloaded native binaries remain an
-unverified policy risk, not an observed failure or authority for speculative work.
-Then finish current docs/evidence, merge/tag/release/Pages, public download and live
-site verification, update existing Big Picture project sources, owned cleanup.
-Reuse unaffected v0.1.0 domain evidence with attribution.
-Next action: runtime agent diagnoses actual TextFlowKit job2 WinError4551 on generated console executable, probing supported module/native dependencies before any larger fix. Packaging agent diagnoses actual yt-dlp job1 sample failure and PrimeGov jobs3/4 provider_page_failed from raw installed logs/public HTTP. UI settings, one-use login, 31 choices, body/source save and job submission passed; no successful acquisition, active tools, review/recovery or transcription yet. Existing guest remains headless with app running. External harness task phases run as WDAG session1 via limited InteractiveToken; ExistingLogin CLI fails for disconnected session. No publication/merge/tag yet.
+## Guest ownership and historical diagnostics
+
+Live wsb inventory is empty: no guest or diagnostic job is running. Superseded
+guest 3bca7846-b403-4ac2-916e-b33763117c21 was stopped after TownRecord shutdown,
+verified recovery backup and preservation of 92 evidence files/private configuration.
+Retirement: outputs/townrecord-windows-020/retirement-497a1696.json. Archive:
+outputs/townrecord-windows-020/failed/497a1696/sandbox-evidence.
+Do not publish private profile/configuration, databases or token material.
+
+Old 497a1696 / signed installer 547ce1 passed clean Install/Verify and headless
+first-run UI setup. Its actual tool jobs failed: unsigned TextFlowKit wrapper and
+NumPy/Torch/tiktoken native loads were blocked; source/video requests failed CA
+issuer lookup. Supported module-version and exact CA diagnostics established the
+repairs. Those observations belong to the retired candidate, not final acceptance.
+
+Remain headless while Scott uses the machine or occupancy is unknown. No visible
+app/browser/Sandbox windows or replacement guest before root verifies the exact
+final signed candidate. No Application Control or TLS policy was weakened.
+
+## Remaining authorized work
+
+1. Retrieve outer signing43570543904; independently verify exact signed installer,
+   timestamp, provenance and final hashes against the prepared candidate.
+2. Root launches one owned clean Windows guest for that identity. Verify normal-user
+   install, one-use Start menu login, first-run settings and managed tool setup,
+   real source/video retrieval, and the prepared 120-second public meeting-audio
+   transcription using the installed managed Whisper runtime.
+3. Complete agreed installed review/recovery, graceful stop/reopen, scheduler/
+   startup, reinstall/update and uninstall data retention. Attribute reused v0.1.0
+   domain/UI/full-transcription/TownReporter evidence explicitly; do not invent
+   gates or call a sample transcription a full acquisition workflow.
+4. Reconcile manuals, sanitized acceptance evidence, handoff and this state; finish
+   PR49 merge, v0.2.0 tag/release and site delivery after checks/acceptance. Verify
+   public downloads/hashes and deployed site; update actual existing Big Picture
+   Project sources. Preserve v0.1.0 and clean only owned temporary work after delivery.
+
+No v0.2.0 merge, tag, publication or final installed acceptance has occurred.
+Next: root retrieves and verifies the outer signing result before guest launch.
+The following preserved record is historical, not live ownership/progress.
+
 ---
 ## Preserved prior delivery record
 # TownRecord bounded completion state — November 13, 2026
