@@ -1,0 +1,173 @@
+{
+  "schema": 1,
+  "scope": "Corrected candidate build, native signing reuse and independently verified signed outer; installed acceptance pending",
+  "application_build": {
+    "source_commit": "3a247d8865f1692911f4bed15cae370410ec6d70",
+    "source_dirty": false,
+    "dependencies": {
+      "schema": 1,
+      "python": {
+        "version": "3.13.15",
+        "build": "20260807",
+        "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260807/cpython-3.13.15%2B20260807-x86_64-pc-windows-msvc-install_only_stripped.tar.gz",
+        "sha256": "44bf9ae71f4b45e3ba3104ae331c6eff3f7002593c26fd12453eb9310c4f259a"
+      },
+      "uv": {
+        "version": "0.12.3",
+        "url": "https://github.com/astral-sh/uv/releases/download/0.12.3/uv-x86_64-pc-windows-msvc.zip",
+        "sha256": "b23350c79e8ad0192b8124af13a0f17e8d4e4549524785e1aef389ae5a06990e"
+      },
+      "ffmpeg": {
+        "version": "n9.0.2-57-gd838f9f9ae-win64-lgpl-shared",
+        "url": "https://github.com/FFmpeg-Builds/FFmpeg-Builds/releases/download/autobuild-2026-11-13-12-43/ffmpeg-n9.0.2-57-gd838f9f9ae-win64-lgpl-shared-9.0.zip",
+        "sha256": "1604210cff6b8814ad3e925719234acdd465226c20f49b7f7a54847292e88181",
+        "source": "https://github.com/FFmpeg/FFmpeg/commit/d838f9f9ae",
+        "build_scripts": "https://github.com/FFmpeg-Builds/FFmpeg-Builds/tree/autobuild-2026-11-13-12-43"
+      },
+      "compiler": {
+        "version": "6.7.3",
+        "winget_id": "JRSoftware.InnoSetup"
+      },
+      "ffmpeg-source": {
+        "url": "https://github.com/FFmpeg/FFmpeg/archive/d838f9f9ae.tar.gz",
+        "sha256": "479396204090c378cc2d181fef5355a1da64c5903e29a7fda687960101e70df9"
+      },
+      "ffmpeg-build-source": {
+        "url": "https://api.github.com/repos/FFmpeg-Builds/FFmpeg-Builds/tarball/autobuild-2026-11-13-12-43",
+        "sha256": "1b57e95ae01b03da36cbfd231d7482c85df2ce87ad4a0e491ca656fa7e3706be"
+      },
+      "vc-runtime": {
+        "version": "14.44.35211.0",
+        "package": "Microsoft.VC.14.44.17.14.CRT.Redist.X64.base",
+        "url": "https://download.visualstudio.microsoft.com/download/pr/45d3b8dd-bced-4b37-9974-142f748d710c/4aaf54db0bfc9435f7c3660e1a00237a4b556042bfeea64bde44c2e0194e6ee5/Microsoft.VC.14.44.17.14.CRT.Redist.X64.base.vsix",
+        "sha256": "4aaf54db0bfc9435f7c3660e1a00237a4b556042bfeea64bde44c2e0194e6ee5",
+        "files": [
+          {
+            "name": "msvcp140_2.dll",
+            "entry": "Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/msvcp140_2.dll",
+            "sha256": "3ea06f0ee098b4823cb79599df3780e7f23cce52c19aac31d2a0d47efe33a5e9"
+          },
+          {
+            "name": "vcruntime140_threads.dll",
+            "entry": "Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/vcruntime140_threads.dll",
+            "sha256": "219915cf20822f34d5e7c1fdd4e21ae7f3396881096c51036225fb8f84b47afa"
+          },
+          {
+            "name": "vcruntime140.dll",
+            "entry": "Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/vcruntime140.dll",
+            "sha256": "d5e4d9a3e835fa679450145d6a7d94e36573a509317111904d9b3712c30d9066"
+          },
+          {
+            "name": "msvcp140.dll",
+            "entry": "Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/msvcp140.dll",
+            "sha256": "0f885b509a685d2bbfa652fed26b5fb31d88fbdab0a978c641d1c7b8aa460aa9"
+          },
+          {
+            "name": "msvcp140_atomic_wait.dll",
+            "entry": "Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/msvcp140_atomic_wait.dll",
+            "sha256": "640b2aefced484d0368eea5bdd06addd0658a3a70a49256e560d6923b404a479"
+          },
+          {
+            "name": "vcruntime140_1.dll",
+            "entry": "Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/vcruntime140_1.dll",
+            "sha256": "1f2d41c4aa5db0bc33ebf7b66d72943a817d7ce6cbe880502a9403823633093f"
+          },
+          {
+            "name": "msvcp140_1.dll",
+            "entry": "Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/msvcp140_1.dll",
+            "sha256": "bfad5aef4c63a669e3c140655cdfdf395b6c979b400a447bd5dcb65ed8826c3d"
+          },
+          {
+            "name": "concrt140.dll",
+            "entry": "Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/concrt140.dll",
+            "sha256": "2405355f0a58067b258f8df33c327e3a3d716eaac5a3a5aebb757842d85bd376"
+          },
+          {
+            "name": "vcomp140.dll",
+            "entry": "Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.OpenMP/vcomp140.dll",
+            "sha256": "55aba23cdcd6484fbb06f4155b8ca75adfce7a881f10afd0c49457165e677164"
+          },
+          {
+            "name": "msvcp140_codecvt_ids.dll",
+            "entry": "Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/msvcp140_codecvt_ids.dll",
+            "sha256": "f2069a52880ec885ee7f0511186100eb7fada0411a2b4948fafea7735b878a18"
+          },
+          {
+            "name": "vccorlib140.dll",
+            "entry": "Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/vccorlib140.dll",
+            "sha256": "19839407c3fdbc824e5bce189bf68ddf8097f12ec28b757797ffa0415c144ddd"
+          }
+        ]
+      }
+    },
+    "wheel_sha256": "88857f9b821e67a273bb5197356a2125a04fbfad3961124fb1da9e0ba8da0bec",
+    "seed_manifest_sha256": "a4d39c56e804066c4248fad682ed0a1ea0ef42acbf7a6540e93c4eaffe9cbcf8",
+    "seed_requirements_sha256": "29bef704ee4a864bb53eb719cc64d012d903a7d048784682a3de702b6f0abe7a",
+    "payload_manifest_sha256": "f1130be010f156245dee5aa37e54ca314a65306a8fed59b5de13615655c24b70",
+    "lock_sha256": "04cd7853ac9ca7c42d9661d386555e369e103ebfa805475d481a51b94c7ecf81",
+    "completed_utc": "2026-11-14T08:05:27.4643728Z"
+  },
+  "repack": {
+    "source_commit": "3a247d8865f1692911f4bed15cae370410ec6d70",
+    "source_dirty": false,
+    "payload_source_commit": "3a247d8865f1692911f4bed15cae370410ec6d70",
+    "payload_manifest_sha256": "f1130be010f156245dee5aa37e54ca314a65306a8fed59b5de13615655c24b70",
+    "original_build_receipt_sha256": "7e07e68410348c2542d2e3d9f91d8d0088d9829b06bacd608e73d50757c15e74",
+    "wheel_sha256": "88857f9b821e67a273bb5197356a2125a04fbfad3961124fb1da9e0ba8da0bec",
+    "payload_signing_overlay_sha256": "c9a5ec586bfdeadf4f0723b4af3ad95f48d16b62ba8bab30f062b5973771ce2b",
+    "payload_signing_workflow_run": "43569539324",
+    "derived_seed_manifest": {
+      "path": "runtime-seeds/textflowkit/0.1.19/manifest.json",
+      "original_sha256": "a4d39c56e804066c4248fad682ed0a1ea0ef42acbf7a6540e93c4eaffe9cbcf8",
+      "derived_sha256": "0bf631371bf3247f35c1c80e28b341821899fcc0b667648270ede12bc404d41f",
+      "rule": "original seed metadata with signed PE hashes substituted by verified signing receipt"
+    },
+    "native_signing_reuse": {
+      "original_payload_manifest_sha256": "17286a509a5ab1cfaccab04a7cacb277f47c8fc9102068fde578b93d2084b2c9",
+      "original_receipt_sha256": "c2160604894dc35075b72164e1a71edf75ad3d880567b95b167638dce25b6c82",
+      "original_intake_sha256": "cc64e0febec9a432108551a7387f45c84fa5aaa00a5d0920728be3f877e9adc9",
+      "new_payload_manifest_sha256": "f1130be010f156245dee5aa37e54ca314a65306a8fed59b5de13615655c24b70",
+      "new_packaging_commit": "3a247d8865f1692911f4bed15cae370410ec6d70",
+      "rule": "all native input path, kind, target, SHA-256 and size identities are exactly unchanged"
+    },
+    "compiler_version": "6.7.3",
+    "compiler_sha256": "0a8757031b33777e4c9cbffee40f11a5062b36d25cbe144c1db73b6102b80ad7",
+    "compiler_exit_code": 0,
+    "installer_sha256": "8513c25113c857dd2c3e772c725c174af0d7ad172ebb53ce93dfdb24676e1063",
+    "completed_utc": "2026-11-14T08:12:25.6121360Z"
+  },
+  "unsigned_outer": {
+    "candidate": "3a247d8865f1692911f4bed15cae370410ec6d70",
+    "payload_source": "3a247d8865f1692911f4bed15cae370410ec6d70",
+    "sha256": "8513c25113c857dd2c3e772c725c174af0d7ad172ebb53ce93dfdb24676e1063",
+    "bytes": 221849525,
+    "signature": "NotSigned",
+    "overlay_sha256": "c9a5ec586bfdeadf4f0723b4af3ad95f48d16b62ba8bab30f062b5973771ce2b",
+    "derived_seed_sha256": "0bf631371bf3247f35c1c80e28b341821899fcc0b667648270ede12bc404d41f",
+    "native_signing_reuse": {
+      "original_payload_manifest_sha256": "17286a509a5ab1cfaccab04a7cacb277f47c8fc9102068fde578b93d2084b2c9",
+      "original_receipt_sha256": "c2160604894dc35075b72164e1a71edf75ad3d880567b95b167638dce25b6c82",
+      "original_intake_sha256": "cc64e0febec9a432108551a7387f45c84fa5aaa00a5d0920728be3f877e9adc9",
+      "new_payload_manifest_sha256": "f1130be010f156245dee5aa37e54ca314a65306a8fed59b5de13615655c24b70",
+      "new_packaging_commit": "3a247d8865f1692911f4bed15cae370410ec6d70",
+      "rule": "all native input path, kind, target, SHA-256 and size identities are exactly unchanged"
+    },
+    "alias_removed": true,
+    "completed_utc": "2026-11-14T08:12:25.612136Z"
+  },
+  "original_receipts_sha256": {
+    "payload-build-3a247d8-receipt.json": "7e07e68410348c2542d2e3d9f91d8d0088d9829b06bacd608e73d50757c15e74",
+    "repack-3a247d8-receipt.json": "cb221e82d4285bb159a760992f07d52b74d71c62955057361eb6b75b0a918463",
+    "unsigned-outer-3a247d8-receipt.json": "17c8d67cd58e1095c78707d90c2a31ca1a07af075d6ffad7c98a2b754d4be3d4"
+  },
+  "signed_outer": {
+    "signer": "CN=Scott Converse, O=Scott Converse, L=Longmont, S=co, C=US",
+    "source": "3a247d8865f1692911f4bed15cae370410ec6d70",
+    "workflow_run": 43574774784,
+    "timestamp": "CN=Microsoft Public RSA Time Stamping Authority, OU=nShield TSS ESN:7800-05E0-D947, OU=Microsoft America Operations, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+    "status": "verified",
+    "verified_utc": "2026-11-14T08:17:16.6029998Z",
+    "sha256": "e08a4f4447abb611a331cd7146df56493eb92f76bc14c9a660cb80fb9c3067a8",
+    "bytes": 221865160
+  }
+}

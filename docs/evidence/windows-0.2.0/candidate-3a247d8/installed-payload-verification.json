@@ -1,0 +1,14 @@
+{
+  "started_utc": "2026-11-14T08:20:47.060401+00:00",
+  "status": "verified",
+  "source": "3a247d8865f1692911f4bed15cae370410ec6d70",
+  "installer_sha256": "e08a4f4447abb611a331cd7146df56493eb92f76bc14c9a660cb80fb9c3067a8",
+  "payload_manifest_sha256": "f1130be010f156245dee5aa37e54ca314a65306a8fed59b5de13615655c24b70",
+  "signing_overlay_sha256": "c9a5ec586bfdeadf4f0723b4af3ad95f48d16b62ba8bab30f062b5973771ce2b",
+  "derived_seed_manifest_sha256": "0bf631371bf3247f35c1c80e28b341821899fcc0b667648270ede12bc404d41f",
+  "payload_files_verified": 23094,
+  "signed_payload_replacements_verified": 124,
+  "seed_files_verified": 18330,
+  "scope": "All installed payload byte hashes, exact final metadata and deterministic derived seed; signing-only provenance remains in the signing receipt.",
+  "finished_utc": "2026-11-14T08:20:56.297430+00:00"
+}

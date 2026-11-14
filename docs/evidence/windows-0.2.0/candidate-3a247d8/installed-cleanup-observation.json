@@ -1,0 +1,17 @@
+{
+  "status": "cleanup_verified",
+  "candidate_source": "3a247d8865f1692911f4bed15cae370410ec6d70",
+  "installer_sha256": "e08a4f4447abb611a331cd7146df56493eb92f76bc14c9a660cb80fb9c3067a8",
+  "stopped_only_owned_guest": true,
+  "wsb_inventory_empty": true,
+  "scheduled_tasks_terminal": 14,
+  "product_or_browser_processes_before_guest_stop": 0,
+  "api_unreachable_after_uninstall": true,
+  "private_userdata_files_host_verified": 81,
+  "private_userdata_bytes": 465203859,
+  "sqlite_integrity_verified_databases": 3,
+  "harness_recovery_note": "Initial restore continuation used fragment-only navigation; original failure retained and cause reproduced; fresh-document continuation verified without repeating backup/restore",
+  "owned_jobs_remaining": 0,
+  "utc": "2026-11-14T08:38:17.7695774Z",
+  "source_receipt_sha256": "495dc6fa50ece1b44183e6685a3bc31a60d6ca0de1e5d61639d2447cc6f56467"
+}

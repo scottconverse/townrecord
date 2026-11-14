@@ -1,10 +1,81 @@
 # Windows community-record operation
 
-This is the Python community-record service and TypeScript browser interface.
-[Download TownRecord 0.1.0 community preview](https://github.com/scottconverse/townrecord/releases/tag/v0.1.0).
-Scott approved publication of the exact tested candidate on November 13, 2026.
+TownRecord uses a Python service and TypeScript browser interface. Start with the
+0.2.0 Windows installer guidance below; exact acceptance and publication
+status remain in the [delivery handoff](COMMUNITY-COMPLETION-HANDOFF.md).
+The earlier Python-wheel preview instructions are preserved in the historical
+advanced section.
 
-## Install the released package
+## Install and open the Windows application (0.2.0)
+
+[Download TownRecord 0.2.0 for Windows](https://github.com/scottconverse/townrecord/releases/download/v0.2.0/TownRecord-0.2.0-windows-x64-setup.exe)
+and read the [release notes](https://github.com/scottconverse/townrecord/releases/tag/v0.2.0). The installer is the normal-user path;
+Python, command-line tools and copied tokens are unnecessary. Consult the [delivery handoff](COMMUNITY-COMPLETION-HANDOFF.md) for exact identity and status.
+Check Windows file Properties > Digital Signatures for **Scott Converse** before
+running it. Exact hashes, signing receipts and observed installed outcomes are in
+[acceptance](COMMUNITY-ACCEPTANCE.md).
+
+Run the installer for your Windows account, then choose **TownRecord** in Start
+Menu. Python, FFmpeg and a pinned, signed TextFlowKit 0.1.19 runtime are supplied;
+model weights are not bundled. No pip, Node, PowerShell or
+copied operator token is needed. The browser opens already signed in. Its launch
+link is short-lived and works once. After reload or sign out, open TownRecord
+from Start Menu again. Closing the browser leaves retrieval running. Use **Stop
+TownRecord** in the workspace to stop it; Start Menu starts it again.
+
+The application runs under your signed-in Windows account. Windows sign-in startup,
+where enabled by the installer, uses that account; this is not a machine-wide
+Windows service and does not wake a sleeping computer. Reopening Start Menu
+reuses the running instance. Public hosting and a resident community URL remain
+separate IT work.
+
+### First-run checklist
+
+1. Confirm the detected community timezone, choose the daily retrieval time, and
+   paste a known accessible public recording URL for downloader checks. **Save
+   settings and apply** restarts automatically. Wait for **Settings are applied**.
+2. Add the community and public bodies using the source names. Configure the
+   supported provider URL, verified document origins and explicit coverage dates.
+   **Validate and save source** uses existing connector validation. See
+   [connector capabilities](CONNECTORS.md).
+3. Under Processing, **Set up / check** yt-dlp and TextFlowKit. TextFlowKit setup
+   verifies and copies the bundled signed 0.1.19 runtime into managed storage;
+   this initial bootstrap can work offline. FFmpeg is bundled. Model downloads,
+   yt-dlp setup/checks and meeting-source access still need internet access and
+   disk space. Existing online update checks retain a working runtime if a newer
+   version fails installation or its check. Read job states; **Refresh status**
+   checks progress and **Retry** retries failed/paused jobs after resolving their
+   stated cause.
+4. Retrieve configured coverage, review records and publish deliberately. Setup
+   saved or a queued job does not establish completed acquisition.
+
+### Settings and recovery without commands
+
+The desktop panel shows the active data and backup folders. Edit settings and save
+for automatic restart. **Restart TownRecord** provides an explicit retry. If the
+connection does not return, reopen from Start Menu and check persisted settings.
+
+**Create verified backup** stops workers, creates and verifies a timestamped backup
+in the shown folder, then restarts. Wait for its verified result. If it fails,
+check the error and backup folder before repeating. Backups include unpublished
+records and token hashes; protect them and copy verified backups to a separate
+protected device under your community's policy.
+
+Expand **Restore a backup**, paste the backup folder path from File Explorer,
+then **Restore and switch profile** and confirm. Restore checks the backup into
+a separate profile, then restarts using it. Reopen from Start Menu to authenticate.
+Check a known meeting, document, publication and retrieval before relying on the
+restored copy. Keep the old profile. External provider credentials and managed
+tool/model caches are excluded; set up tools again after restore when needed.
+
+## Advanced: historical 0.1.0 Python installation
+
+[Historical 0.1.0 Python-wheel preview](https://github.com/scottconverse/townrecord/releases/tag/v0.1.0).
+Scott approved publication of that unchanged wheel on November 13, 2026.
+
+The following commands preserve the published preview instructions for a manually
+managed service. They are not required for the 0.2.0 installer. Manual token entry
+and environment variables apply to nonpackaged mode.
 
 Use a dedicated Windows account/profile, Python 3.12 or newer, uv and FFmpeg on
 PATH. FFmpeg is needed for local transcription and is not supplied by the wheel.
@@ -49,7 +120,7 @@ token for each operator using the same existing token command. Do not paste toke
 in repository files, public documentation or a resident link. The service listens
 on http://127.0.0.1:8190 by default. Leave its console running; Ctrl+C stops it.
 
-## First setup and daily operation
+## Advanced CLI setup and shared daily operation
 
 1. Open http://127.0.0.1:8190/operator and sign in with the write token.
 2. Add the community and two public bodies using the source's names. The pilot
@@ -80,7 +151,7 @@ Daily retrieval runs at the configured local time while `serve` is running.
 Scheduled sync uses the existing rolling window (30 days back, 60 days ahead);
 the operator's explicit coverage dates govern manual retrieval. `townrecord status`
 reports scheduled runs, paused causes and source health. No machine wake-up or
-Windows startup registration is installed by this candidate. To run after sign-in,
+Windows startup registration is installed by the historical 0.1.0 CLI package. To run after sign-in,
 IT may schedule the same private start script under the same account. Never run a
 second service against the same profile. Missing timezone or unavailable tools
 must be corrected rather than treating a paused schedule as successful.
@@ -102,6 +173,9 @@ machine before transferring evidence. A localhost URL on another computer refers
 to that computer, not to the community server.
 
 ## Backup and recovery
+
+Windows application users use the desktop controls above. These commands apply
+to the historical manually managed service and preserve the same verification.
 
 Stop the service before backup. Backups include unpublished material, token hashes,
 connector captures, source configuration, publication history, instance identity,

@@ -30,6 +30,17 @@ interface Overview {
   sources: Source[];
   jobs: Job[];
 }
+interface DesktopSettings {
+  desktop: boolean;
+  time_zone: string;
+  daily_time: string;
+  test_video_url: string;
+  data_path: string;
+  backup_path: string;
+  setup_required: boolean;
+  restart_required: boolean;
+  last_operation?: {kind: string; success: boolean; error?: string; path?: string; operation_id?: string};
+}
 interface Summary {
   id: Id;
   title: string | null;
@@ -104,6 +115,15 @@ function requiredElement<T extends HTMLElement>(
   return value;
 }
 const elements = {
+  desktop: requiredElement("desktop", HTMLElement),
+  "settings-form": requiredElement("settings-form", HTMLFormElement),
+  "setup-progress": requiredElement("setup-progress", HTMLElement),
+  "desktop-status": requiredElement("desktop-status", HTMLElement),
+  "desktop-paths": requiredElement("desktop-paths", HTMLElement),
+  restart: requiredElement("restart", HTMLButtonElement),
+  backup: requiredElement("backup", HTMLButtonElement),
+  stop: requiredElement("stop", HTMLButtonElement),
+  "restore-form": requiredElement("restore-form", HTMLFormElement),
   main: requiredElement("main", HTMLElement),
   heading: requiredElement("heading", HTMLElement),
   intro: requiredElement("intro", HTMLElement),
@@ -118,6 +138,7 @@ const elements = {
   "source-form": requiredElement("source-form", HTMLFormElement),
   jurisdictions: requiredElement("jurisdictions", HTMLSelectElement),
   sources: requiredElement("sources", HTMLElement),
+  provider: requiredElement("provider", HTMLSelectElement),
   tools: requiredElement("tools", HTMLElement),
   schedule: requiredElement("schedule", HTMLElement),
   refresh: requiredElement("refresh", HTMLButtonElement),
@@ -177,6 +198,13 @@ function checkbox(form: HTMLFormElement, name: string): HTMLInputElement {
 
 const operator = location.pathname === "/operator";
 
+// Remove the launch credential before any request, including failed exchanges.
+const launchCode = new URLSearchParams(location.hash.slice(1)).get("launch");
+if (launchCode !== null) history.replaceState(null, "", location.pathname + location.search);
+let desktopMode = false;
+let desktopSettings: DesktopSettings | null = null;
+let lifecycleBusy = false;
+let providersLoaded = false;
 let token = "";
 let selected: Id | null = null;
 let listFocus: HTMLButtonElement | null = null;
@@ -332,6 +360,12 @@ async function browse() {
 }
 
 async function refresh() {
+  if (!providersLoaded) {
+    const registry = await api<{data: {providers: {provider: string}[]}}>("/v1/connectors/capabilities");
+    const providers = registry.data.providers.map(p => ({id: p.provider}));
+    options($("provider"), providers, p => p.id === "primegov" ? "PrimeGov" : p.id.replaceAll("_", " "));
+    providersLoaded = true;
+  }
   overview = await api<Overview>("/v1/operator/overview");
   $("tools").replaceChildren();
   for (const [name, version] of Object.entries(overview.tools || {})) {
@@ -346,7 +380,7 @@ async function refresh() {
   }
   $("schedule").textContent = overview.schedule.time_zone
     ? `Daily retrieval: ${overview.schedule.daily_time} (${overview.schedule.time_zone}), while service is running.`
-    : "Daily retrieval is paused: set TOWNRECORD_TIME_ZONE before starting the service.";
+    : desktopMode ? "Daily retrieval is paused: save your timezone above." : "Daily retrieval is paused: set TOWNRECORD_TIME_ZONE before starting the service.";
   options($("jurisdictions"), overview.jurisdictions, (j) => j.name);
   options($("correction-body"), overview.bodies, (b) => b.name);
   const bf = $("body-filter");
@@ -395,6 +429,10 @@ async function refresh() {
       a.append(details);
     }
     $("jobs").append(a);
+  }
+  if (desktopSettings) {
+    const remaining = [desktopSettings.setup_required ? "save schedule and sample recording" : "", !overview.bodies.length ? "add a public body" : "", !overview.sources.length ? "save a source" : "", Object.values(overview.tools).some(v => !v) ? "set up processing tools" : ""].filter(Boolean);
+    $("setup-progress").textContent = remaining.length ? "Setup remaining: " + remaining.join("; ") + "." : "Community setup saved. Check processing results before reviewing and publishing records.";
   }
   await browse();
 }
@@ -646,7 +684,8 @@ $("signout").onclick = () => {
   $("workspace").hidden = true;
   $("detail").hidden = true;
   $("browse").hidden = true;
-  $("login").hidden = false;
+  $("login").hidden = desktopMode;
+  $("desktop").hidden = true;
   for (const id of [
     "meetings",
     "meeting-content",
@@ -668,7 +707,7 @@ $("signout").onclick = () => {
   $("association-form").reset();
   $("filters").reset();
   $("publication-note").value = "";
-  message("Signed out.");
+  message(desktopMode ? "Signed out. Open TownRecord from the Start Menu to sign in again." : "Signed out.");
 };
 
 $("body-form").addEventListener(
@@ -734,20 +773,101 @@ $("export").onclick = task(() =>
   ),
 );
 
+function showDesktopSettings(settings: DesktopSettings) {
+  desktopSettings = settings;
+  $("desktop").hidden = false;
+  const form = $("settings-form");
+  field(form, "time_zone").value = settings.time_zone || Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+  field(form, "daily_time").value = settings.daily_time || "06:00";
+  field(form, "test_video_url").value = settings.test_video_url || "";
+  $("desktop-paths").textContent = `Data folder: ${settings.data_path}. Backup folder: ${settings.backup_path}.`;
+}
+
+async function waitForRestart(operationId: string) {
+  // The service is briefly unavailable. Wait for persisted settings to be active.
+  for (let attempt = 0; attempt < 300; attempt++) {
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    if (!token) throw Error("Open TownRecord from the Start Menu to reconnect.");
+    try {
+      const settings = await api<DesktopSettings>("/v1/desktop/settings");
+      if (settings.restart_required || settings.last_operation?.operation_id !== operationId) continue;
+      showDesktopSettings(settings);
+      await refresh();
+      const receipt = settings.last_operation;
+      if (receipt && !receipt.success) throw Error(`${receipt.kind} failed: ${receipt.error || "Check the application log."}`);
+      $("desktop-status").textContent = receipt?.kind === "backup" ? `Backup verified. ${receipt.path || settings.backup_path}. TownRecord is running.` : "TownRecord is running. Settings are applied.";
+      return;
+    } catch (error) {
+      if (error instanceof Error && error.message.includes(" failed:")) throw error;
+    }
+  }
+  throw Error("TownRecord has not reconnected yet. Open it from the Start Menu, then check status. Do not repeat a backup until you have checked the backup folder.");
+}
+
+async function lifecycle(path: string, data: unknown = {}) {
+  if (lifecycleBusy) return;
+  lifecycleBusy = true;
+  for (const id of ["restart", "backup", "stop"] as const) $(id).disabled = true;
+  $("desktop-status").textContent = path.endsWith("backup") ? "Stopping work to create and verify a backup, then restarting..." : "Restarting TownRecord...";
+  try {
+    const result = await api<{status: string; path?: string; operation_id?: string}>("/v1/desktop/" + path, data);
+    if (path === "stop" || path === "restore") {
+      token = "";
+      $("workspace").hidden = true;
+      $("browse").hidden = true;
+      $("intro").textContent = path === "stop" ? "TownRecord is stopping. Open TownRecord from the Start Menu to start it again." : `Restored profile prepared at ${result.path || "a separate folder"}. TownRecord is restarting. Open TownRecord from the Start Menu to sign in and check your restored records.`;
+      return;
+    }
+    if (!result.operation_id) throw Error("Restart did not return an operation receipt. Reopen TownRecord to check status.");
+    await waitForRestart(result.operation_id);
+  } catch (error) {
+    $("desktop-status").textContent = error instanceof Error ? error.message : "The operation failed. Reopen TownRecord to check status.";
+    throw error;
+  } finally {
+    lifecycleBusy = false;
+    for (const id of ["restart", "backup", "stop"] as const) $(id).disabled = false;
+  }
+}
+
+$("settings-form").addEventListener("submit", task(async e => {
+  await api<DesktopSettings>("/v1/desktop/settings", formValues(formFromEvent(e)), "PUT");
+  await lifecycle("restart");
+}));
+$("restart").onclick = task(() => lifecycle("restart"));
+$("backup").onclick = task(() => lifecycle("backup"));
+$("stop").onclick = task(() => lifecycle("stop"));
+$("restore-form").addEventListener("submit", task(async e => {
+  if (!confirm("Restore this backup into a separate profile and switch TownRecord to it? Keep the current profile until you verify the restored records.")) return;
+  await lifecycle("restore", formValues(formFromEvent(e)));
+}));
+
 if (operator) {
   $("heading").textContent = "Operator workspace";
-  $("intro").textContent =
-    "Review acquisitions, correct records and choose what residents can see.";
-  $("login").hidden = false;
+  $("intro").textContent = "Review acquisitions, correct records and choose what residents can see.";
   $("browse").hidden = true;
+  task(async () => {
+    const info = await api<{desktop: boolean}>("/v1/desktop/info");
+    desktopMode = info.desktop;
+    if (!desktopMode) {
+      $("login").hidden = false;
+      return;
+    }
+    if (!launchCode) throw Error("Open TownRecord from the Start Menu to sign in. Each launch link works once; reload does not retain access.");
+    try {
+      const result = await api<{token: string}>("/v1/desktop/exchange", {code: launchCode});
+      token = result.token;
+    } catch {
+      throw Error("This launch link expired or was already used. Open TownRecord from the Start Menu to sign in again.");
+    }
+    showDesktopSettings(await api<DesktopSettings>("/v1/desktop/settings"));
+    await refresh();
+    $("workspace").hidden = false;
+    $("browse").hidden = false;
+  })();
 } else {
   task(async () => {
     const bodies = await api<Body[]>("/public/v1/bodies");
-    options(
-      $("body-filter"),
-      [{ id: "", name: "All bodies" }, ...bodies],
-      (b) => b.name,
-    );
+    options($("body-filter"), [{ id: "", name: "All bodies" }, ...bodies], b => b.name);
     await browse();
     const target = new URLSearchParams(location.search).get("meeting");
     if (target && /^\d+$/.test(target)) await openMeeting(Number(target));

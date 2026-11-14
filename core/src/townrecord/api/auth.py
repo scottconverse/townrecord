@@ -54,6 +54,14 @@ def require_token(
 ) -> sqlite3.Row | None:
     """Reject the request unless it carries a valid token of a usable scope."""
     path = request.url.path
+    if request.method == "GET" and path == "/v1/desktop/info":
+        return None
+    if (
+        request.method == "POST"
+        and path == "/v1/desktop/exchange"
+        and getattr(request.app.state, "desktop", None) is not None
+    ):
+        return None
     if request.method == "GET" and (
         path in {"/", "/operator", "/assets/community.css", "/assets/community.js"}
         or path.startswith("/public/v1/")

@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "curated_utc": "2026-11-14T07:26:52.541929+00:00",
+  "installed_acceptance": "pending",
+  "original_receipts": {
+    "independent-signature-verification.json": {
+      "source": "outputs/townrecord-windows-020/signature-verification-02b6699.json",
+      "source_sha256": "8cb2d3e2a669073727d122e4da1c0c2db281e56c0f0fdc994c5554e73c3aec62",
+      "transformation": "none; original receipt bytes preserved"
+    },
+    "outer-signing-receipt.json": {
+      "source": "outputs/townrecord-windows-020/signed-02b6699/signing-receipt.json",
+      "source_sha256": "7cbd45302d3632113270cceebb8e340e333804ee6f95aac397304d8d3aefb382",
+      "transformation": "none; original receipt bytes preserved"
+    },
+    "native-signing-receipt.json": {
+      "source": "build\\windows\\payload-signing-receipt.json",
+      "source_sha256": "c2160604894dc35075b72164e1a71edf75ad3d880567b95b167638dce25b6c82",
+      "transformation": "none; original receipt bytes preserved"
+    },
+    "signed-seed-derivation.json": {
+      "source": "build\\windows\\applied-seed-02b6699-receipt.json",
+      "source_sha256": "b4119bfb7ab5461b6312fabf6226f6a5d0927e836f3e488d4f24871e60973fca",
+      "transformation": "none; original receipt bytes preserved"
+    }
+  },
+  "curated_receipts": [
+    "build-provenance.json",
+    "required-ci.json"
+  ],
+  "excluded": [
+    "private profiles/configuration/databases/token material",
+    "raw full logs",
+    "full payload/seed file manifests and binary payloads"
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "conclusion": "success",
+  "createdAt": "2026-11-14T08:02:32Z",
+  "databaseId": 43573893300,
+  "headSha": "3a247d8865f1692911f4bed15cae370410ec6d70",
+  "jobs": [
+    {
+      "name": "core (ubuntu-latest)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-11-14T08:02:35Z",
+      "completedAt": "2026-11-14T08:04:21Z",
+      "url": "https://github.com/scottconverse/townrecord/actions/runs/43573893300/job/132383841399"
+    },
+    {
+      "name": "core (macos-latest)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-11-14T08:02:36Z",
+      "completedAt": "2026-11-14T08:04:30Z",
+      "url": "https://github.com/scottconverse/townrecord/actions/runs/43573893300/job/132383841476"
+    },
+    {
+      "name": "core (windows-latest)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-11-14T08:02:35Z",
+      "completedAt": "2026-11-14T08:07:43Z",
+      "url": "https://github.com/scottconverse/townrecord/actions/runs/43573893300/job/132383841586"
+    }
+  ],
+  "status": "completed",
+  "updatedAt": "2026-11-14T08:07:43Z",
+  "url": "https://github.com/scottconverse/townrecord/actions/runs/43573893300"
+}

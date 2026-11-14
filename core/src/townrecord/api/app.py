@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from ..config import Settings
 from ..db import connect, migrate
-from . import community, connectors, docs_assets, missing, read
+from . import community, connectors, desktop, docs_assets, missing, read
 from .auth import require_token
 
 DESCRIPTION = "TownRecord private operator API and explicitly reviewed public meeting records."
@@ -71,6 +71,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return response
 
     app.include_router(community.router)
+    app.include_router(desktop.router)
     app.include_router(read.router)
     app.include_router(missing.router)
     app.include_router(connectors.router)

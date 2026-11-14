@@ -1,3 +1,61 @@
+# TownRecord Windows installer handoff — November 14, 2026
+
+## Active delivery: Windows 0.2.0
+
+Scott authorized the signed Windows installer, normal-user first-run, clean
+Windows acceptance, documentation and merge/tag/release/site/Big Picture delivery.
+The TypeScript browser interface and Python service remain; no Tauri or new provider.
+Published v0.1.0 and its exact source 758abf6 remain historical and unchanged.
+
+Current source is `3a247d8865f1692911f4bed15cae370410ec6d70`.
+Wheel SHA256: `88857f9b821e67a273bb5197356a2125a04fbfad3961124fb1da9e0ba8da0bec`.
+Signed installer SHA256: `e08a4f4447abb611a331cd7146df56493eb92f76bc14c9a660cb80fb9c3067a8`,
+221,865,160 bytes. Required CI 43573893300, native signature reuse and outer
+signing 43574774784 passed; independent Scott Converse signature and Microsoft
+timestamp verification passed. [Receipts](evidence/windows-0.2.0/candidate-3a247d8/).
+
+Clean ordinary-user installation verified 23,094 payload and 18,330 seed files.
+Headless first-run settings, automatic one-use sign-in, two-body/source setup,
+31 actual provider choices and both managed tools passed. Real PrimeGov sync
+completed 12 downloads, 9 PDF extraction and 3 caption jobs. A 120-second Council
+sample transcribed locally through the installed managed Whisper small/CPU path
+in 39.398s (34 segments, 329 words, 119.820s final timestamp). Actual Council and
+Planning review/publication/export and resident access passed; sign-out cleared
+private content. These are scoped installed observations, not a full-meeting
+transcription or verification of every provider.
+
+Verified desktop backup/restore passed: 19 files rehashed, distinct restored profile
+active, original database/publication retained and UI read/sign-out verified. The
+initial harness navigation failure was resolved with a fresh document, without
+repeating the backup/restore or changing the product. Same-version reinstall then passed with saved
+configuration/data/credentials unchanged, full post-reinstall payload/seed proof
+and service reopen. Uninstall removed program, exact HKCU registration, Start Menu
+Open/Stop links and startup shortcut while retaining the saved profile. Installed
+acceptance is complete within the scope recorded in acceptance. All 14 acceptance tasks are terminal; product/browser processes and owned jobs
+are absent, API access is closed after uninstall, and the owned guest was stopped
+with live Sandbox inventory empty. Private recovery files and database integrity
+were verified separately and remain excluded from public receipts.
+
+Public 0.2.0 release, merge/tag, site deployment and
+post-delivery verification remain pending. [PR49](https://github.com/scottconverse/townrecord/pull/49)
+is open. Download links in the manuals are prepared for publication, not evidence
+that an asset is already public. Do not repeat completed acquisition/model jobs
+or rebuild unchanged signed application bytes for documentation edits.
+
+The installer includes bundled Python/FFmpeg, a pinned signed TextFlowKit seed
+without model weights, app-local Microsoft CRT files and process-scoped certifi
+CA handling. Data remains separate from program files; desktop and connector jobs
+share the configured profile. Retired failed candidates and their preserved
+recovery data are diagnostic history. Public hosting remains an operator deployment.
+
+[Exact acceptance and remaining outcomes](COMMUNITY-ACCEPTANCE.md) ·
+[Current state/ownership](COMMUNITY-RECORD-STATE.md) ·
+[Windows setup](WINDOWS-COMMUNITY-OPERATIONS.md) ·
+[Installer design](WINDOWS-INSTALLER-DESIGN.md) ·
+[First-run design](WINDOWS-FIRST-RUN-DESIGN.md) ·
+[Interface contract](COMMUNITY-INTERFACE-DESIGN.md)
+
+## Historical 0.1.0 completion record
 # TownRecord community completion handoff — November 13, 2026
 
 Townlight is the umbrella. This is the bounded TownRecord Windows community-record

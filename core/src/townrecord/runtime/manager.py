@@ -35,6 +35,7 @@ setting.
 from __future__ import annotations
 
 import logging
+import os
 import re
 import shutil
 from collections.abc import Callable, Sequence
@@ -48,6 +49,7 @@ from . import javascript as javascript_runtime
 from . import pypi, tools, versions
 from .lock import UpdateLock
 from .pointer import Installed, Pointer, read_pointer, write_pointer
+from .seed import bundled_seed, desktop_textflowkit, filesystem_path
 from .settings import RUNTIMES_FOLDER, TOOL_NAME, RuntimeSettings
 
 logger = logging.getLogger(__name__)
@@ -107,7 +109,7 @@ class InstallResult:
 class UpdateOutcome:
     """What one daily check did, in words the user can read (spec 16.3)."""
 
-    #: What PyPI said the latest version is.
+    #: What PyPI said the latest version is, or "unknown" for offline seed bootstrap.
     checked: str
     #: The version that was asked for, or None when nothing was installed.
     requested: str | None
@@ -150,7 +152,9 @@ class RuntimeManager:
     #: The path of `uv`. None means look for it on PATH.
     uv_path: str | None = None
     #: The Python `uv venv` should build from. None leaves the choice to uv.
-    python: str | None = None
+    python: str | None = field(
+        default_factory=lambda: os.environ.get("TOWNRECORD_RUNTIME_PYTHON") or None
+    )
     #: How a child is run. None means the real one, :func:`townrecord.proc.run`.
     runner: Runner | None = None
 
@@ -288,6 +292,8 @@ class RuntimeManager:
         somewhere TownRecord did not install.
         """
         installed = self._active()
+        if desktop_textflowkit(self.tool):
+            return self.interpreter()
         venv = self._venv_of_active(installed)
         if venv is None:
             raise self._not_where_the_pointer_says(installed)
@@ -308,6 +314,25 @@ class RuntimeManager:
         asked, not the one this call asked for (spec 8.9).
         """
         requested = _safe_version(version)
+        seed = bundled_seed(self.tool)
+        if seed is not None and versions.same_version(requested, seed.version):
+            target = self.venv_folder(requested)
+            # Validate before removing an incomplete, unactivated install.
+            seed.verify()
+            current = self.read_pointer().active
+            if current and self._venv_of_active(current) == target.resolve():
+                raise RuntimeInstallFailed("The active runtime is never overwritten by seed setup.")
+            self._discard_venv(target)
+            if not self.python:
+                raise RuntimeInstallFailed("The bundled seed needs the installed Python path.")
+            seed.copy(target, self.python)
+            python = self.python_in(target)
+            reported = self._ask_version(python, target)
+            if not versions.same_version(requested, reported):
+                raise RuntimeInstallFailed("The bundled seed reports a different tool version.")
+            return InstallResult(
+                requested, reported, target.relative_to(self.root).as_posix(), str(python)
+            )
         uv = self.uv_executable()
         target = self.venv_folder(requested)
         self._discard_venv(target)
@@ -404,14 +429,23 @@ class RuntimeManager:
             raise RuntimeInstallFailed(
                 f"The new {self.tool} runtime answered no version, so nothing can be pinned."
             )
+        if desktop_textflowkit(self.tool):
+            native = self._run(
+                [str(python), "-I", "-c", "import whisper"], self.settings.version_timeout_s
+            )
+            if not native.ok:
+                raise RuntimeInstallFailed(
+                    "The TextFlowKit native transcription dependencies did not load: "
+                    f"{_tail(native)}"
+                )
         return lines[0].removeprefix(self.tool + " ")
 
     def _discard_venv(self, target: Path) -> None:
         """Remove a venv folder for a version about to be built again."""
         if target == self.tool_root or not storage.is_inside(target, self.tool_root):
             return
-        if target.exists():
-            shutil.rmtree(target, ignore_errors=True)
+        if filesystem_path(target).exists():
+            shutil.rmtree(filesystem_path(target), ignore_errors=True)
 
     # -- updating and rolling back ----------------------------------------
 
@@ -425,7 +459,16 @@ class RuntimeManager:
         as a plain sentence. Only one update runs at a time, enforced by the
         lock file of :mod:`townrecord.runtime.lock`.
         """
-        latest = pypi.latest_version(client, tool=self.tool)
+        seed = bundled_seed(self.tool)
+        lookup_error = None
+        try:
+            latest = pypi.latest_version(client, tool=self.tool)
+        except pypi.RuntimeLookupFailed as exc:
+            if seed is None or self._installed_python(self.read_pointer().active):
+                raise
+            # The known signed installer seed can bootstrap offline. This is
+            # not an online update result; keep the unknown check explicit.
+            latest, lookup_error = "unknown", str(exc)
         with UpdateLock(self.tool_root, stale_after_s=self.settings.lock_stale_s, tool=self.tool):
             pointer = self.read_pointer()
             current = pointer.active if self._installed_python(pointer.active) else None
@@ -439,6 +482,18 @@ class RuntimeManager:
                         [str(python), "-c", "import whisper"], self.settings.version_timeout_s
                     )
                     if not ready.ok:
+                        if desktop_textflowkit(self.tool):
+                            return UpdateOutcome(
+                                latest,
+                                None,
+                                current.version,
+                                None if pointer.previous is None else pointer.previous.version,
+                                False,
+                                True,
+                                "The active TextFlowKit native dependencies did not load; "
+                                "the existing runtime was preserved without in-place repair. "
+                                f"{_tail(ready)}",
+                            )
                         installed_version = current.version.removeprefix("textflowkit ")
                         repaired = self._run(
                             [
@@ -467,7 +522,22 @@ class RuntimeManager:
                     failed=False,
                     reason=f"{self.tool} {current.version} is already the newest version.",
                 )
-            result = self.install(latest)
+            selected = seed.version if current is None and seed is not None else latest
+            try:
+                result = self.install(selected)
+            except (RuntimeInstallFailed, proc.ProcessFailed, OSError, ValueError) as exc:
+                if current is None or not desktop_textflowkit(self.tool):
+                    raise
+                return UpdateOutcome(
+                    latest,
+                    selected,
+                    current.version,
+                    None if pointer.previous is None else pointer.previous.version,
+                    False,
+                    True,
+                    f"The TextFlowKit update could not be installed or loaded ({exc}); "
+                    f"the working version {current.version} was preserved.",
+                )
             passed, why = self._probe(result.python, probe)
             kept = current.version if current is not None else None
             if not passed:
@@ -499,7 +569,13 @@ class RuntimeManager:
                 switched=True,
                 failed=False,
                 reason=(
-                    f"{self.tool} {result.version} passed its test against {test_video_url} "
+                    (f"Online version check unavailable ({lookup_error}). " if lookup_error else "")
+                    + (
+                        f"Selected bundled seed {selected}; latest checked: {latest}. "
+                        if current is None and seed is not None
+                        else ""
+                    )
+                    + f"{self.tool} {result.version} passed its test against {test_video_url} "
                     "and is now the active version."
                 ),
             )

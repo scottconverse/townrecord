@@ -7,26 +7,43 @@ review and publish a snapshot, and gives residents a searchable record with link
 back to the source. It is free, open-source community infrastructure in the
 [Townlight](https://github.com/townlight) family.
 
-[Website](https://scottconverse.github.io/townrecord/) · [Download 0.1.0 community preview](https://github.com/scottconverse/townrecord/releases/tag/v0.1.0)
+[Website](https://scottconverse.github.io/townrecord/) · [Windows installation](docs/WINDOWS-COMMUNITY-OPERATIONS.md)
 
 ## Start here
 
+- [Download TownRecord 0.2.0 for Windows](https://github.com/scottconverse/townrecord/releases/download/v0.2.0/TownRecord-0.2.0-windows-x64-setup.exe) · [Release notes](https://github.com/scottconverse/townrecord/releases/tag/v0.2.0)
 - [User manual — operators and residents](docs/USER-MANUAL.md)
 - [Windows installation, daily operation and recovery](docs/WINDOWS-COMMUNITY-OPERATIONS.md)
 - [Technical manual — architecture, Mermaid diagrams and HTTP API](docs/TECHNICAL-MANUAL.md)
 - [Supported connector capabilities and limits](docs/CONNECTORS.md)
-- [Exact candidate acceptance and evidence](docs/COMMUNITY-ACCEPTANCE.md)
+- [Exact acceptance and evidence](docs/COMMUNITY-ACCEPTANCE.md)
 
-## Current delivery
+## Windows application and delivery
 
-The bounded Windows community-record candidate passed acquisition from two public
-bodies, operator/resident workflows, full local transcription, TownReporter browser
-handoff, scheduling and backup/restore. These observations do not establish all
-providers, certified transcript accuracy or the broader specification's backlog.
-The [completion handoff](docs/COMMUNITY-COMPLETION-HANDOFF.md) records exact identities.
-**TownRecord 0.1.0 community preview is published from the exact tested wheel.**
-Download the wheel and source archive together; follow the Windows guide.
-This release is a Python service package, not an MSI or hosted TownRecord service.
+The 0.2.0 Windows installer bundles Python, FFmpeg and a pinned, signed
+TextFlowKit 0.1.19 runtime without model weights. Install it for
+your account, open **TownRecord** from Start Menu and complete the browser
+checklist: timezone/daily time/sample recording, community/body, source/coverage
+and managed tools. Sign-in is automatic. Settings, status/retry, verified backup,
+restore, restart and stop use the workspace. Closing the browser leaves retrieval
+running. Public hosting remains separate.
+
+TextFlowKit setup verifies and copies the bundled runtime into managed storage;
+its initial bootstrap can work offline. Model downloads, yt-dlp setup/checks and
+meeting-source access still need internet access. Existing online update checks
+retain a working runtime if a newer version fails installation or its check.
+
+See [Windows installation and recovery](docs/WINDOWS-COMMUNITY-OPERATIONS.md) and
+[the delivery handoff](docs/COMMUNITY-COMPLETION-HANDOFF.md) for exact build,
+signature, installed acceptance and delivery status. The signed installer passed
+clean installation, first-run, live acquisition, managed transcription,
+review/publication, verified recovery and reinstall/uninstall retention checks.
+Verify the **Scott Converse** signature before running the installer.
+
+The earlier [0.1.0 preview](https://github.com/scottconverse/townrecord/releases/tag/v0.1.0)
+remains a published Python wheel with historical two-body acquisition,
+review/publication, transcription, TownReporter handoff, schedule and recovery
+evidence. That evidence does not establish the new installer or every provider.
 
 ## How it works
 

@@ -1,0 +1,74 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) The CivicCast Authors
+# Isolated helper-branch replacement for civiccast's existing dispatch workflow.
+# No publication or product build; root owns intake upload and dispatch.
+name: sign-native-installer
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Draft release holding the unsigned native payload ZIP
+        required: true
+      asset_name:
+        description: Exact unsigned payload ZIP filename
+        required: true
+      expected_sha256:
+        description: Required lowercase SHA-256 of that ZIP
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  sign:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/scripts
+      - name: Download exact intake asset
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.release_tag }}
+          ASSET: ${{ inputs.asset_name }}
+        run: |
+          if ($env:ASSET -notmatch '^[A-Za-z0-9_.-]+\.zip$') { throw 'Expected an exact ZIP asset filename.' }
+          New-Item -ItemType Directory intake | Out-Null
+          gh release download $env:TAG --repo $env:GITHUB_REPOSITORY --pattern $env:ASSET --dir intake
+          if ($LASTEXITCODE -ne 0) { throw 'Intake download failed.' }
+          if (@(Get-ChildItem intake -File).Count -ne 1) { throw 'Expected one intake ZIP.' }
+          Move-Item (Join-Path intake $env:ASSET) intake/unsigned-native-payload.zip
+      - name: Hash gate and securely extract manifest-allowlisted PE files
+        shell: pwsh
+        env:
+          EXPECTED: ${{ inputs.expected_sha256 }}
+        run: ./.github/scripts/townrecord-signing-batch.ps1 -Mode Validate -ExpectedSha256 $env:EXPECTED
+      - name: Sign verified native payload and internal setup PE
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: https://wcus.codesigning.azure.net
+          signing-account-name: scottconverse-signing
+          certificate-profile-name: ScottConversePublic
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          files-folder: signing
+          files-folder-filter: exe,dll,pyd,e32,e64
+          files-folder-recurse: true
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+      - name: Verify every signature and timestamp; package signed bytes and receipt
+        shell: pwsh
+        run: ./.github/scripts/townrecord-signing-batch.ps1 -Mode Verify
+      - name: Return signed native payload and receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: signed-native-payload
+          path: |
+            signed-native-payload.zip
+            signing-receipt.json
+            intake-verification.json
+          retention-days: 1
+          if-no-files-found: error

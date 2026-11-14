@@ -4,31 +4,38 @@ TownRecord helps a community keep a searchable record of public meetings. An
 operator collects source documents and transcripts, checks them, and publishes
 a reviewed snapshot. Residents can read that snapshot without an account.
 TownRecord is part of the Townlight umbrella. This manual covers the tested
-Windows community-record candidate, not every feature in the wider specification.
+Windows community-record service, within the acceptance scope linked below.
 
 **Start here:** [Windows installation and recovery](WINDOWS-COMMUNITY-OPERATIONS.md)
 for the person running the service; [resident instructions](#for-residents) for
 readers; [technical manual](TECHNICAL-MANUAL.md) for developers and IT.
-The [acceptance record](COMMUNITY-ACCEPTANCE.md) identifies the exact tested
-package. [Download the 0.1.0 community preview](https://github.com/scottconverse/townrecord/releases/tag/v0.1.0).
-Scott approved publication of the unchanged tested candidate on November 13, 2026.
+[Download the 0.2.0 Windows installer](https://github.com/scottconverse/townrecord/releases/download/v0.2.0/TownRecord-0.2.0-windows-x64-setup.exe) and read the
+[release notes](https://github.com/scottconverse/townrecord/releases/tag/v0.2.0). See the [delivery handoff](COMMUNITY-COMPLETION-HANDOFF.md) for exact identity and status.
+The [acceptance record](COMMUNITY-ACCEPTANCE.md) distinguishes current Windows
+observations from historical evidence.
+The [historical 0.1.0 Python-wheel preview](https://github.com/scottconverse/townrecord/releases/tag/v0.1.0)
+remains available for advanced CLI use; it is not the new Windows installer.
 
 ## Before the first meeting
 
-An operator needs a running TownRecord service, its URL and a named write token.
-The Windows guide provides the exact installation, profile and token commands.
-This is currently a Python service with a browser interface, not an MSI app.
-Node is needed only to build the interface from source. Keep the service console
-open for background retrieval. On the host computer the default addresses are
-`http://127.0.0.1:8190/operator` and `http://127.0.0.1:8190/`.
+Use the Windows installer and open **TownRecord** from Start Menu. It opens the
+workspace signed in. Confirm your community timezone, daily time and accessible
+sample recording. **Save settings and apply** restarts automatically, then the
+numbered checklist guides community/body, source and tool setup. Python/FFmpeg
+are bundled; Node is only for contributors. After reload or sign out, reopen
+from Start Menu. Closing the browser leaves retrieval running; **Stop TownRecord**
+stops it. Windows sign-in startup, where enabled, uses the same account and does
+not wake the PC. Advanced nonpackaged CLI mode retains manual write-token entry.
+The handoff records the exact signed installer and its remaining acceptance work;
+the earlier 0.1.0 observations retain their own scope.
 
 For other computers, IT must provide a reachable community URL and HTTPS for
 operator access. A localhost address always points to the reader's own computer.
-There is no automatic public hosting, domain setup or Windows startup service.
+There is no automatic public hosting or domain setup. This is not a machine-wide
+Windows service.
 
-1. Open the operator workspace and enter your write token. It is held in browser
-   memory; sign out when finished, especially on a shared computer. Store the
-   original token in your password manager, not in a shared document or URL.
+1. Open TownRecord from Start Menu. Its one-use launch signs this tab in; access
+   stays in memory. Sign out on a shared machine, then reopen from Start Menu.
 2. Create the community and public bodies with names matching their source.
    The accepted pilot used Longmont City Council and Planning and Zoning Commission;
    it does not imply a city endorsement or partnership.
@@ -67,12 +74,17 @@ uses the chosen coverage dates. The service does not wake a sleeping computer.
 
 Source captions are evidence supplied by the source, not certified minutes.
 When they are missing or unsuitable, the operator can create a local transcript
-for the recording. Under Processing, set up/check yt-dlp and TextFlowKit. FFmpeg
-must also be available as described in the installation guide. Initial setup and
-the first model download require internet access and storage.
+for the recording. Under Processing, set up/check yt-dlp and TextFlowKit. The
+Windows installer includes FFmpeg and a pinned, signed TextFlowKit
+0.1.19 runtime without model weights. TextFlowKit setup verifies and copies that
+local runtime into managed storage, so its initial bootstrap can work offline.
+Model downloads, yt-dlp setup/checks and source recordings still need internet
+access and storage. Online update checks retain the working runtime if a newer
+version fails installation or its check. CLI users follow the separate tool
+installation instructions in the Windows guide.
 
 Choose **Create local transcript**, provide a reason, and check the resulting
-job. This candidate uses Whisper small through TextFlowKit on the local machine.
+job. This version uses Whisper small through TextFlowKit on the local machine.
 Audio is not sent to a hosted transcription provider by that path. Transcription
 can take substantial CPU time; a failed download or unfinished job is not a
 transcript. Playback and caption access depend on the publisher and network.
@@ -116,7 +128,7 @@ it retains internal history and cannot recall files already downloaded elsewhere
 Machine text is not an official account of a vote or a certified transcript.
 Consult the original recording and approved records when accuracy matters. Report
 an apparent error to the community's operator with the meeting URL, document or
-timestamp and proposed correction. This candidate has no resident correction form.
+timestamp and proposed correction. This version has no resident correction form.
 
 ## Export a meeting to TownReporter
 
@@ -136,24 +148,40 @@ TownReporter is separate software, not bundled into the TownRecord service.
 
 | Problem | Next action |
 |---|---|
-| Page does not open | Check that the service console is running and that you used its host/port. |
-| Operator access rejected | Use the correct named write token; public pages do not grant operator access. |
+| Page does not open | Open TownRecord from Start Menu; advanced CLI users check their console and host/port. |
+| Operator access rejected | Reopen from Start Menu; CLI users check the correct named write token. |
 | A source download is rejected | Verify the source and exact download origin. Do not allow arbitrary hosts. |
 | A transcript job fails | Read its reason; check recording access and managed tools/FFmpeg before retrying. |
 | Newly retrieved content is absent publicly | Review and republish the meeting. |
 | Resident cannot open your link | Replace a loopback URL with the community URL configured by IT. |
-| Retrieval did not run overnight | Check service uptime, timezone, daily time and paused causes using `townrecord status`. |
+| Retrieval did not run overnight | Check service uptime, timezone, daily time and paused causes in Processing. |
 
-Back up before changes and on the community's chosen schedule. Stop the service,
-use the verified backup command, and protect the backup as private information.
+Back up before changes and on the community's chosen schedule. Use **Create verified backup** in the workspace; it stops workers, verifies the
+backup and restarts. Protect the backup as private information.
 It includes unpublished material. Restore into a new directory, retain the old
 profile, and check a known meeting and retrieval before using the restored copy.
 The [Windows operations guide](WINDOWS-COMMUNITY-OPERATIONS.md#backup-and-recovery)
-contains the exact commands and explains what is not included.
+explains the desktop restore form, advanced CLI commands and exclusions.
 
 ## What was actually verified
 
-Real two-body acquisition, full source captions, operator corrections, resident
+The exact signed 0.2.0 installer passed clean installation under an ordinary
+Windows account, first-run settings, community/body/source setup and both managed
+tools. The provider selector matched all 31 installed choices; live acceptance
+used Longmont PrimeGov, not every provider. Real retrieval completed 12 downloads,
+nine PDF text extractions and three caption jobs. Council and Planning records
+were reviewed, published, exported and opened by residents through the installed
+interface; sign-out cleared private content and reload offered Start Menu reopen.
+
+A direct managed-tool check transcribed a 120-second public Council audio sample
+with Whisper small on CPU in 39.398 seconds: 34 segments, 329 words, final timestamp
+119.820 seconds. This checks the installed bundled-Python tool path; it is separate
+from the earlier full-meeting transcription. Verified desktop backup/restore also preserved the original profile and reopened
+the restored publication. Same-version reinstall and uninstall retained saved data/configuration while
+removing program shortcuts and registration. Exact scope and delivery status
+remain in the acceptance record.
+
+The earlier 0.1.0 candidate's real two-body acquisition, full source captions, operator corrections, resident
 navigation, a full 98-minute local transcription, two full TownReporter browser
 imports, scheduling and backup/restore passed in isolated Windows acceptance.
 Synthetic fixtures cover staged agenda/recording/minutes arrival and republication.

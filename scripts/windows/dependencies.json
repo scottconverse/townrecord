@@ -1,0 +1,96 @@
+{
+  "schema": 1,
+  "python": {
+    "version": "3.13.15",
+    "build": "20260807",
+    "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260807/cpython-3.13.15%2B20260807-x86_64-pc-windows-msvc-install_only_stripped.tar.gz",
+    "sha256": "44bf9ae71f4b45e3ba3104ae331c6eff3f7002593c26fd12453eb9310c4f259a"
+  },
+  "uv": {
+    "version": "0.12.3",
+    "url": "https://github.com/astral-sh/uv/releases/download/0.12.3/uv-x86_64-pc-windows-msvc.zip",
+    "sha256": "b23350c79e8ad0192b8124af13a0f17e8d4e4549524785e1aef389ae5a06990e"
+  },
+  "ffmpeg": {
+    "version": "n9.0.2-57-gd838f9f9ae-win64-lgpl-shared",
+    "url": "https://github.com/FFmpeg-Builds/FFmpeg-Builds/releases/download/autobuild-2026-11-13-12-43/ffmpeg-n9.0.2-57-gd838f9f9ae-win64-lgpl-shared-9.0.zip",
+    "sha256": "1604210cff6b8814ad3e925719234acdd465226c20f49b7f7a54847292e88181",
+    "source": "https://github.com/FFmpeg/FFmpeg/commit/d838f9f9ae",
+    "build_scripts": "https://github.com/FFmpeg-Builds/FFmpeg-Builds/tree/autobuild-2026-11-13-12-43"
+  },
+  "compiler": {
+    "version": "6.7.3",
+    "winget_id": "JRSoftware.InnoSetup"
+  },
+  "ffmpeg-source": {
+    "url": "https://github.com/FFmpeg/FFmpeg/archive/d838f9f9ae.tar.gz",
+    "sha256": "479396204090c378cc2d181fef5355a1da64c5903e29a7fda687960101e70df9"
+  },
+  "ffmpeg-build-source": {
+    "url": "https://api.github.com/repos/FFmpeg-Builds/FFmpeg-Builds/tarball/autobuild-2026-11-13-12-43",
+    "sha256": "1b57e95ae01b03da36cbfd231d7482c85df2ce87ad4a0e491ca656fa7e3706be"
+  },
+  "vc-runtime": {
+    "version": "14.44.35211.0",
+    "package": "Microsoft.VC.14.44.17.14.CRT.Redist.X64.base",
+    "url": "https://download.visualstudio.microsoft.com/download/pr/45d3b8dd-bced-4b37-9974-142f748d710c/4aaf54db0bfc9435f7c3660e1a00237a4b556042bfeea64bde44c2e0194e6ee5/Microsoft.VC.14.44.17.14.CRT.Redist.X64.base.vsix",
+    "sha256": "4aaf54db0bfc9435f7c3660e1a00237a4b556042bfeea64bde44c2e0194e6ee5",
+    "files": [
+      {
+        "name": "msvcp140_2.dll",
+        "entry": "Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/msvcp140_2.dll",
+        "sha256": "3ea06f0ee098b4823cb79599df3780e7f23cce52c19aac31d2a0d47efe33a5e9"
+      },
+      {
+        "name": "vcruntime140_threads.dll",
+        "entry": "Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/vcruntime140_threads.dll",
+        "sha256": "219915cf20822f34d5e7c1fdd4e21ae7f3396881096c51036225fb8f84b47afa"
+      },
+      {
+        "name": "vcruntime140.dll",
+        "entry": "Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/vcruntime140.dll",
+        "sha256": "d5e4d9a3e835fa679450145d6a7d94e36573a509317111904d9b3712c30d9066"
+      },
+      {
+        "name": "msvcp140.dll",
+        "entry": "Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/msvcp140.dll",
+        "sha256": "0f885b509a685d2bbfa652fed26b5fb31d88fbdab0a978c641d1c7b8aa460aa9"
+      },
+      {
+        "name": "msvcp140_atomic_wait.dll",
+        "entry": "Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/msvcp140_atomic_wait.dll",
+        "sha256": "640b2aefced484d0368eea5bdd06addd0658a3a70a49256e560d6923b404a479"
+      },
+      {
+        "name": "vcruntime140_1.dll",
+        "entry": "Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/vcruntime140_1.dll",
+        "sha256": "1f2d41c4aa5db0bc33ebf7b66d72943a817d7ce6cbe880502a9403823633093f"
+      },
+      {
+        "name": "msvcp140_1.dll",
+        "entry": "Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/msvcp140_1.dll",
+        "sha256": "bfad5aef4c63a669e3c140655cdfdf395b6c979b400a447bd5dcb65ed8826c3d"
+      },
+      {
+        "name": "concrt140.dll",
+        "entry": "Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/concrt140.dll",
+        "sha256": "2405355f0a58067b258f8df33c327e3a3d716eaac5a3a5aebb757842d85bd376"
+      },
+      {
+        "name": "vcomp140.dll",
+        "entry": "Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.OpenMP/vcomp140.dll",
+        "sha256": "55aba23cdcd6484fbb06f4155b8ca75adfce7a881f10afd0c49457165e677164"
+      },
+      {
+        "name": "msvcp140_codecvt_ids.dll",
+        "entry": "Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/msvcp140_codecvt_ids.dll",
+        "sha256": "f2069a52880ec885ee7f0511186100eb7fada0411a2b4948fafea7735b878a18"
+      },
+      {
+        "name": "vccorlib140.dll",
+        "entry": "Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/vccorlib140.dll",
+        "sha256": "19839407c3fdbc824e5bce189bf68ddf8097f12ec28b757797ffa0415c144ddd"
+      }
+    ]
+  }
+}

@@ -16,7 +16,7 @@ flowchart TB
   subgraph Private[Operator-controlled service and storage]
     Jobs --> DB[(SQLite: sources, jobs, records, history)]
     Jobs --> Files[Content-addressed artifact files]
-    Operator[TypeScript operator interface + write token] --> API[FastAPI operator routes]
+    Operator[TypeScript operator interface + in-memory write token] --> API[FastAPI operator routes]
     API --> DB
     API --> Publish[Explicit reviewed publication]
     DB --> Publish
@@ -41,6 +41,7 @@ Source entry points:
 | Responsibility | File or directory |
 |---|---|
 | CLI, lifecycle and backup/restore entry points | `core/src/townrecord/cli.py` |
+| Per-user desktop launcher, bootstrap and graceful lifecycle | `core/src/townrecord/windows.py`, `core/src/townrecord/api/desktop.py` |
 | Worker and scheduler composition | `core/src/townrecord/service.py` |
 | Runtime environment | `core/src/townrecord/config.py` |
 | App factory and private API documentation | `core/src/townrecord/api/app.py` |
@@ -78,9 +79,50 @@ preview and manual deployment. Website work does not require rebuilding
 the accepted wheel. The existing CI matrix remains unchanged; it does not imply
 new operating-system packages or installed acceptance on those systems.
 
+## Packaged Windows runtime
+
+The 0.2.0 Windows installer adds a per-user launcher with bundled Python, FFmpeg
+and a pinned, signed TextFlowKit 0.1.19 runtime without model weights,
+preserving the Python service and strict TypeScript interface. One service owns
+the profile. Start Menu opens `/operator#launch=...`; the browser immediately
+removes the fragment and exchanges the short-lived one-use code for the existing
+write token kept only in tab memory. CLI mode retains explicit token entry.
+See [first-run design](WINDOWS-FIRST-RUN-DESIGN.md).
+
+| Desktop route | Contract |
+|---|---|
+| `GET /v1/desktop/info` | Anonymous mode signal; no credentials/profile data |
+| `POST /v1/desktop/exchange` | `{code}` returns `{token}`; desktop-only one-use launch |
+| `GET /v1/desktop/settings` | Authenticated schedule, sample video, setup state, profile paths and operation receipt |
+| `PUT /v1/desktop/settings` | Persist `time_zone`, `daily_time`, `test_video_url`; restart required |
+| `POST /v1/desktop/restart` | Graceful restart; interface waits for applied settings |
+| `POST /v1/desktop/stop` | Graceful stop; Start Menu starts it again |
+| `POST /v1/desktop/backup` | Stop workers, verified timestamped backup, restart and result receipt |
+| `POST /v1/desktop/restore` | `{source}` verifies separate profile then switches on restart |
+
+Existing body/source/tool/job endpoints drive setup. TextFlowKit setup verifies
+the bundled runtime inventory and file hashes, copies it into managed storage and
+checks the copy before activation. Initial bootstrap can use that local copy when
+the online version lookup is unavailable. The installer includes no model weights:
+model downloads, yt-dlp setup/checks and meeting-source access still need internet
+access. Existing online update checks remain in place and preserve a working
+runtime if a newer candidate fails installation or its check. Managed setup jobs
+remain yt-dlp and TextFlowKit. Closing the browser leaves the service
+running. LAN/HTTPS and public hosting are separate configuration. Build, signature,
+installed behavior and delivery evidence are recorded in the delivery handoff;
+historical wheel evidence does not establish installer acceptance.
+
+Bundled Python carries the pinned, Microsoft-signed app-local VC runtime and
+OpenMP release files needed by Torch/Numba; no systemwide runtime installation is
+required. The Windows launcher defaults `SSL_CERT_FILE` to bundled certifi's CA
+file, preserves an explicit operator override and passes that path to permitted
+child processes. TLS verification stays enabled. Connector jobs use the same
+configured database/storage environment as the desktop API on every restart.
+
 ## Configuration
 
-Set these in a private start script before creating tokens and serving. Defaults
+For advanced CLI mode set these in a private start script. The Windows application
+persists schedule and sample recording through its settings form. Defaults
 are from `Settings.from_env`; prefer explicit profile paths in operation.
 
 | Variable | Default | Purpose |
@@ -97,13 +139,15 @@ are from `Settings.from_env`; prefer explicit profile paths in operation.
 
 Malformed daily time falls back to the default in this implementation; configure
 it deliberately and confirm status rather than assuming arbitrary input was used.
-The service must remain running for scheduled retrieval. It does not register a
-Windows startup task or wake the machine. Managed LAN access requires explicit
+The service must remain running for scheduled retrieval. The installer can add an
+optional same-user sign-in shortcut; the advanced CLI does not register startup.
+Neither wakes the machine. Managed LAN access requires explicit
 configuration and an IT-managed HTTPS boundary; the service does not provision TLS.
 
 ## Authentication and HTTP integration
 
-Create a named token with `townrecord token create --name NAME --scope write`
+Packaged users use the launch exchange above. For advanced CLI mode create a
+named token with `townrecord token create --name NAME --scope write`
 under the intended profile. The CLI's `write` maps to `read_write`. Read tokens
 cannot perform writes, and the operator workspace requires write scope. Tokens
 are printed once and stored hashed. The browser keeps the supplied token in
@@ -167,8 +211,8 @@ internal history or remote copies. Source text, machine origin and provisional
 status must survive export. The TownReporter receiver enforces an 8 MiB UTF-8
 payload limit and validates the evidence before creating a lead. It does not
 trigger generation or publication. Stable instance identity survives restore and
-is part of duplicate handling. Full Council and Planning payloads passed both
-receiver tests and browser import; see the receipts for exact observations.
+is part of duplicate handling. Historical 0.1.0 Council and Planning payloads passed both
+TownReporter receiver tests and browser import; see the receipts for exact observations.
 
 ## Storage, recovery and operations
 
@@ -203,7 +247,13 @@ No guaranteed network bypass or universal caption availability is promised.
 
 ## Evidence and maintenance
 
-The accepted package source is `758abf6fa4a0f629bc2c54a4dd937ade423f364a`;
+The 0.2.0 Windows source is `3a247d8865f1692911f4bed15cae370410ec6d70`;
+its wheel SHA256 begins `88857f9b` and signed installer SHA256 begins `e08a4f44`.
+[Current acceptance](COMMUNITY-ACCEPTANCE.md) carries the complete identities,
+actual installed observations and completed installed scope and current delivery status.
+Required CI43573893300 and outer signing43574774784 passed.
+
+The historical 0.1.0 accepted package source is `758abf6fa4a0f629bc2c54a4dd937ade423f364a`;
 its complete identity and SHA-256 are in [acceptance](COMMUNITY-ACCEPTANCE.md).
 Implementation PR43 and handoff PR44 merged; post-merge CI run `43521706630`
 passed. Later documentation does not change the accepted wheel bytes.

@@ -8,9 +8,15 @@ promise is to collect source material, review it, then publish a searchable
 snapshot with original sources. It does not create certified minutes or answer
 questions with AI. Townlight is the umbrella; TownReporter is a separate consumer.
 
-The primary action is **Read the user manual**, followed by the Windows setup
-guide. The 0.1.0 community preview is a Python wheel, not an MSI. Engineering links
-lead to the technical manual, source and exact acceptance record.
+The primary action is **Download for Windows**, followed by the user manual and
+Windows setup guide. The 0.2.0 Windows installer is the normal-user path; 0.1.0
+remains a historical wheel. The installer bundles Python, FFmpeg and a pinned, signed
+TextFlowKit 0.1.19 runtime without model weights. TextFlowKit setup verifies and
+copies the local runtime and can bootstrap offline. Model downloads, yt-dlp
+setup/checks and source access still need internet access. Online update checks
+retain a working runtime if a newer version fails installation or its check.
+Signing and installed acceptance are separate receipts. Engineering links lead
+to the technical manual, source and exact acceptance record.
 
 The static site extends the application's existing palette: ink `#153344`, paper
 `#f5f7f8`, accent `#165c70`, line `#c5d0d5`, and gold `#b58b2c` for decoration only.
@@ -46,15 +52,22 @@ The technical manual includes architecture, publication and recovery diagrams.
 
 ## Public deployment
 
-Scott approved release publication and website deployment on November 13, 2026.
 Public URL: https://scottconverse.github.io/townrecord/
-Release: https://github.com/scottconverse/townrecord/releases/tag/v0.1.0
+Prepared 0.2.0 release: https://github.com/scottconverse/townrecord/releases/tag/v0.2.0
+Prepared direct download: https://github.com/scottconverse/townrecord/releases/download/v0.2.0/TownRecord-0.2.0-windows-x64-setup.exe
+
+The signed 0.2.0 installer completed bounded installed acceptance. Publication,
+Pages deployment and post-delivery verification remain pending; this file does
+not claim they occurred. The existing
+[v0.1.0 release](https://github.com/scottconverse/townrecord/releases/tag/v0.1.0)
+and historical November13 publication/site evidence remain unchanged.
 
 The `Publish website` Actions workflow remains **manual only**. GitHub Pages uses
 GitHub Actions. Run that workflow from an approved main commit for future site
 updates. It builds `dist/site/` and deploys through the Pages environment.
 Relative asset paths work under `/townrecord/`. It does not tag or publish the
-Python package. Release assets retain the tested wheel and source identity.
+Windows installer or Python package. Release assets retain the exact tested
+installer, wheel, corresponding source, dependency source/license assets and receipts.
 
 ## Verification record
 
