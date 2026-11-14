@@ -10,7 +10,7 @@ import httpx
 import pytest
 
 from townrecord import proc
-from townrecord.runtime import pypi
+from townrecord.runtime import pypi, tools
 from townrecord.runtime.manager import RuntimeInstallFailed, RuntimeManager
 from townrecord.runtime.pointer import Installed, Pointer, write_pointer
 from townrecord.runtime.seed import ENV, Seed, filesystem_path
@@ -20,6 +20,9 @@ from townrecord.stt.textflowkit import command_prefix
 
 @pytest.fixture
 def seed(tmp_path, monkeypatch):
+    # This fixture models the Windows payload even on POSIX CI hosts. Keep
+    # managed interpreter discovery consistent with its Scripts/python.exe.
+    monkeypatch.setattr(tools, "python_in", lambda venv: Path(venv) / "Scripts" / "python.exe")
     root = tmp_path / "app" / "runtime-seeds" / "textflowkit" / "0.1.19"
     content = {
         "Scripts/python.exe": b"signed interpreter test fixture",

@@ -150,7 +150,8 @@ try {
     # ISCC file metadata can be 0.0.0.0. The script verifies the compiler's
     # actual ISPP VER value against this pin before compiling any files.
     $compilerVersion = $pins.compiler.version
-    Invoke-Checked $Compiler @("/DPayloadDir=$payload","/DOutputDir=$output","/DAppVersion=$version","/DExpectedCompilerVersion=$compilerVersion","/DInternalSigningDir=$(Join-Path $work 'signed-uninstaller')",(Join-Path $repo 'installer/townrecord.iss'))
+    & (Join-Path $PSScriptRoot 'compile-installer.ps1') -Compiler $Compiler -Payload $payload -Output $output -Version $version -CompilerVersion $compilerVersion -SigningDir (Join-Path $work 'signed-uninstaller')
+    if($LASTEXITCODE -ne 0){throw "Inno compilation exited $LASTEXITCODE"}
     $installer = Join-Path $output "TownRecord-$version-windows-x64-setup.exe"
     $receipt.phase = 'built_unsigned'; $receipt.installer = $installer
     $receipt.installer_sha256 = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant()

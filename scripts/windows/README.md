@@ -123,3 +123,10 @@ repack receipt explicitly record the derived JSON hash. Upstream wheel RECORD
 files remain unchanged as provenance for the original wheel bytes; the final
 seed manifest covers the actual signed bytes. No arbitrary non-native package
 or metadata rewrites are allowed during this step.
+
+The locked Torch tree has long source filenames. Manifest hashing uses extended
+Windows file streams, and the Inno compiler reads the unchanged payload through
+a short, owned temporary junction. The compiler wrapper records that alias and
+its target and removes only the junction after compilation, including failures.
+The installed default per-user path is shorter than the build workspace path;
+clean-installed acceptance verifies the complete payload manifest after extract.

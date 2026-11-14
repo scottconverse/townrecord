@@ -25,7 +25,7 @@ $receipt = [ordered]@{
 }
 try {
     if ($receipt.source_dirty) { throw 'Compiler-only packaging requires a committed clean candidate.' }
-    $changedRuntime = & git -C $repo diff --name-only $base.source_commit HEAD -- core frontend
+    $changedRuntime = & git -C $repo diff --name-only $base.source_commit HEAD -- core frontend ':(exclude)core/tests/**'
     if ($changedRuntime) { throw 'Runtime/frontend inputs changed; compiler-only reuse is not valid.' }
     if ((Get-FileHash $manifestPath).Hash.ToLowerInvariant() -ne $base.payload_manifest_sha256) {
         throw 'Payload manifest changed since the recorded full build.'
@@ -58,7 +58,7 @@ try {
     $receipt | ConvertTo-Json -Depth 7 | Set-Content $receiptPath
     # With no SignTool callback, Inno emits a stable unsigned PE and exits with
     # a signature-needed error. After external signing it reuses that file.
-    & $Compiler "/DPayloadDir=$payload" "/DOutputDir=$output" "/DAppVersion=$version" "/DExpectedCompilerVersion=$($pins.compiler.version)" "/DInternalSigningDir=$signingDir" (Join-Path $repo 'installer/townrecord.iss')
+    & (Join-Path $PSScriptRoot 'compile-installer.ps1') -Compiler $Compiler -Payload $payload -Output $output -Version $version -CompilerVersion $pins.compiler.version -SigningDir $signingDir
     $compilerExit = $LASTEXITCODE
     $internal = @(Get-ChildItem $signingDir -File | Where-Object Extension -in @('.e32','.e64','.exe'))
     $receipt.internal_files = @($internal | ForEach-Object {
