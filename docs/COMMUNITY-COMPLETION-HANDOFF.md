@@ -27,8 +27,16 @@ transcription or verification of every provider.
 Verified desktop backup/restore passed: 19 files rehashed, distinct restored profile
 active, original database/publication retained and UI read/sign-out verified. The
 initial harness navigation failure was resolved with a fresh document, without
-repeating the backup/restore or changing the product. Remaining lifecycle checks
-are pending under the UI acceptance owner. Public 0.2.0 release, merge/tag, site deployment and
+repeating the backup/restore or changing the product. Same-version reinstall then passed with saved
+configuration/data/credentials unchanged, full post-reinstall payload/seed proof
+and service reopen. Uninstall removed program, exact HKCU registration, Start Menu
+Open/Stop links and startup shortcut while retaining the saved profile. Installed
+acceptance is complete within the scope recorded in acceptance. All 14 acceptance tasks are terminal; product/browser processes and owned jobs
+are absent, API access is closed after uninstall, and the owned guest was stopped
+with live Sandbox inventory empty. Private recovery files and database integrity
+were verified separately and remain excluded from public receipts.
+
+Public 0.2.0 release, merge/tag, site deployment and
 post-delivery verification remain pending. [PR49](https://github.com/scottconverse/townrecord/pull/49)
 is open. Download links in the manuals are prepared for publication, not evidence
 that an asset is already public. Do not repeat completed acquisition/model jobs

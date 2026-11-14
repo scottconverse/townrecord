@@ -35,11 +35,10 @@ retain a working runtime if a newer version fails installation or its check.
 
 See [Windows installation and recovery](docs/WINDOWS-COMMUNITY-OPERATIONS.md) and
 [the delivery handoff](docs/COMMUNITY-COMPLETION-HANDOFF.md) for exact build,
-signature, installed acceptance and delivery status. Clean installation, first-run,
-real acquisition, managed transcription and review/publication passed on the signed
-candidate. Remaining lifecycle checks and public delivery remain pending. The download
-links above are prepared for publication; availability is not yet claimed. Verify
-the **Scott Converse** signature before running an installer.
+signature, installed acceptance and delivery status. The signed installer passed
+clean installation, first-run, live acquisition, managed transcription,
+review/publication, verified recovery and reinstall/uninstall retention checks.
+Verify the **Scott Converse** signature before running the installer.
 
 The earlier [0.1.0 preview](https://github.com/scottconverse/townrecord/releases/tag/v0.1.0)
 remains a published Python wheel with historical two-body acquisition,

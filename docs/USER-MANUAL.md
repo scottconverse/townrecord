@@ -10,8 +10,7 @@ Windows community-record service, within the acceptance scope linked below.
 for the person running the service; [resident instructions](#for-residents) for
 readers; [technical manual](TECHNICAL-MANUAL.md) for developers and IT.
 [Download the 0.2.0 Windows installer](https://github.com/scottconverse/townrecord/releases/download/v0.2.0/TownRecord-0.2.0-windows-x64-setup.exe) and read the
-[release notes](https://github.com/scottconverse/townrecord/releases/tag/v0.2.0). These release links are prepared for publication;
-public availability remains pending in the [delivery handoff](COMMUNITY-COMPLETION-HANDOFF.md).
+[release notes](https://github.com/scottconverse/townrecord/releases/tag/v0.2.0). See the [delivery handoff](COMMUNITY-COMPLETION-HANDOFF.md) for exact identity and status.
 The [acceptance record](COMMUNITY-ACCEPTANCE.md) distinguishes current Windows
 observations from historical evidence.
 The [historical 0.1.0 Python-wheel preview](https://github.com/scottconverse/townrecord/releases/tag/v0.1.0)
@@ -178,8 +177,9 @@ A direct managed-tool check transcribed a 120-second public Council audio sample
 with Whisper small on CPU in 39.398 seconds: 34 segments, 329 words, final timestamp
 119.820 seconds. This checks the installed bundled-Python tool path; it is separate
 from the earlier full-meeting transcription. Verified desktop backup/restore also preserved the original profile and reopened
-the restored publication. Remaining lifecycle checks and public delivery stay
-pending in the acceptance record.
+the restored publication. Same-version reinstall and uninstall retained saved data/configuration while
+removing program shortcuts and registration. Exact scope and delivery status
+remain in the acceptance record.
 
 The earlier 0.1.0 candidate's real two-body acquisition, full source captions, operator corrections, resident
 navigation, a full 98-minute local transcription, two full TownReporter browser

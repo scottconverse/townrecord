@@ -56,9 +56,9 @@ Public URL: https://scottconverse.github.io/townrecord/
 Prepared 0.2.0 release: https://github.com/scottconverse/townrecord/releases/tag/v0.2.0
 Prepared direct download: https://github.com/scottconverse/townrecord/releases/download/v0.2.0/TownRecord-0.2.0-windows-x64-setup.exe
 
-The 0.2.0 download links and site content are prepared locally. Remaining installed
-lifecycle acceptance, publication, Pages deployment and post-delivery
-verification remain pending; this file does not claim they occurred. The existing
+The signed 0.2.0 installer completed bounded installed acceptance. Publication,
+Pages deployment and post-delivery verification remain pending; this file does
+not claim they occurred. The existing
 [v0.1.0 release](https://github.com/scottconverse/townrecord/releases/tag/v0.1.0)
 and historical November13 publication/site evidence remain unchanged.
 

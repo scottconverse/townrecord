@@ -250,7 +250,7 @@ No guaranteed network bypass or universal caption availability is promised.
 The 0.2.0 Windows source is `3a247d8865f1692911f4bed15cae370410ec6d70`;
 its wheel SHA256 begins `88857f9b` and signed installer SHA256 begins `e08a4f44`.
 [Current acceptance](COMMUNITY-ACCEPTANCE.md) carries the complete identities,
-actual installed observations and pending lifecycle/delivery status.
+actual installed observations and completed installed scope and current delivery status.
 Required CI43573893300 and outer signing43574774784 passed.
 
 The historical 0.1.0 accepted package source is `758abf6fa4a0f629bc2c54a4dd937ade423f364a`;

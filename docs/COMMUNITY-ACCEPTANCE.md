@@ -4,7 +4,8 @@
 
 The exact signed Windows candidate passed clean ordinary-user installation,
 first-run setup, real source acquisition, managed local transcription and browser
-review/publication. **Remaining lifecycle checks and public delivery remain pending.**
+review/publication. **Installed acceptance is complete within the scope below. Public delivery and
+post-delivery verification remain pending.**
 [PR49](https://github.com/scottconverse/townrecord/pull/49) is open. The download
 and release links in the manuals are prepared for publication; no public 0.2.0
 availability or completed Pages deployment is claimed at this checkpoint.
@@ -39,8 +40,13 @@ the same configured profile, including after restart.
 | Direct installed managed transcription | PASSED 120-second Council audio sample (source interval 600–720s), Whisper small/en on local CPU, exit 0 in 39.398s, 34 segments, 329 words, final timestamp 119,820ms. Both managed environments use installed bundled Python; certifi CA path passed to children with verification enabled. [Receipt](evidence/windows-0.2.0/candidate-3a247d8/installed-transcription-observation.json) |
 | Operator publication and resident access | PASSED actual UI review/publish/export for Council meeting 3 (3 documents, 921,653-byte export) and Planning meeting 4 (4 documents, 503,299-byte export), revision 1. Export schema/instance/revision and full payload matched public snapshots; resident links opened. Sign-out cleared private containers and reload offered Start Menu reopen without a token form. This is new TownRecord export evidence; TownReporter receiver/browser imports remain historical 0.1.0 evidence. [Receipt](evidence/windows-0.2.0/candidate-3a247d8/installed-workflow-observations.json) |
 | Verified desktop backup/restore | PASSED existing-operation continuation: 19 backup files rehashed, separate restored profile active, original database retained, known publication/documents readable through the UI and sign-out verified. Initial harness fragment-only navigation made no exchange request; a fresh document completed readback without repeating backup/restore or changing product code. [Recovery receipt](evidence/windows-0.2.0/candidate-3a247d8/installed-recovery-observation.json) |
-| Remaining graceful stop/reopen, scheduler/startup operation, reinstall/update and uninstall retention | PENDING terminal lifecycle receipts. Startup shortcut presence alone does not prove this entire outcome. |
-| Authorized merge/tag/release/site and post-delivery verification | PENDING. No 0.2.0 publication or final acceptance claimed. |
+| Graceful stop/reopen, startup registration, same-version reinstall and uninstall retention | PASSED: exact signed 0.2.0 reinstall preserved config/database/artifact/DPAPI fingerprint; post-reinstall all 23,094/124/18,330 payload/signature-replacement/seed entries verified, startup target and service reopen passed. Uninstall stopped desktop/profile, removed interpreter, exact HKCU product registration, Open/Stop Start Menu links and startup shortcut; saved data/config/credentials remained unchanged. This proves same-version repair, not a future-version migration. [Lifecycle receipt](evidence/windows-0.2.0/candidate-3a247d8/installed-lifecycle-observation.json) |
+| Acceptance cleanup | PASSED: 14 owned tasks terminal, 0 product/browser processes or owned jobs, API unreachable after uninstall, private recovery hashes and 3 SQLite integrity checks verified, owned guest stopped and live Sandbox inventory empty. [Cleanup receipt](evidence/windows-0.2.0/candidate-3a247d8/installed-cleanup-observation.json) |
+| Authorized merge/tag/release/site and post-delivery verification | PENDING. Installed acceptance above is complete; no public 0.2.0 publication/deployment claimed yet. |
+
+The existing v0.1.0 scheduler tick/deduplication evidence is retained below; no
+new overnight run or machine wake-up is claimed. The optional startup target was
+verified and service reopened; a new interactive Windows sign-in was not simulated.
 
 The 120-second direct installed transcription proves this packaged tool path; it
 is not a new full-meeting transcription or a claim of transcript accuracy. The

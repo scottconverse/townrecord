@@ -1,0 +1,59 @@
+{
+  "candidate_source": "3a247d8865f1692911f4bed15cae370410ec6d70",
+  "installer_sha256": "e08a4f4447abb611a331cd7146df56493eb92f76bc14c9a660cb80fb9c3067a8",
+  "status": "verified",
+  "scope": "Same-version repair/reinstall, complete post-reinstall byte verification and service reopen, graceful stop then uninstall cleanup/retention under the ordinary acceptance user. No new OS package or cross-version migration claim.",
+  "reinstall": {
+    "status": "passed",
+    "installer_sha256": "e08a4f4447abb611a331cd7146df56493eb92f76bc14c9a660cb80fb9c3067a8",
+    "same_version": "0.2.0",
+    "saved_data_preserved": true,
+    "configuration_preserved": true,
+    "started_utc": "2026-11-14T08:30:48.3534673Z",
+    "finished_utc": "2026-11-14T08:33:59.9336764Z"
+  },
+  "post_reinstall_verify": {
+    "status": "passed",
+    "payload_files_verified": 23094,
+    "signed_payload_replacements_verified": 124,
+    "seed_files_verified": 18330,
+    "startup_shortcut": true,
+    "startup_arguments": "-I -m townrecord.windows start",
+    "desktop_ready": true,
+    "finished_utc": "2026-11-14T08:35:05.1186390Z"
+  },
+  "uninstall": {
+    "status": "passed",
+    "saved_data_preserved": true,
+    "configuration_preserved": true,
+    "startup_shortcut_removed": true,
+    "uninstall_registration_removed": true,
+    "start_menu_open_stop_removed": true,
+    "started_utc": "2026-11-14T08:35:34.0733972Z",
+    "finished_utc": "2026-11-14T08:36:06.0328047Z"
+  },
+  "registration_checked": {
+    "key": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{46ECEE68-85B7-4D93-B8A0-49BF6E61958F}_is1",
+    "display_name": "TownRecord",
+    "display_version": "0.2.0"
+  },
+  "graceful_stop": {
+    "desktop_stopped": true,
+    "profile_stopped": true
+  },
+  "private_preservation_verification": {
+    "sqlite_databases_verified": 3,
+    "config_and_dpapi_preserved": true,
+    "mapped_hashes_verified": true
+  },
+  "owned_task_terminal": {
+    "exit_code": 0,
+    "active_instances": 0
+  },
+  "source_receipt_sha256": {
+    "Reinstall-result.json": "6e49670928f1992b7eb6490df02bf69584ed5f293f6b461dec016a9c3cbed38a",
+    "Verify-result.json": "406a755ee528bb93d898d46b39b2b83a1eb2aa1c6f32f96f625afc6bdc09d89a",
+    "Uninstall-result.json": "d442a3055ac9b26e1edd1a7018f0253fa8f19bb255e034bcb9f8bd9d728d0079",
+    "headless-Uninstall-task-terminal.json": "956d20865a80f18d9aec32f9a7af8bf3abf608f96652852eae4db480f48e1bab"
+  }
+}

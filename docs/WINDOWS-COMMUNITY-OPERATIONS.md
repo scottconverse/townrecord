@@ -10,9 +10,7 @@ advanced section.
 
 [Download TownRecord 0.2.0 for Windows](https://github.com/scottconverse/townrecord/releases/download/v0.2.0/TownRecord-0.2.0-windows-x64-setup.exe)
 and read the [release notes](https://github.com/scottconverse/townrecord/releases/tag/v0.2.0). The installer is the normal-user path;
-Python, command-line tools and copied tokens are unnecessary. Release links are
-prepared locally while remaining lifecycle acceptance and public delivery remain
-pending; consult the [delivery handoff](COMMUNITY-COMPLETION-HANDOFF.md) for status.
+Python, command-line tools and copied tokens are unnecessary. Consult the [delivery handoff](COMMUNITY-COMPLETION-HANDOFF.md) for exact identity and status.
 Check Windows file Properties > Digital Signatures for **Scott Converse** before
 running it. Exact hashes, signing receipts and observed installed outcomes are in
 [acceptance](COMMUNITY-ACCEPTANCE.md).

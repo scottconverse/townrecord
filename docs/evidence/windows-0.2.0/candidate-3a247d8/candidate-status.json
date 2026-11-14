@@ -10,7 +10,7 @@
     "sha256": "e08a4f4447abb611a331cd7146df56493eb92f76bc14c9a660cb80fb9c3067a8",
     "bytes": 221865160
   },
-  "installed_acceptance": "Clean install/payload/seed, first-run, live acquisition, direct 120-second transcription, two-body review/publication/resident/export and verified recovery passed. Remaining lifecycle and public delivery pending.",
+  "installed_acceptance": "Complete within bounded observed scope: clean install/payload/seed, first-run, real acquisition, direct 120-second managed transcription, two-body review/publication/resident/export, verified recovery, same-version reinstall/service reopen and uninstall cleanup/data retention.",
   "previous_candidate": "02b6699 / signed installer 01af39b6984aea6c09770a5a864cb40d4de99aa161d6f4ea4b138d3af263f719 failed managed CRT load and publication storage checks; retired after preservation",
   "corrections": [
     "Coherent Microsoft-signed app-local VC runtime14.44.35211.0 with official pinned source and license",
@@ -22,6 +22,8 @@
     "started_utc": "2026-11-14T08:17:33Z",
     "owner": "coordinator / UI acceptance agent",
     "mode": "headless",
-    "status": "installed acceptance in progress; remaining lifecycle under UI owner"
-  }
+    "status": "acceptance complete, all14 tasks terminal, no owned jobs/processes; owned guest stopped and live Sandbox inventory empty"
+  },
+  "public_delivery": "pending",
+  "cleanup": "verified"
 }
