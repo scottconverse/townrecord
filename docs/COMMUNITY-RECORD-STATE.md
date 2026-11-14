@@ -4,11 +4,11 @@ Scott authorized implementation, signing, clean Windows acceptance, documentatio
 
 ## Current corrected candidate
 
-Branch `feat/windows-installer-020`; [PR49](https://github.com/scottconverse/townrecord/pull/49) remains open. No 0.2.0 merge, tag or publication is complete.
+[PR49](https://github.com/scottconverse/townrecord/pull/49) merged 73f282e after final CI 43576964924 passed. v0.2.0 is public as a community-preview pre-release with 29 assets and exact 3a tag. Final documentation is on `docs/windows-020-public-handoff`; separate main checkout is preserved.
 
 - Application and packaging source: `3a247d8865f1692911f4bed15cae370410ec6d70`.
 - Wheel `townrecord-0.2.0-py3-none-any.whl`: SHA256 `88857f9b821e67a273bb5197356a2125a04fbfad3961124fb1da9e0ba8da0bec`.
-- Required [CI43573893300](https://github.com/scottconverse/townrecord/actions/runs/43573893300) PASSED all three platform jobs, including strict TypeScript/package verification on Windows.
+- Required [CI 43573893300](https://github.com/scottconverse/townrecord/actions/runs/43573893300) PASSED all three platform jobs, including strict TypeScript/package verification on Windows.
 - Build and compilation PASSED. Unsigned outer SHA256 `8513c25113c857dd2c3e772c725c174af0d7ad172ebb53ce93dfdb24676e1063`, 221,849,525 bytes. This unsigned identity is not a deliverable signature claim.
 - Outer signing 43574774784 PASSED. Independent Scott Converse signature and Microsoft timestamp verification PASSED at 08:17:16 UTC. Signed installer SHA256 `e08a4f4447abb611a331cd7146df56493eb92f76bc14c9a660cb80fb9c3067a8`, 221,865,160 bytes. This is the exact installed candidate; bounded installed acceptance is complete.
 - Unchanged native inputs reuse original signing 43569539324 through exact path/kind/target/hash/size checks. The new verified overlay is `c9a5ec586bfdeadf4f0723b4af3ad95f48d16b62ba8bab30f062b5973771ce2b`; original signing receipt identities are retained. Final derived seed manifest remains `0bf631371bf3247f35c1c80e28b341821899fcc0b667648270ede12bc404d41f`.
@@ -30,8 +30,8 @@ The failed 02b guest was retired after ordinary-user recovery shutdown and verif
 
 1. Exact corrected signed installer retrieval and independent verification are complete. Continue with this e08a candidate; the old 01af installer remains superseded.
 2. First-run/tool setup, actual live acquisition, direct 120-second managed transcription and configured-profile review/publication/resident/export checks passed. Verified recovery continuation passed: 19 backup files rehashed, separate restored active profile, retained original data and publication/UI read/sign-out. The harness required a fresh document after fragment-only navigation; no backup/restore was repeated. Same-version reinstall preserved all saved data/config/credentials; post-reinstall full byte verification, startup target and service reopen passed. Uninstall removed application/registration/Open/Stop/startup links and retained the saved profile. [Lifecycle receipt](evidence/windows-0.2.0/candidate-3a247d8/installed-lifecycle-observation.json). Existing v0.1.0 scheduled-tick/deduplication evidence is retained; no new overnight or interactive sign-in test is claimed. Installed acceptance is complete; protected recovery data remains local.
-3. Reconcile maintained README/manuals/operations/site/acceptance/handoff/state documents against the final evidence, curate sanitized acceptance receipts, and update the existing Big Picture sources in place.
-4. Complete already-authorized final merge, tag, release and website delivery with exact source/license assets, checksums and post-delivery verification. Preserve v0.1.0. No 0.2.0 public release or final acceptance is claimed at this checkpoint.
+3. Product delivery is verified: PR49 merged 73f282e; exact-source v0.2.0 and 29 assets published. Both final PR CI 43576964924 and post-merge CI 43577345645 passed. Pages 43577354304 passed; live anonymous site HTTP 200 shows the correct download. All 29 anonymous assets/checksums/signature/source proof passed 08:50:54Z. [Receipt](evidence/windows-0.2.0/candidate-3a247d8/PUBLIC-DELIVERY.md).
+4. Coordinator final step: merge this Markdown-only public handoff and update existing Big Picture sources in place using the prepared absolute-link copies. Application/release acceptance is complete; no product build or rerun is needed. Temporary signing intake/helper branch cleanup is verified; private recovery evidence and existing v0.1.0 remain protected.
 
 ## Preserved prior delivery record
 # TownRecord bounded completion state — November 13, 2026

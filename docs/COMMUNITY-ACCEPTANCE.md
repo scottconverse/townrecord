@@ -4,11 +4,11 @@
 
 The exact signed Windows candidate passed clean ordinary-user installation,
 first-run setup, real source acquisition, managed local transcription and browser
-review/publication. **Installed acceptance is complete within the scope below. Public delivery and
-post-delivery verification remain pending.**
-[PR49](https://github.com/scottconverse/townrecord/pull/49) is open. The download
-and release links in the manuals are prepared for publication; no public 0.2.0
-availability or completed Pages deployment is claimed at this checkpoint.
+review/publication, recovery and lifecycle checks. **Bounded installed acceptance
+is complete.** The community-preview v0.2.0 release is public; anonymous verification of all 29
+assets, checksums, installer signature/timestamp and source ZIP passed. Merge/release/Pages
+facts are recorded in the [delivery handoff](COMMUNITY-COMPLETION-HANDOFF.md).
+
 
 ## Exact signed candidate
 
@@ -42,7 +42,7 @@ the same configured profile, including after restart.
 | Verified desktop backup/restore | PASSED existing-operation continuation: 19 backup files rehashed, separate restored profile active, original database retained, known publication/documents readable through the UI and sign-out verified. Initial harness fragment-only navigation made no exchange request; a fresh document completed readback without repeating backup/restore or changing product code. [Recovery receipt](evidence/windows-0.2.0/candidate-3a247d8/installed-recovery-observation.json) |
 | Graceful stop/reopen, startup registration, same-version reinstall and uninstall retention | PASSED: exact signed 0.2.0 reinstall preserved config/database/artifact/DPAPI fingerprint; post-reinstall all 23,094/124/18,330 payload/signature-replacement/seed entries verified, startup target and service reopen passed. Uninstall stopped desktop/profile, removed interpreter, exact HKCU product registration, Open/Stop Start Menu links and startup shortcut; saved data/config/credentials remained unchanged. This proves same-version repair, not a future-version migration. [Lifecycle receipt](evidence/windows-0.2.0/candidate-3a247d8/installed-lifecycle-observation.json) |
 | Acceptance cleanup | PASSED: 14 owned tasks terminal, 0 product/browser processes or owned jobs, API unreachable after uninstall, private recovery hashes and 3 SQLite integrity checks verified, owned guest stopped and live Sandbox inventory empty. [Cleanup receipt](evidence/windows-0.2.0/candidate-3a247d8/installed-cleanup-observation.json) |
-| Authorized merge/tag/release/site and post-delivery verification | PENDING. Installed acceptance above is complete; no public 0.2.0 publication/deployment claimed yet. |
+| Authorized merge/tag/release/site and post-delivery verification | PR49 merged 73f282e after final CI passed; v0.2.0 published with 29 assets and exact 3a tag; Pages 43577354304 passed and anonymous site HTTP 200 confirmed the correct download link. All 29 anonymous downloads/checksums, installer signature/timestamp and source archive reproduction passed. [Delivery receipt](evidence/windows-0.2.0/candidate-3a247d8/PUBLIC-DELIVERY.md) |
 
 The existing v0.1.0 scheduler tick/deduplication evidence is retained below; no
 new overnight run or machine wake-up is claimed. The optional startup target was
