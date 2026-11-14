@@ -79,3 +79,18 @@ and let Scott define human acceptance. No framework was needed for this conversi
 The Big Picture Project has nine verified sources, including this handoff, the
 interface design and updated candidate acceptance. Existing file identities and
 sharing were preserved.
+
+## Documentation and website follow-up — in progress
+
+Authorized November 13: complete user and technical manuals with Mermaid diagrams,
+correct README and stale maintained docs, build and visually verify a landing page,
+push and merge, and add the updated documents to The Big Picture Project sources.
+Post-merge implementation CI 43521706630 passed for merge 0f2ae54;
+PR44 added the handoff on main ff4a8ea without changing product code.
+The accepted wheel remains unchanged. Tagging, release publication and website
+deployment are held for Scott. No test service is currently running.
+Prepared: USER-MANUAL.md, TECHNICAL-MANUAL.md (four Mermaid diagrams across
+the manuals), SITE.md, static site and manual-only deployment workflow. README
+and stale workflow wording corrected. Build, 41 relative docs links, desktop/
+tablet/mobile review, keyboard navigation and text contrast passed. Preview
+was stopped. Remaining: CI/merge, rendered diagrams and Big Picture additions.

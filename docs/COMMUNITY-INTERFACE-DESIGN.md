@@ -160,3 +160,10 @@ Scott decides required human work. We may suggest an independent operator/reside
 trial after the engineering is done; it is not an agent-imposed gate. A genuinely
 new provider publication depends on the publisher, not on a human tester, and must
 be distinguished from historical replay. Do not silently call either completed.
+
+## Implemented architecture and user guidance
+
+The [technical manual](TECHNICAL-MANUAL.md) diagrams the implemented architecture,
+publication handoff and recovery. The [user manual](USER-MANUAL.md) covers operator
+and resident workflows. The separate [website design](SITE.md) extends this
+interface palette; it does not change the application or its accepted package.

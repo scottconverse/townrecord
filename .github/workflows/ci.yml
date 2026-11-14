@@ -34,6 +34,7 @@ jobs:
         run: |
           npm ci
           npm run build:ui
+          npm run build:site
           git diff --exit-code -- core/src/townrecord/web/community.js
       - uses: astral-sh/setup-uv@v5
         with:

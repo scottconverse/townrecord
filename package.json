@@ -3,7 +3,10 @@
   "private": true,
   "scripts": {
     "build:ui": "tsc -p frontend/tsconfig.json",
-    "check:ui": "tsc -p frontend/tsconfig.json --noEmit"
+    "check:ui": "tsc -p frontend/tsconfig.json --noEmit",
+    "build:site": "node scripts/site.mjs",
+    "preview:site": "node scripts/site.mjs --serve",
+    "dev:site": "node scripts/site.mjs --serve"
   },
   "devDependencies": {
     "typescript": "5.9.3"

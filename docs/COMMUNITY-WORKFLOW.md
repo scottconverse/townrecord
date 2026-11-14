@@ -1,4 +1,4 @@
-# Community record workflow (implementation in progress)
+# Community record workflow
 
 The November 13 bounded TownRecord plan adds an explicitly public, reviewed
 meeting record. This supersedes the original local-API specification's
@@ -43,15 +43,21 @@ Private acquisitions and operator history are never resident search results.
 
 ## Current acceptance boundary
 
-The exact Windows candidate has passed real two-body acquisition and repeat
-discovery, document extraction, full source-caption readback, timestamp navigation,
-an isolated TownReporter browser handoff, and backup/restore. Full Council and
-Planning evidence packages also passed the TownReporter receive function without
-truncation. Local Whistle and Whisper ran identical real meeting clips; Whisper
-small was retained for the better observed wording. These are bounded observations,
-not a claim that all providers or the wider specification are complete.
+The Windows candidate passed real two-body acquisition, repeat discovery, document
+extraction, full source-caption readback and timestamp navigation. A full 98-minute
+local Whisper small transcription completed with 1542 timed segments. Resident
+readback preserved its provisional origin and final timestamp. Full Council and
+Planning evidence files passed actual TownReporter browser imports as unpublished
+New leads; duplicate and malformed-file behavior was checked. Operator corrections,
+backup/restore and a completed scheduled retrieval also passed.
 
-See [Community acceptance](COMMUNITY-ACCEPTANCE.md) for exact identities, evidence
-tiers and remaining acceptance. A second human operator and resident/reporter
-have not yet completed the planned community trial. Tagging and publishing remain
-held for Scott's approval.
+Whistle and Whisper were compared on identical real clips; Whisper small was
+retained for the better observed wording. Synthetic tests cover staged arrival and
+republication. These are bounded observations, not acceptance of every provider,
+human accuracy certification or completion of the wider specification.
+
+See the [user manual](USER-MANUAL.md), [technical manual](TECHNICAL-MANUAL.md) and
+[acceptance record](COMMUNITY-ACCEPTANCE.md) for instructions and exact evidence.
+An independent operator/resident trial remains a suggestion; Scott defines any
+required human work. Tagging, release publication and website deployment are held
+for Scott's approval.
