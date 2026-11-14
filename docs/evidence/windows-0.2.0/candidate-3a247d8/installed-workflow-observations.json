@@ -1,0 +1,239 @@
+{
+  "schema": 1,
+  "candidate_source": "3a247d8865f1692911f4bed15cae370410ec6d70",
+  "installer_sha256": "e08a4f4447abb611a331cd7146df56493eb92f76bc14c9a660cb80fb9c3067a8",
+  "scope": "Observed exact installed candidate, standard Windows user, headless browser. Not a claim of all providers or full meeting machine transcription. Recovery is recorded separately; remaining lifecycle/delivery are pending.",
+  "install": {
+    "status": "passed",
+    "finished_utc": "2026-11-14T08:20:30.1338954Z",
+    "user_mode": "ordinary non-administrator acceptance account"
+  },
+  "verify": {
+    "status": "passed",
+    "python_version": "3.13.15 (main, Aug  7 2026, 02:25:50) [MSC v.1944 64 bit (AMD64)]",
+    "ffmpeg": "ffmpeg version n9.0.2-57-gd838f9f9ae-20261113 Copyright (c) 2000-2026 the FFmpeg developers\r",
+    "uv": "uv 0.12.3 (507230998 2026-08-07 x86_64-pc-windows-msvc)",
+    "startup_shortcut_present": true,
+    "startup_arguments": "-I -m townrecord.windows start",
+    "finished_utc": "2026-11-14T08:21:03.2414362Z"
+  },
+  "setup": {
+    "status": "verified",
+    "headless": true,
+    "steps": [
+      {
+        "name": "one-use launch authenticated installed browser; fragment removed; anonymous private read refused",
+        "verified_utc": "2026-11-14T08:22:31.888Z"
+      },
+      {
+        "name": "actual browser dropdown matches 31 installed provider choices",
+        "verified_utc": "2026-11-14T08:22:31.955Z",
+        "provider_values": [
+          "legistar",
+          "primegov",
+          "granicus",
+          "novusagenda",
+          "civicplus-select",
+          "civicplus-agenda-center",
+          "municode-meetings",
+          "boardbook",
+          "escribe",
+          "simbli",
+          "civicweb",
+          "iqm2",
+          "swagit",
+          "suiteone-media",
+          "peak",
+          "utah-public-notice",
+          "destiny-agendaquick",
+          "town-hall-streams",
+          "telvue",
+          "champ",
+          "onbase",
+          "laserfiche-weblink",
+          "towncloud",
+          "digital-towpath",
+          "clerkbase",
+          "first-party",
+          "wistia",
+          "boardable",
+          "gworks",
+          "boarddocs",
+          "tyler-meeting-manager"
+        ]
+      },
+      {
+        "name": "settings applied through UI after fresh restart receipt",
+        "verified_utc": "2026-11-14T08:22:33.918Z"
+      },
+      {
+        "name": "body saved through UI",
+        "verified_utc": "2026-11-14T08:22:34.008Z"
+      },
+      {
+        "name": "body saved through UI",
+        "verified_utc": "2026-11-14T08:22:34.092Z"
+      },
+      {
+        "name": "source validated and saved through UI",
+        "verified_utc": "2026-11-14T08:22:34.191Z",
+        "tested_date_from": "2026-09-08",
+        "tested_date_to": "2026-09-16",
+        "coverage_reason": "Bounded acquisition includes previously verified Council September 8 and Planning September 16; full-meeting local transcription evidence is reused."
+      },
+      {
+        "name": "real managed setup queued through UI",
+        "verified_utc": "2026-11-14T08:22:34.245Z",
+        "tool": "yt-dlp"
+      },
+      {
+        "name": "real managed setup queued through UI",
+        "verified_utc": "2026-11-14T08:22:34.311Z",
+        "tool": "textflowkit"
+      },
+      {
+        "name": "real bounded September 8-16 source retrieval queued through UI",
+        "verified_utc": "2026-11-14T08:22:34.378Z"
+      },
+      {
+        "name": "setup ended; jobs require subsequent terminal results",
+        "verified_utc": "2026-11-14T08:22:34.628Z"
+      }
+    ]
+  },
+  "acquisition": {
+    "status": "verified",
+    "anonymous_operator_refused": true,
+    "managed_tools": {
+      "yt-dlp": "2026.10.26",
+      "textflowkit": "0.1.19"
+    },
+    "job_counts": [
+      {
+        "kind": "align_meeting",
+        "state": "done",
+        "count": 3
+      },
+      {
+        "kind": "align_meeting",
+        "state": "paused",
+        "count": 1
+      },
+      {
+        "kind": "capture_captions",
+        "state": "done",
+        "count": 3
+      },
+      {
+        "kind": "download_connector",
+        "state": "done",
+        "count": 12
+      },
+      {
+        "kind": "extract_pages",
+        "state": "done",
+        "count": 9
+      },
+      {
+        "kind": "read_minutes",
+        "state": "paused",
+        "count": 2
+      },
+      {
+        "kind": "recheck_captions",
+        "state": "done",
+        "count": 3
+      },
+      {
+        "kind": "runtime_update",
+        "state": "done",
+        "count": 2
+      },
+      {
+        "kind": "sync_connector",
+        "state": "done",
+        "count": 1
+      }
+    ],
+    "visible_gaps": [
+      {
+        "kind": "read_minutes",
+        "state": "paused",
+        "reason": "The minutes of meeting 2 are not available: no official minutes document yet; the September 15 packet holds no minutes of this meeting. 17 vote(s) were read from the video instead."
+      },
+      {
+        "kind": "read_minutes",
+        "state": "paused",
+        "reason": "The minutes of meeting 1 are not available: no official minutes document yet; the September 8 packet holds no minutes of this meeting."
+      },
+      {
+        "kind": "align_meeting",
+        "state": "paused",
+        "reason": "Meeting 1 has no primary video, so its agenda items have nothing to align to."
+      }
+    ]
+  },
+  "review": {
+    "status": "verified",
+    "headless": true,
+    "steps": [
+      {
+        "name": "one-use launch authenticated installed browser; fragment removed; anonymous private read refused",
+        "verified_utc": "2026-11-14T08:26:11.310Z"
+      },
+      {
+        "name": "acquired meeting reviewed, published, exported through UI and opened by resident",
+        "verified_utc": "2026-11-14T08:26:30.791Z",
+        "known_meeting": {
+          "meeting_id": 3,
+          "title": "City Council Study Session",
+          "body_name": "City Council",
+          "document_count": 3
+        },
+        "handoff": {
+          "meeting_id": 3,
+          "title": "City Council Study Session",
+          "body_name": "City Council",
+          "document_count": 3,
+          "export_bytes": 921653,
+          "export_sha256": "2a5bec2519830f81339aaf8358b94c74442fb628ffe6553331a6856aa72b2b29",
+          "revision": 1
+        }
+      },
+      {
+        "name": "acquired meeting reviewed, published, exported through UI and opened by resident",
+        "verified_utc": "2026-11-14T08:26:41.216Z",
+        "known_meeting": {
+          "meeting_id": 4,
+          "title": "Planning and Zoning Commission (livestreamed)",
+          "body_name": "Planning and Zoning Commission",
+          "document_count": 4
+        },
+        "handoff": {
+          "meeting_id": 4,
+          "title": "Planning and Zoning Commission (livestreamed)",
+          "body_name": "Planning and Zoning Commission",
+          "document_count": 4,
+          "export_bytes": 503299,
+          "export_sha256": "f2bc28cc2fe467918cc96f8fc253297ce7e2eb9bb56eb90fb0b76bed2b187d12",
+          "revision": 1
+        }
+      },
+      {
+        "name": "both configured bodies supplied actual published UI handoff exports",
+        "verified_utc": "2026-11-14T08:26:41.220Z"
+      },
+      {
+        "name": "sign-out cleared private record containers; reload offers Start Menu without token form",
+        "verified_utc": "2026-11-14T08:26:41.559Z"
+      }
+    ]
+  },
+  "source_receipt_sha256": {
+    "Install-result.json": "727171bb3f44fee3f70836c03cfb03a947b761462f6a2622180d9fae0bc91911",
+    "Verify-result.json": "96fb26f9b619c2912d921ea4b57da682ac98f444dd5426423e30b2e4923a9585",
+    "headless-setup.json": "a43f61de6eda96042840fb10cd78f50ed207b817e4f7c94007effc24f0658dce",
+    "acquisition-terminal-status.json": "65d424b1ae0ca530dcb64e3487b0a11925459829dff0c3e9c6053803f9e12185",
+    "headless-review.json": "90a65ca7d994cbdcf4f2059310b7b0f190734dbda1ac9e1c3d4c6bb2ed29924a"
+  }
+}

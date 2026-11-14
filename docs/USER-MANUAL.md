@@ -4,15 +4,16 @@ TownRecord helps a community keep a searchable record of public meetings. An
 operator collects source documents and transcripts, checks them, and publishes
 a reviewed snapshot. Residents can read that snapshot without an account.
 TownRecord is part of the Townlight umbrella. This manual covers the tested
-Windows community-record candidate, not every feature in the wider specification.
+Windows community-record service, within the acceptance scope linked below.
 
 **Start here:** [Windows installation and recovery](WINDOWS-COMMUNITY-OPERATIONS.md)
 for the person running the service; [resident instructions](#for-residents) for
 readers; [technical manual](TECHNICAL-MANUAL.md) for developers and IT.
-For the 0.2.0 Windows installer candidate, consult the
-[candidate handoff](COMMUNITY-COMPLETION-HANDOFF.md) for signing, installed
-acceptance and publication status before downloading. The
-[acceptance record](COMMUNITY-ACCEPTANCE.md) preserves earlier evidence.
+[Download the 0.2.0 Windows installer](https://github.com/scottconverse/townrecord/releases/download/v0.2.0/TownRecord-0.2.0-windows-x64-setup.exe) and read the
+[release notes](https://github.com/scottconverse/townrecord/releases/tag/v0.2.0). These release links are prepared for publication;
+public availability remains pending in the [delivery handoff](COMMUNITY-COMPLETION-HANDOFF.md).
+The [acceptance record](COMMUNITY-ACCEPTANCE.md) distinguishes current Windows
+observations from historical evidence.
 The [historical 0.1.0 Python-wheel preview](https://github.com/scottconverse/townrecord/releases/tag/v0.1.0)
 remains available for advanced CLI use; it is not the new Windows installer.
 
@@ -26,8 +27,8 @@ are bundled; Node is only for contributors. After reload or sign out, reopen
 from Start Menu. Closing the browser leaves retrieval running; **Stop TownRecord**
 stops it. Windows sign-in startup, where enabled, uses the same account and does
 not wake the PC. Advanced nonpackaged CLI mode retains manual write-token entry.
-The candidate handoff records the new installer's signing and acceptance status;
-the earlier 0.1.0 observations do not prove that candidate.
+The handoff records the exact signed installer and its remaining acceptance work;
+the earlier 0.1.0 observations retain their own scope.
 
 For other computers, IT must provide a reachable community URL and HTTPS for
 operator access. A localhost address always points to the reader's own computer.
@@ -75,7 +76,7 @@ uses the chosen coverage dates. The service does not wake a sleeping computer.
 Source captions are evidence supplied by the source, not certified minutes.
 When they are missing or unsuitable, the operator can create a local transcript
 for the recording. Under Processing, set up/check yt-dlp and TextFlowKit. The
-Windows installer candidate includes FFmpeg and a pinned, signed TextFlowKit
+Windows installer includes FFmpeg and a pinned, signed TextFlowKit
 0.1.19 runtime without model weights. TextFlowKit setup verifies and copies that
 local runtime into managed storage, so its initial bootstrap can work offline.
 Model downloads, yt-dlp setup/checks and source recordings still need internet
@@ -84,7 +85,7 @@ version fails installation or its check. CLI users follow the separate tool
 installation instructions in the Windows guide.
 
 Choose **Create local transcript**, provide a reason, and check the resulting
-job. This candidate uses Whisper small through TextFlowKit on the local machine.
+job. This version uses Whisper small through TextFlowKit on the local machine.
 Audio is not sent to a hosted transcription provider by that path. Transcription
 can take substantial CPU time; a failed download or unfinished job is not a
 transcript. Playback and caption access depend on the publisher and network.
@@ -128,7 +129,7 @@ it retains internal history and cannot recall files already downloaded elsewhere
 Machine text is not an official account of a vote or a certified transcript.
 Consult the original recording and approved records when accuracy matters. Report
 an apparent error to the community's operator with the meeting URL, document or
-timestamp and proposed correction. This candidate has no resident correction form.
+timestamp and proposed correction. This version has no resident correction form.
 
 ## Export a meeting to TownReporter
 
@@ -164,6 +165,21 @@ The [Windows operations guide](WINDOWS-COMMUNITY-OPERATIONS.md#backup-and-recove
 explains the desktop restore form, advanced CLI commands and exclusions.
 
 ## What was actually verified
+
+The exact signed 0.2.0 installer passed clean installation under an ordinary
+Windows account, first-run settings, community/body/source setup and both managed
+tools. The provider selector matched all 31 installed choices; live acceptance
+used Longmont PrimeGov, not every provider. Real retrieval completed 12 downloads,
+nine PDF text extractions and three caption jobs. Council and Planning records
+were reviewed, published, exported and opened by residents through the installed
+interface; sign-out cleared private content and reload offered Start Menu reopen.
+
+A direct managed-tool check transcribed a 120-second public Council audio sample
+with Whisper small on CPU in 39.398 seconds: 34 segments, 329 words, final timestamp
+119.820 seconds. This checks the installed bundled-Python tool path; it is separate
+from the earlier full-meeting transcription. Verified desktop backup/restore also preserved the original profile and reopened
+the restored publication. Remaining lifecycle checks and public delivery stay
+pending in the acceptance record.
 
 The earlier 0.1.0 candidate's real two-body acquisition, full source captions, operator corrections, resident
 navigation, a full 98-minute local transcription, two full TownReporter browser

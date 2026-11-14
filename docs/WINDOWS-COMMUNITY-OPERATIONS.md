@@ -1,20 +1,21 @@
 # Windows community-record operation
 
 TownRecord uses a Python service and TypeScript browser interface. Start with the
-0.2.0 Windows installer candidate guidance below; final acceptance and publication
-status remain in the [candidate handoff](COMMUNITY-COMPLETION-HANDOFF.md).
+0.2.0 Windows installer guidance below; exact acceptance and publication
+status remain in the [delivery handoff](COMMUNITY-COMPLETION-HANDOFF.md).
 The earlier Python-wheel preview instructions are preserved in the historical
 advanced section.
 
 ## Install and open the Windows application (0.2.0)
 
-The 0.2.0 Windows installer candidate is the normal-user path. Its build, signing,
-installed acceptance and publication status are recorded in
-[the candidate handoff](COMMUNITY-COMPLETION-HANDOFF.md); this guide is not a
-signing or publication receipt. Obtain the signed installer from the
-[TownRecord releases page](https://github.com/scottconverse/townrecord/releases)
-when 0.2.0 is available. Check Windows file Properties > Digital Signatures for
-**Scott Converse**, following the release verification notes.
+[Download TownRecord 0.2.0 for Windows](https://github.com/scottconverse/townrecord/releases/download/v0.2.0/TownRecord-0.2.0-windows-x64-setup.exe)
+and read the [release notes](https://github.com/scottconverse/townrecord/releases/tag/v0.2.0). The installer is the normal-user path;
+Python, command-line tools and copied tokens are unnecessary. Release links are
+prepared locally while remaining lifecycle acceptance and public delivery remain
+pending; consult the [delivery handoff](COMMUNITY-COMPLETION-HANDOFF.md) for status.
+Check Windows file Properties > Digital Signatures for **Scott Converse** before
+running it. Exact hashes, signing receipts and observed installed outcomes are in
+[acceptance](COMMUNITY-ACCEPTANCE.md).
 
 Run the installer for your Windows account, then choose **TownRecord** in Start
 Menu. Python, FFmpeg and a pinned, signed TextFlowKit 0.1.19 runtime are supplied;
@@ -152,7 +153,7 @@ Daily retrieval runs at the configured local time while `serve` is running.
 Scheduled sync uses the existing rolling window (30 days back, 60 days ahead);
 the operator's explicit coverage dates govern manual retrieval. `townrecord status`
 reports scheduled runs, paused causes and source health. No machine wake-up or
-Windows startup registration is installed by this candidate. To run after sign-in,
+Windows startup registration is installed by the historical 0.1.0 CLI package. To run after sign-in,
 IT may schedule the same private start script under the same account. Never run a
 second service against the same profile. Missing timezone or unavailable tools
 must be corrected rather than treating a paused schedule as successful.

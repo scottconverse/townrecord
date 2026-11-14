@@ -1,0 +1,41 @@
+{
+  "kind": "installed-managed-transcription",
+  "started_utc": "2026-11-14T08:24:36.487130+00:00",
+  "application_version": "0.2.0",
+  "audio_sha256": "021d8e373fccafa7a91facc602d830ade7c5723d75c6de0d8bc12180512b32ed",
+  "audio_duration_seconds": 120,
+  "source": "https://www.youtube.com/watch?v=3qfQAkAAC9U&t=600",
+  "source_interval_seconds": [
+    600,
+    720
+  ],
+  "scope": "Direct installed managed TextFlowKit, using TownRecord command/parser; does not claim full meeting acquisition workflow",
+  "ssl_cert_file_sha256": "9cc2a774b5198dcff14d9be1e66091f538975d867ce029a96bce15a55dfd730f",
+  "exit_code": 0,
+  "status": "verified",
+  "transcript_sha256": "3240cd08a419eeb63073d34021cfda321c92db0ece15d98396deab41a3158434",
+  "segment_count": 34,
+  "word_count": 329,
+  "first_segment_ms": 0,
+  "last_segment_ms": 119820,
+  "elapsed_seconds": 39.398,
+  "finished_utc": "2026-11-14T08:25:15.989973+00:00",
+  "candidate_source": "3a247d8865f1692911f4bed15cae370410ec6d70",
+  "installer_sha256": "e08a4f4447abb611a331cd7146df56493eb92f76bc14c9a660cb80fb9c3067a8",
+  "managed_tools": [
+    {
+      "tool": "yt-dlp",
+      "active_version": "2026.10.26",
+      "base_python": "installed bundled Python (verified exact base_prefix/base_executable)"
+    },
+    {
+      "tool": "textflowkit",
+      "active_version": "0.1.19",
+      "base_python": "installed bundled Python (verified exact base_prefix/base_executable)"
+    }
+  ],
+  "invocation": "managed-python -I -m textflowkit.cli transcribe <120-second sample> --formats json --output-dir <evidence output> --engine whisper --model small --language en",
+  "tls": "Verified certifi CA bundle passed through SSL_CERT_FILE; TLS verification enabled",
+  "execution": "Local CPU; no hosted transcription provider",
+  "source_receipt_sha256": "4ea40c55bf13926b8f0bf0474a8aaa5ffecdc63814e0d960c422a0898a3079e6"
+}

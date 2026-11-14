@@ -1,0 +1,49 @@
+{
+  "candidate_source": "3a247d8865f1692911f4bed15cae370410ec6d70",
+  "installer_sha256": "e08a4f4447abb611a331cd7146df56493eb92f76bc14c9a660cb80fb9c3067a8",
+  "status": "verified",
+  "scope": "Continuation of the existing completed UI backup/restore operation, without repeating either mutation. Nineteen backup files rehashed; separate restored active profile and retained original database/publication verified.",
+  "harness_attribution": "Initial recovery script timed out after fragment-only navigation on the existing signed-out document: no exchange request occurred. A fresh-document launch completed the existing restored-profile read/sign-out check. No product code change.",
+  "steps": [
+    {
+      "name": "existing UI backup/restore state independently read; no repeated mutation",
+      "verified_utc": "2026-11-14T08:29:59.528Z",
+      "backup_files_reverified": 19,
+      "known_meeting": {
+        "meeting_id": 3,
+        "title": "City Council Study Session",
+        "body_name": "City Council",
+        "document_count": 3
+      }
+    },
+    {
+      "name": "harness cause reproduced: fragment-only navigation kept signed-out document without exchange",
+      "verified_utc": "2026-11-14T08:30:00.170Z",
+      "workspace_hidden": true,
+      "exchange_requests": 0,
+      "fragment_still_present": true
+    },
+    {
+      "name": "one-use launch authenticated installed browser; fragment removed; anonymous private read refused",
+      "verified_utc": "2026-11-14T08:30:01.155Z"
+    },
+    {
+      "name": "fresh document launch opened separate restored profile and publication; original preserved",
+      "verified_utc": "2026-11-14T08:30:08.972Z",
+      "known_meeting": {
+        "meeting_id": 3,
+        "title": "City Council Study Session",
+        "body_name": "City Council",
+        "document_count": 3
+      }
+    },
+    {
+      "name": "sign-out cleared private record containers; reload offers Start Menu without token form",
+      "verified_utc": "2026-11-14T08:30:09.228Z"
+    }
+  ],
+  "headless": true,
+  "finished_utc": "2026-11-14T08:30:09.617Z",
+  "source_receipt_sha256": "e396ed410226f9998cecabbad79aa719fe7e5edfe7eaeeb1d7ed132e516f1e74",
+  "omitted": "Private profile/file paths, database contents, credentials and operation identifiers"
+}

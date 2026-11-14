@@ -11,15 +11,16 @@ back to the source. It is free, open-source community infrastructure in the
 
 ## Start here
 
+- [Download TownRecord 0.2.0 for Windows](https://github.com/scottconverse/townrecord/releases/download/v0.2.0/TownRecord-0.2.0-windows-x64-setup.exe) · [Release notes](https://github.com/scottconverse/townrecord/releases/tag/v0.2.0)
 - [User manual — operators and residents](docs/USER-MANUAL.md)
 - [Windows installation, daily operation and recovery](docs/WINDOWS-COMMUNITY-OPERATIONS.md)
 - [Technical manual — architecture, Mermaid diagrams and HTTP API](docs/TECHNICAL-MANUAL.md)
 - [Supported connector capabilities and limits](docs/CONNECTORS.md)
-- [Exact candidate acceptance and evidence](docs/COMMUNITY-ACCEPTANCE.md)
+- [Exact acceptance and evidence](docs/COMMUNITY-ACCEPTANCE.md)
 
 ## Windows application and delivery
 
-The 0.2.0 Windows installer candidate bundles Python, FFmpeg and a pinned, signed
+The 0.2.0 Windows installer bundles Python, FFmpeg and a pinned, signed
 TextFlowKit 0.1.19 runtime without model weights. Install it for
 your account, open **TownRecord** from Start Menu and complete the browser
 checklist: timezone/daily time/sample recording, community/body, source/coverage
@@ -33,11 +34,12 @@ meeting-source access still need internet access. Existing online update checks
 retain a working runtime if a newer version fails installation or its check.
 
 See [Windows installation and recovery](docs/WINDOWS-COMMUNITY-OPERATIONS.md) and
-[the candidate handoff](docs/COMMUNITY-COMPLETION-HANDOFF.md) for exact build,
-signature, installed acceptance and delivery status. These instructions do not
-claim candidate checks have passed. Obtain installers from the
-[release assets](https://github.com/scottconverse/townrecord/releases) and verify
-the Scott Converse signature described in release notes.
+[the delivery handoff](docs/COMMUNITY-COMPLETION-HANDOFF.md) for exact build,
+signature, installed acceptance and delivery status. Clean installation, first-run,
+real acquisition, managed transcription and review/publication passed on the signed
+candidate. Remaining lifecycle checks and public delivery remain pending. The download
+links above are prepared for publication; availability is not yet claimed. Verify
+the **Scott Converse** signature before running an installer.
 
 The earlier [0.1.0 preview](https://github.com/scottconverse/townrecord/releases/tag/v0.1.0)
 remains a published Python wheel with historical two-body acquisition,

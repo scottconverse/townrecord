@@ -26,7 +26,8 @@ only the outer setup afterwards does not do that.
 For an already verified payload, use `build.ps1 -PrepareUninstaller` to produce
 the internal signing input without reinstalling dependencies or rebuilding the
 application. After signing, use `build.ps1 -CompileOnly` to repack. These modes
-require a clean committed candidate, unchanged `core` and `frontend` inputs,
+require a clean committed candidate, unchanged application inputs under `core`
+and `frontend` (test-only changes are excluded),
 and verification of every payload file and the retained wheel against the
 original build receipt plus the explicitly verified signing overlay described
 below. They produce `repack-receipt.json`, retaining
@@ -41,12 +42,17 @@ rejected only the optional Tcl/Tk DLLs (`tcl86t.dll`, `tk86t.dll`) with
 `0x800700C1`. TownRecord and QuorumRelay have no Tkinter GUI usage, so the build
 omits the unused optional Tcl/Tk component, its `_tkinter.pyd` extension and GUI
 library/demos. The browser interface, interpreter, service libraries, `venv` and
-`ensurepip` are retained. The resulting native inventory is 82 unsigned files
-and two valid Microsoft runtime DLLs. Preserve the Microsoft
-signatures. After preparing the internal Inno PE, run
+`ensurepip` are retained. That historical base intake contained 82 unsigned files
+and two valid Microsoft runtime DLLs, before the signed transcription seed was
+added. The complete seed-inclusive batch signed 125 files: 124 payload files plus
+one internal installer PE, with 22 existing vendor signatures preserved. The
+corrected app-local CRT payload adds nine valid Microsoft-signed files while
+preserving the two matching original Python runtime DLLs (31 vendor-signed files
+in total). These are separate counts; preserve their original receipt identities
+and Microsoft signatures. After preparing the internal Inno PE, run
 `native-signing.ps1 -Mode Prepare`. This re-verifies the original payload and
 creates `dist/windows/TownRecord-0.2.0-native-unsigned.zip`, containing only the
-82 unsigned native files, the internal PE, and an allowlist/hash manifest.
+current unsigned native allowlist, the internal PE, and its hash manifest.
 The internal `.e32` is staged as `.exe` without changing its PE bytes; its original
 target filename is retained in the manifest.
 
