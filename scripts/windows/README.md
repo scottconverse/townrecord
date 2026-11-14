@@ -130,3 +130,21 @@ a short, owned temporary junction. The compiler wrapper records that alias and
 its target and removes only the junction after compilation, including failures.
 The installed default per-user path is shorter than the build workspace path;
 clean-installed acceptance verifies the complete payload manifest after extract.
+
+`build.ps1 -PayloadOnly` stages and verifies the normal pinned payload and app
+wheel without compiling an outer installer. The app-local Microsoft x64 CRT and
+OpenMP set is pinned to 14.44.35211.0, matching the two original Python runtime
+DLLs byte for byte. `stage-vc-runtime.ps1` extracts only the release directories
+from the hash-verified official VSIX, verifies every Microsoft signature/version
+and preserves matching existing files. The payload verifier scans actual PE
+imports for unresolved plain MSVC runtime dependencies.
+
+When an app-only fix leaves the unsigned native inputs unchanged, preserve the
+previous intake and signed archive. Restore the known original unsigned Inno
+internal file, then run `native-signing.ps1 -Mode Prepare`. `-Mode Reuse` accepts
+`-Archive`, `-ExpectedSha256` and `-PreviousIntake` (the old manifest path). It
+requires every native path, target, kind, size and SHA-256 to match exactly,
+rechecks signature-only executable content and all actual signatures, retains
+the original cloud receipt/manifest, and explicitly binds those same signatures
+to the new payload manifest. Then run `build.ps1 -CompileOnly`. Changed native
+inputs fail reuse and require a new signing batch.

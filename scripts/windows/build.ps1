@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
     [switch]$PrepareOnly,
+    [switch]$PayloadOnly,
     [switch]$CompileOnly,
     [switch]$PrepareUninstaller,
     [string]$Compiler = "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"
@@ -14,7 +15,7 @@ $payload = Join-Path $work 'payload'
 $output = Join-Path $repo 'dist/windows'
 $pins = Get-Content (Join-Path $PSScriptRoot 'dependencies.json') -Raw | ConvertFrom-Json
 if ($CompileOnly -or $PrepareUninstaller) {
-    if ($PrepareOnly) { throw 'PrepareOnly cannot be combined with compiler-only modes.' }
+    if ($PrepareOnly -or $PayloadOnly) { throw 'Preparation cannot be combined with compiler-only modes.' }
     & (Join-Path $PSScriptRoot 'repack.ps1') -Compiler $Compiler -PrepareUninstaller:$PrepareUninstaller
     return
 }
@@ -59,6 +60,7 @@ try {
         $extension = if ($name -eq 'python') { '.tar.gz' } else { '.zip' }
         Fetch-Verified $pins.$name (Join-Path $cache ($name + $extension))
     }
+    Fetch-Verified $pins.'vc-runtime' (Join-Path $cache 'vc-runtime.vsix')
     foreach ($name in @('ffmpeg-source','ffmpeg-build-source')) {
         $sourceArchive = Join-Path $cache "$name.tar.gz"
         Fetch-Verified $pins.$name $sourceArchive
@@ -128,6 +130,7 @@ try {
     Copy-Item (Join-Path $PSScriptRoot 'THIRD-PARTY-NOTICES.txt') (Join-Path $payload 'notices/THIRD-PARTY-NOTICES.txt')
     Copy-Item (Join-Path $PSScriptRoot 'uv-LICENSE-*.txt') (Join-Path $payload 'notices')
     Copy-Item (Join-Path $PSScriptRoot 'build-constraints.txt') (Join-Path $payload 'notices')
+    & (Join-Path $PSScriptRoot 'stage-vc-runtime.ps1') -Payload $payload
     & (Join-Path $PSScriptRoot 'build-seed.ps1') -Payload $payload
     $receipt.seed_manifest_sha256=(Get-FileHash (Join-Path $payload 'runtime-seeds/textflowkit/0.1.19/manifest.json')).Hash.ToLowerInvariant()
     $receipt.seed_requirements_sha256=(Get-FileHash (Join-Path $PSScriptRoot 'textflowkit-seed-requirements.txt')).Hash.ToLowerInvariant()
@@ -146,6 +149,8 @@ try {
     }
     $manifest | ConvertTo-Json -Depth 4 | Set-Content (Join-Path $payload 'payload-manifest.json')
     $receipt.payload_manifest_sha256 = (Get-FileHash (Join-Path $payload 'payload-manifest.json') -Algorithm SHA256).Hash.ToLowerInvariant()
+    $receipt.lock_sha256 = (Get-FileHash (Join-Path $repo 'core/uv.lock') -Algorithm SHA256).Hash.ToLowerInvariant()
+    if($PayloadOnly){$receipt.phase='payload_prepared';$receipt.completed_utc=[DateTime]::UtcNow.ToString('o');return}
     $version = (& $python -I -c 'import townrecord; print(townrecord.__version__)').Trim()
     # ISCC file metadata can be 0.0.0.0. The script verifies the compiler's
     # actual ISPP VER value against this pin before compiling any files.
@@ -157,7 +162,6 @@ try {
     $receipt.installer_sha256 = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant()
     $receipt.compiler_version = $compilerVersion
     $receipt.compiler_sha256 = (Get-FileHash $Compiler -Algorithm SHA256).Hash.ToLowerInvariant()
-    $receipt.lock_sha256 = (Get-FileHash (Join-Path $repo 'core/uv.lock') -Algorithm SHA256).Hash.ToLowerInvariant()
     $receipt.completed_utc = [DateTime]::UtcNow.ToString('o')
 } catch {
     $receipt.phase = 'failed'; $receipt.error = $_.Exception.Message

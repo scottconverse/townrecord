@@ -1,8 +1,9 @@
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][ValidateSet('Prepare','Apply')][string]$Mode,
+    [Parameter(Mandatory)][ValidateSet('Prepare','Apply','Reuse')][string]$Mode,
     [string]$Archive,
-    [string]$ExpectedSha256
+    [string]$ExpectedSha256,
+    [string]$PreviousIntake
 )
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
@@ -27,7 +28,12 @@ if ($Mode -eq 'Prepare') {
     Invoke-Python @('prepare')
 } else {
     if (!$Archive -or $ExpectedSha256 -notmatch '^[a-f0-9]{64}$') {throw 'Apply requires the returned ZIP and its independently captured lowercase SHA-256.'}
-    Invoke-Python @('validate-return','--archive',$Archive,'--expected-sha256',$ExpectedSha256)
+    $arguments=@('validate-return','--archive',$Archive,'--expected-sha256',$ExpectedSha256)
+    if($Mode -eq 'Reuse'){
+        if(!$PreviousIntake){throw 'Reuse requires the preserved original intake manifest.'}
+        $arguments+=@('--previous-intake',$PreviousIntake)
+    }
+    Invoke-Python $arguments
     $stage=Join-Path $work 'signed-native-return'
     $receipt=Get-Content (Join-Path $stage 'signing-receipt.json') -Raw | ConvertFrom-Json
     foreach($item in $receipt.files) {

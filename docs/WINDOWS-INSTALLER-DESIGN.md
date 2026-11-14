@@ -97,3 +97,23 @@ The immutable original payload manifest, signing overlay and repack receipt
 record this one explicit JSON derivation. Package RECORD files retain their
 upstream wheel hashes; the final seed manifest identifies the redistributed
 signed bytes. No model files, user data or credentials enter the seed.
+
+## App-local Microsoft runtime closure
+
+A clean installed-runtime probe identified four missing Microsoft runtime DLLs:
+MSVCP140, VCRUNTIME140_THREADS, MSVCP140_ATOMIC_WAIT and VCOMP140. Adding verified
+Microsoft-signed release files made TextFlowKit, Torch and Whisper imports pass.
+The installer now stages the full matching x64 release CRT/OpenMP set at
+`python/`, version 14.44.35211.0. The original two Python runtime DLLs already
+match this set exactly and remain unchanged. The official VSIX archive and
+individual members are hash-pinned; every redistributed DLL retains its valid
+Microsoft signature. No global runtime installation or elevation is required.
+Actual PE import closure is checked before packaging.
+
+An app-source correction requires a fresh normal payload and wheel. Native
+signatures may be reused only after exact comparison of all unsigned native
+member identities and independent revalidation of signed executable content
+and signatures. The original cloud receipt/manifest are retained, while the
+new overlay explicitly records the old signing identity and new payload
+binding. The outer installer is compiled only after that verification and is
+signed separately for the new candidate.

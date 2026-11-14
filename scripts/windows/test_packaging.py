@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from native_signing import assert_signature_only
+from native_signing import assert_signature_only, identical_native_inputs
 from seed_payload import (
     ORIGINAL,
     RELATIVE,
@@ -18,10 +18,49 @@ from seed_payload import (
     verify_seed,
     write,
 )
-from verify_payload import verify
+from verify_payload import verify, verify_crt_closure
 
 
 class PayloadChecks(unittest.TestCase):
+    def test_native_reuse_refuses_changed_input_identity(self):
+        item = {
+            "path": "payload/tools/uv.exe",
+            "target": "tools/uv.exe",
+            "kind": "payload",
+            "sha256": "a" * 64,
+            "size": 512,
+        }
+        identical_native_inputs({"files": [item]}, {"files": [dict(item)]})
+        with self.assertRaisesRegex(ValueError, "identical paths"):
+            identical_native_inputs(
+                {"files": [item]}, {"files": [{**item, "sha256": "b" * 64}]}
+            )
+
+    def test_native_import_closure_detects_missing_atomic_runtime(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            python = root / "python"
+            python.mkdir()
+            image = bytearray(768)
+            image[:2] = b"MZ"
+            struct.pack_into("<I", image, 60, 64)
+            image[64:68] = b"PE\0\0"
+            struct.pack_into("<H", image, 70, 1)
+            struct.pack_into("<H", image, 84, 240)
+            struct.pack_into("<H", image, 88, 0x20B)
+            struct.pack_into("<I", image, 88 + 112 + 8, 0x1000)
+            struct.pack_into("<IIII", image, 328 + 8, 256, 0x1000, 256, 512)
+            struct.pack_into("<IIIII", image, 512, 0, 0, 0, 0x1040, 0)
+            name = b"MSVCP140_ATOMIC_WAIT.dll\0"
+            image[576 : 576 + len(name)] = name
+            (python / "torch.pyd").write_bytes(image)
+            with self.assertRaisesRegex(ValueError, "msvcp140_atomic_wait.dll"):
+                verify_crt_closure(root)
+            # A valid PE without imports satisfies the dependency file lookup.
+            struct.pack_into("<I", image, 88 + 112 + 8, 0)
+            (python / "msvcp140_atomic_wait.dll").write_bytes(image)
+            verify_crt_closure(root)
+
     def test_seed_hashes_windows_long_paths_without_policy_changes(self):
         with tempfile.TemporaryDirectory() as folder:
             root = filesystem_path(Path(folder))

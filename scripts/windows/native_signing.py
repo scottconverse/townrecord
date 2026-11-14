@@ -93,6 +93,32 @@ def verify_payload(allow_overlay=False):
     overlay = read(overlay_path) if allow_overlay and overlay_path.exists() else None
     overrides = {}
     if overlay:
+        if "reused_signing" in overlay:
+            provenance = overlay["reused_signing"]
+            original = WORK / "native-reuse-original-signing-receipt.json"
+            original_intake = WORK / "native-reuse-original-intake-manifest.json"
+            if (
+                digest(original) != provenance["original_receipt_sha256"]
+                or digest(original_intake) != provenance["original_intake_sha256"]
+            ):
+                raise ValueError("Retained native signing reuse evidence changed")
+            prior = read(original)
+            if (
+                prior["files"] != overlay["files"]
+                or prior["original_payload_manifest_sha256"]
+                != provenance["original_payload_manifest_sha256"]
+            ):
+                raise ValueError(
+                    "Reused native signatures differ from their original receipt"
+                )
+            previous_intake = read(original_intake)
+            identical_native_inputs(
+                read(WORK / "native-signing-intake/manifest.json"), previous_intake
+            )
+            if previous_intake["original_payload_manifest_sha256"] != prior[
+                "original_payload_manifest_sha256"
+            ] or provenance["new_payload_manifest_sha256"] != digest(manifest_path):
+                raise ValueError("Native reuse payload binding changed")
         if overlay["original_payload_manifest_sha256"] != digest(manifest_path):
             raise ValueError("Signing overlay names another payload")
         derived_seed = SEED["verify_derived"](PAYLOAD, overlay)
@@ -230,10 +256,26 @@ def prepare():
     }
 
 
-def validate_return(archive: Path, expected: str):
+def identical_native_inputs(current, previous):
+    def inventory(value):
+        result = {item["path"]: item for item in value["files"]}
+        if len(result) != len(value["files"]):
+            raise ValueError("Duplicate native input identity")
+        return result
+
+    if inventory(current) != inventory(previous):
+        raise ValueError(
+            "Native signature reuse requires identical paths, kinds, targets, hashes and sizes"
+        )
+
+
+def validate_return(archive: Path, expected: str, previous_intake: Path | None = None):
     if digest(archive) != expected:
         raise ValueError("Signed return ZIP hash mismatch")
     intake = read(WORK / "native-signing-intake/manifest.json")
+    signing_intake = read(previous_intake) if previous_intake else intake
+    if previous_intake:
+        identical_native_inputs(intake, signing_intake)
     root = WORK / "signed-native-return"
     if root.exists():
         raise ValueError("Signed return staging directory already exists")
@@ -249,13 +291,13 @@ def validate_return(archive: Path, expected: str):
             raise ValueError("Signed ZIP contains missing or unexpected entries")
         if any(entry.file_size > 512 * 1024**2 for entry in zipped.infolist()):
             raise ValueError("Signed ZIP member exceeds bound")
-        if json.loads(zipped.read("manifest.json")) != intake:
+        if json.loads(zipped.read("manifest.json")) != signing_intake:
             raise ValueError("Signing workflow returned a different input manifest")
         receipt = json.loads(zipped.read("signing-receipt.json"))
         if (
             receipt["status"] != "verified_signed_native_payload"
             or receipt["original_payload_manifest_sha256"]
-            != intake["original_payload_manifest_sha256"]
+            != signing_intake["original_payload_manifest_sha256"]
         ):
             raise ValueError("Signing receipt does not identify this payload")
         result = {item["path"]: item for item in receipt["files"]}
@@ -282,6 +324,26 @@ def validate_return(archive: Path, expected: str):
             if digest(original) != item["sha256"]:
                 raise ValueError("Original signing intake changed")
             assert_signature_only(original, target)
+        if previous_intake:
+            original_receipt = WORK / "native-reuse-original-signing-receipt.json"
+            original_manifest = WORK / "native-reuse-original-intake-manifest.json"
+            original_receipt.write_bytes(zipped.read("signing-receipt.json"))
+            original_manifest.write_bytes(zipped.read("manifest.json"))
+            receipt["reused_signing"] = {
+                "original_payload_manifest_sha256": signing_intake[
+                    "original_payload_manifest_sha256"
+                ],
+                "original_receipt_sha256": digest(original_receipt),
+                "original_intake_sha256": digest(original_manifest),
+                "new_payload_manifest_sha256": intake[
+                    "original_payload_manifest_sha256"
+                ],
+                "new_packaging_commit": intake["packaging_commit"],
+                "rule": "all native input path, kind, target, SHA-256 and size identities are exactly unchanged",
+            }
+            receipt["original_payload_manifest_sha256"] = intake[
+                "original_payload_manifest_sha256"
+            ]
         write(root / "signing-receipt.json", receipt)
     return {
         "status": "signature_only_bytes_verified",
@@ -318,13 +380,16 @@ if __name__ == "__main__":
     parser.add_argument("--allow-overlay", action="store_true")
     parser.add_argument("--archive", type=Path)
     parser.add_argument("--expected-sha256")
+    parser.add_argument("--previous-intake", type=Path)
     args = parser.parse_args()
     if args.command == "verify":
         result = verify_payload(args.allow_overlay)
     elif args.command == "prepare":
         result = prepare()
     elif args.command == "validate-return":
-        result = validate_return(args.archive, args.expected_sha256)
+        result = validate_return(
+            args.archive, args.expected_sha256, args.previous_intake
+        )
     else:
         result = apply()
     print(json.dumps(result))

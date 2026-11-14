@@ -32,3 +32,12 @@ packages. Their licenses are included in python/Lib/site-packages within
 each package's .dist-info directory or package directory. Exact versions,
 upstream locations and hashes are recorded in uv.lock and
 python-requirements.txt here. QuorumRelay is Apache-2.0 licensed.
+
+Microsoft Visual C++ Runtime 2015-2022, x64 release CRT and OpenMP,
+version 14.44.35211.0. Copyright Microsoft Corporation. Distributed unchanged
+under the accompanying Microsoft-VC-Runtime-LICENSE.txt. Official source VSIX,
+archive/member SHA-256 hashes and version are pinned in dependencies.json;
+vc-runtime-provenance.json records the exact redistributed signed files.
+https://visualstudio.microsoft.com/license-terms/vs2022-cruntime/
+https://learn.microsoft.com/en-us/visualstudio/releases/2022/redistribution
+Only release x64 CRT/OpenMP files are included; debug/non-redist files are not.
